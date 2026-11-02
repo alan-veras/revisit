@@ -18,12 +18,3 @@ export function checkCloze(typed: string, verso: string): boolean {
 	return t === full || t === first;
 }
 
-/** The right letter of a question, read from its back: `(C)`, `Letra C`, `Gabarito: C`, or a line starting `C)`. */
-export function questaoLetra(verso: string): string | null {
-	const pats = [/\(([a-e])\)/i, /\b(?:letra|gabarito|alternativa|resposta)\s*:?\s*\(?([a-e])\b/i, /^\s*\**([a-e])\s*[).]/im];
-	for (const p of pats) {
-		const m = p.exec(verso);
-		if (m) return (m[1] as string).toLowerCase();
-	}
-	return null;
-}

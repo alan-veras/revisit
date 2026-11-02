@@ -5,7 +5,7 @@ import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
 import { estimateMinutes, QueueItem, requeueIndex } from '../srs/queue';
-import { checkCloze, questaoLetra } from './answer';
+import { checkCloze } from './answer';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
@@ -64,8 +64,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], ' ', (e) => this.key(e, () => this.flip()));
 		for (const { nota } of NOTAS) this.scope?.register([], String(nota), (e) => this.key(e, () => void this.grade(nota)));
 		this.scope?.register([], 'Enter', (e) => this.key(e, () => this.flip()));
-		for (const l of ['a', 'b', 'c', 'd']) this.scope?.register([], l, (e) => this.key(e, () => this.mark(l)));
-		this.scope?.register([], 'e', (e) => this.key(e, () => (this.answering() ? this.mark('e') : this.edit())));
+		this.scope?.register([], 'e', (e) => this.key(e, () => this.edit()));
 		this.scope?.register([], 's', (e) => this.key(e, () => void this.suspend()));
 		this.scope?.register(['Mod'], 'z', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
@@ -171,26 +170,15 @@ export class ReviewView extends ItemView {
 			input.oninput = () => (this.typed = input.value);
 			window.setTimeout(() => input.focus(), 50);
 		}
-		const letra = isQuestao ? questaoLetra(answer) : null;
-		if (letra) {
-			const marks = front.createDiv({ cls: 'lembro-marks' });
-			for (const l of ['a', 'b', 'c', 'd', 'e']) {
-				const m = marks.createEl('button', { text: l.toUpperCase(), cls: this.typed === l ? 'is-on' : '' });
-				m.onclick = (e) => {
-					e.stopPropagation();
-					this.mark(l);
-				};
-			}
-		}
-		front.createDiv({ cls: 'lembro-hint', text: typeCloze ? 'Enter confere e vira' : letra ? 'A a E marcam a letra · Espaço vira' : 'Clique ou Espaço para virar' });
+		front.createDiv({ cls: 'lembro-hint', text: typeCloze ? 'Enter confere e vira' : 'Clique ou Espaço para virar' });
 
 		const back = card.createDiv({ cls: 'lembro-face lembro-back' });
 		back.createDiv({ cls: 'lembro-tag', text: tag });
 		const bq = back.createDiv({ cls: 'lembro-backq' });
 		void MarkdownRenderer.render(this.app, frente, bq, sourcePath, this.render);
-		const check = typeCloze ? (this.typed.trim() ? checkCloze(this.typed, answer) : null) : letra && this.typed ? this.typed === letra : null;
+		const check = typeCloze ? (this.typed.trim() ? checkCloze(this.typed, answer) : null) : null;
 		if (check !== null) {
-			back.createDiv({ cls: 'lembro-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${typeCloze ? this.typed.trim() : this.typed.toUpperCase()}` });
+			back.createDiv({ cls: 'lembro-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${this.typed.trim()}` });
 		}
 		const a = back.createDiv({ cls: 'lembro-a' });
 		void MarkdownRenderer.render(this.app, answer, a, sourcePath, this.render);
@@ -368,18 +356,6 @@ export class ReviewView extends ItemView {
 		if (this.ended || !item?.fsrs) return;
 		await this.plugin.resetCard(item.card);
 		for (const it of this.queue) if (it.card.id === item.card.id) delete it.fsrs;
-		this.draw();
-	}
-
-	/** On the front of a question, marks the letter chosen before turning over. */
-	private answering(): boolean {
-		const item = this.current();
-		return !!item && !this.flipped && item.card.tipo === 'Questão' && !item.reverso && questaoLetra(item.card.verso) !== null;
-	}
-
-	private mark(letter: string): void {
-		if (!this.answering()) return;
-		this.typed = letter;
 		this.draw();
 	}
 

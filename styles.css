@@ -119,9 +119,6 @@
 
 /* resposta digitada */
 .lembro-type { width: 100%; margin-top: 16px; font-size: 1.05em; }
-.lembro-marks { display: flex; gap: 6px; margin-top: 14px; }
-.lembro-marks button { min-width: 36px; }
-.lembro-marks button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
 .lembro-verdict { font-weight: 600; font-size: var(--font-ui-medium); margin-bottom: 8px; }
 .lembro-verdict.is-ok { color: var(--color-green); }
 .lembro-verdict.is-bad { color: var(--color-red); }

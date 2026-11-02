@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkCloze, normalizeAnswer, questaoLetra } from '../src/review/answer';
+import { checkCloze, normalizeAnswer } from '../src/review/answer';
 
 describe('answer', () => {
 	it('normalizes accents and case', () => {
@@ -10,12 +10,5 @@ describe('answer', () => {
 		expect(checkCloze('fe', 'Fé')).toBe(true);
 		expect(checkCloze('', 'Fé')).toBe(false);
 		expect(checkCloze('esperança', 'Fé')).toBe(false);
-	});
-	it('reads the right letter of a question', () => {
-		expect(questaoLetra('(C) porque a árvore...')).toBe('c');
-		expect(questaoLetra('Gabarito: B. Explicação')).toBe('b');
-		expect(questaoLetra('Letra e, porque')).toBe('e');
-		expect(questaoLetra('D) a pilha')).toBe('d');
-		expect(questaoLetra('sem letra aqui')).toBe(null);
 	});
 });
