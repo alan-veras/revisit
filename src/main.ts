@@ -165,7 +165,7 @@ export default class LembroPlugin extends Plugin {
 		return new Set(this.store.log.filter((e) => !e.extra && new Date(e.t).toDateString() === day).map((e) => e.id));
 	}
 
-	session(area: string | null, minutes?: number, extra = false): QueueItem[] {
+	session(area: string | null, minutes?: number, extra = false, assunto: string | null = null): QueueItem[] {
 		const now = new Date();
 		const items = this.items();
 		const secs = this.secs();
@@ -182,6 +182,7 @@ export default class LembroPlugin extends Plugin {
 			retrievability: (c, n) => this.scheduler.retrievability(c, n),
 			gradedToday: this.gradedToday(now),
 			extra,
+			assunto,
 		});
 	}
 
@@ -203,9 +204,9 @@ export default class LembroPlugin extends Plugin {
 		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje`);
 	}
 
-	async review(area: string | null, minutes?: number, extra = false): Promise<void> {
+	async review(area: string | null, minutes?: number, extra = false, assunto: string | null = null): Promise<void> {
 		await this.reload();
-		await this.startReview(this.session(area, minutes, extra), area ?? 'Tudo', extra);
+		await this.startReview(this.session(area, minutes, extra, assunto), assunto ? `${area ?? 'Tudo'} > ${assunto}` : (area ?? 'Tudo'), extra);
 	}
 
 	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {

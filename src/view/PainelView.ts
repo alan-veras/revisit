@@ -1,5 +1,6 @@
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
 import { daysLabel, nextInterval } from '../notes/reread';
+import { assuntoTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
 import { retentionBy, reviewsPerDay } from '../srs/stats';
 import { cardSnippet } from './search';
@@ -13,6 +14,8 @@ export const VIEW_TYPE_PAINEL = 'lembro-painel';
 /** One screen: what fits today, the areas, and a search over every card. */
 export class PainelView extends ItemView {
 	private q = '';
+	/** tree rows opened (Área or Área > Assunto paths) */
+	private expanded = new Set<string>();
 	private tab: 'hoje' | 'notas' | 'progresso' = 'hoje';
 	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
 	private day: number | null = null;
@@ -63,16 +66,10 @@ export class PainelView extends ItemView {
 		go.onclick = () => void p.review(null);
 
 		const areas = wrap.createDiv({ cls: 'lembro-areas' });
+		const tree = assuntoTree(p.items().filter((it) => !it.reverso && !it.cloze));
 		for (const a of AREAS) {
-			const n = p.session(a).length;
-			const row = areas.createDiv({ cls: 'lembro-area' + (n ? '' : ' is-zero') });
-			row.createSpan({ text: a });
-			row.createSpan({ cls: 'lembro-area-n', text: n ? String(n) : '—' });
-			const icon = row.createSpan({ cls: 'lembro-area-go' });
-			if (n) {
-				setIcon(icon, 'chevron-right');
-				row.onclick = () => void p.review(a);
-			}
+			const node = tree.find((t) => t.area === a) ?? { path: a, name: a, area: a, assunto: null, cards: 0, children: [] };
+			this.drawNode(areas, node, 0);
 		}
 
 		const search = wrap.createDiv({ cls: 'lembro-search' });
@@ -84,6 +81,39 @@ export class PainelView extends ItemView {
 			this.drawResults(results);
 		};
 		this.drawResults(results);
+	}
+
+	/** One row of the Área > Assunto tree: clicking opens its subjects, the play button reviews it. */
+	private drawNode(parent: HTMLElement, node: TreeNode, depth: number): void {
+		const p = this.plugin;
+		const n = p.session(node.area, undefined, false, node.assunto).length;
+		const kids = node.children.length > 0;
+		const open = this.expanded.has(node.path);
+		const row = parent.createDiv({ cls: 'lembro-area' + (n || node.cards ? '' : ' is-zero') + (depth ? ' is-sub' : '') });
+		row.style.paddingLeft = `${4 + depth * 20}px`;
+		const caret = row.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
+		if (kids) setIcon(caret, 'chevron-right');
+		row.createSpan({ cls: 'lembro-area-name', text: node.name });
+		const count = row.createSpan({ cls: 'lembro-area-n', text: n ? String(n) : '—' });
+		setTooltip(count, `${n} para hoje · ${node.cards} ${node.cards === 1 ? 'cartão' : 'cartões'} no total`);
+		const play = row.createSpan({ cls: 'lembro-area-go' + (n ? '' : ' is-off') });
+		if (n) {
+			setIcon(play, 'play');
+			setTooltip(play, `Revisar ${node.assunto ?? node.area}`);
+			play.onclick = (e) => {
+				e.stopPropagation();
+				void p.review(node.area, undefined, false, node.assunto);
+			};
+		}
+		if (kids) {
+			row.addClass('is-branch');
+			row.onclick = () => {
+				if (open) this.expanded.delete(node.path);
+				else this.expanded.add(node.path);
+				this.draw();
+			};
+		} else if (n) row.onclick = () => void p.review(node.area, undefined, false, node.assunto);
+		if (open) for (const c of node.children) this.drawNode(parent, c, depth + 1);
 	}
 
 	/** Whole notes to reread: today's, the one being read, and the next ones. */
