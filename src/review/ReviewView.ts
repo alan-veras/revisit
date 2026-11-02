@@ -1,4 +1,6 @@
-import { Component, ItemView, MarkdownRenderer, Notice, Scope, WorkspaceLeaf } from 'obsidian';
+import { Component, ItemView, MarkdownRenderer, Notice, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
+import { sectionOf } from '../cards/section';
+import { clozes, hideCloze } from '../cards/cloze';
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
@@ -69,6 +71,8 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowRight', (e) => this.key(e, () => void this.redoNext()));
 		this.scope?.register([], 'q', (e) => this.key(e, () => this.finish()));
+		this.scope?.register([], 'Escape', (e) => this.key(e, () => void this.plugin.openPainel()));
+		this.scope?.register([], 'p', (e) => this.key(e, () => this.skip()));
 		this.draw();
 	}
 
@@ -128,6 +132,9 @@ export class ReviewView extends ItemView {
 
 		const head = root.createDiv({ cls: 'lembro-head' });
 		const headLeft = head.createSpan({ cls: 'lembro-head-left' });
+		const home = headLeft.createEl('button', { cls: 'lembro-back-btn lembro-home', attr: { 'aria-label': 'Voltar ao painel' } });
+		setIcon(home, 'layout-dashboard');
+		home.onclick = () => void this.plugin.openPainel();
 		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'lembro-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
@@ -143,9 +150,11 @@ export class ReviewView extends ItemView {
 		const scene = root.createDiv({ cls: 'lembro-scene' });
 		const card = scene.createDiv({ cls: 'lembro-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
-		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + item.card.assuntos.join('; ') : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}`;
-		const ask = item.reverso ? item.card.verso : item.card.frente;
-		const answer = item.reverso ? item.card.frente : item.card.verso;
+		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + item.card.assuntos.join('; ') : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}${sectionOf(item.card.fonte) ? ' · § ' + sectionOf(item.card.fonte) : ''}`;
+		const hole = item.cloze !== undefined ? clozes(item.card.frente)[item.cloze] : undefined;
+		const ask = hole !== undefined ? hideCloze(item.card.frente, item.cloze as number) : item.reverso ? item.card.verso : item.card.frente;
+		const answer = hole ?? (item.reverso ? item.card.frente : item.card.verso);
+		const extraBack = hole !== undefined ? item.card.verso : '';
 
 		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
 		front.createDiv({ cls: 'lembro-tag', text: tag });
@@ -184,6 +193,7 @@ export class ReviewView extends ItemView {
 		}
 		const a = back.createDiv({ cls: 'lembro-a' });
 		void MarkdownRenderer.render(this.app, answer, a, sourcePath, this.render);
+		if (extraBack) void MarkdownRenderer.render(this.app, extraBack, back.createDiv({ cls: 'lembro-muted' }), sourcePath, this.render);
 		if (item.card.fonte) {
 			const src = back.createDiv({ cls: 'lembro-src' });
 			void MarkdownRenderer.render(this.app, `Fonte: ${item.card.fonte}`, src, sourcePath, this.render);
@@ -201,7 +211,7 @@ export class ReviewView extends ItemView {
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · ← volta · → avança · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · P pula · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -332,6 +342,19 @@ export class ReviewView extends ItemView {
 		if (nota === undefined || this.ended || !this.current()) return;
 		this.revealed = true;
 		await this.grade(nota, true);
+	}
+
+	/** Puts the card at the end of the session without grading it. */
+	private skip(): void {
+		const item = this.current();
+		if (this.ended || !item || this.index >= this.queue.length - 1) return;
+		this.queue.splice(this.index, 1);
+		this.queue.push(item);
+		this.flipped = false;
+		this.revealed = false;
+		this.typed = '';
+		new Notice('Cartão pulado: volta no fim');
+		this.draw();
 	}
 
 	/** On the front of a question, marks the letter chosen before turning over. */

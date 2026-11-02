@@ -1,10 +1,12 @@
 import { Notice, Plugin, SuggestModal, TFile, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
+import { clozes } from './cards/cloze';
+import { parseInline } from './cards/inline';
 import { mirrorPath } from './cards/mirror';
 import { AREAS, Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
 import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
-import { captureContext, sourceLink } from './capture/selection';
+import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { DEFAULT_SETTINGS, LembroSettings, LembroSettingTab } from './settings';
 import { newAllowedToday, newToday, secsPerType } from './srs/budget';
@@ -35,9 +37,23 @@ export default class LembroPlugin extends Plugin {
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
 		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
 		this.addCommand({ id: 'review-extra', name: 'Sessão extra antes da prova', callback: () => this.pickArea(true) });
+		this.addCommand({ id: 'import-inline', name: 'Importar cartões escritos na nota', callback: () => void this.importInline(this.app.workspace.getActiveFile()) });
 		this.addCommand({ id: 'note-cards', name: 'Cartões desta nota', callback: () => void this.openNoteCards() });
 		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta nota', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!isSource(file)) return;
+				if (file.extension === 'md') menu.addItem((i) => i.setTitle('Importar cartões escritos nesta nota').setIcon('download').onClick(() => void this.importInline(file)));
+				menu.addItem((i) => i.setTitle('Revisar os cartões desta nota').setIcon('layers').onClick(() => void this.reviewNote(file)));
+				menu.addItem((i) =>
+					i.setTitle('Cartões desta nota').setIcon('layers').onClick(() => {
+						this.lastSource = file;
+						void this.openNoteCards();
+					}),
+				);
+			}),
+		);
 		this.registerEvent(
 			this.app.workspace.on('file-open', (f) => {
 				if (!isSource(f)) return;
@@ -56,6 +72,7 @@ export default class LembroPlugin extends Plugin {
 		this.statusEl.addClass('mod-clickable');
 		this.statusEl.onclick = () => void this.openPainel();
 
+		this.registerInterval(window.setInterval(() => void this.remind(), 60_000));
 		this.app.workspace.onLayoutReady(async () => {
 			const active = this.app.workspace.getActiveFile();
 			if (isSource(active)) this.lastSource = active;
@@ -122,11 +139,14 @@ export default class LembroPlugin extends Plugin {
 			if (!card.id) continue;
 			const area = this.areaOfCard(card);
 			const suspended = this.store.state[card.id]?.st === 'suspenso';
-			const keys: [string, boolean][] = [[card.id, false]];
-			if (card.reverso) keys.push([`${card.id}-r`, true]);
-			for (const [key, reverso] of keys) {
+			const holes = card.tipo === 'Lacuna' ? clozes(card.frente).length : 0;
+			const keys: [string, boolean, number | undefined][] = holes
+				? Array.from({ length: holes }, (_, i) => [i ? `${card.id as string}-c${i + 1}` : (card.id as string), false, i])
+				: [[card.id, false, undefined]];
+			if (card.reverso && !holes) keys.push([`${card.id}-r`, true, undefined]);
+			for (const [key, reverso, cloze] of keys) {
 				const st = this.store.state[key];
-				out.push({ key, reverso, card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
+				out.push({ key, reverso, ...(cloze !== undefined ? { cloze } : {}), card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
 			}
 		}
 		return out;
@@ -211,7 +231,7 @@ export default class LembroPlugin extends Plugin {
 
 	async openNoteCards(): Promise<void> {
 		const active = this.app.workspace.getActiveFile();
-		if (isSource(active)) this.lastSource = active;
+		if (!this.lastSource && isSource(active)) this.lastSource = active;
 		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTE)[0];
 		if (!leaf) {
 			leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split');
@@ -265,7 +285,7 @@ export default class LembroPlugin extends Plugin {
 			verso,
 			area: area || (this.settings.lastAssunto['__area'] ?? AREAS[0]),
 			assunto: (area && this.settings.lastAssunto[area]) ?? '',
-			fonte: sourceLink(file, ctx?.page ?? null),
+			fonte: sourceLink(file, ctx?.page ?? null, ctx && !ctx.isPdf ? headingAbove(ctx.noteText, ctx.cursorLine) : null),
 			context: ctx?.context ?? '',
 			sourcePath: path ?? '',
 		};
@@ -290,6 +310,62 @@ export default class LembroPlugin extends Plugin {
 		await this.saveSettings();
 		this.updateStatus();
 		new Notice(`Lembro: cartão criado em ${r.area}${r.assuntos.length ? ' > ' + r.assuntos[0] : ''} (^${id})`);
+	}
+
+	/** Copies the cards written in a note (`::`, `:::`, `?`, `??`) into the Lembro; the note is not changed. */
+	async importInline(file: TFile | null): Promise<void> {
+		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma nota primeiro.');
+		await this.reload();
+		const found = parseInline(await this.app.vault.cachedRead(file));
+		const have = new Set(this.cardsOf(file).map((c) => c.frente.trim()));
+		const fresh = found.filter((c) => !have.has(c.frente.trim()));
+		if (!fresh.length) return void new Notice(found.length ? 'Lembro: esses cartões já foram importados.' : 'Lembro: nenhum cartão :: ou ? nesta nota.');
+		const target = mirrorPath(file.path, this.settings.folder);
+		for (const c of fresh) {
+			await this.store.addCard(target, {
+				id: null,
+				tipo: 'Pergunta',
+				frente: c.frente,
+				verso: c.verso,
+				assuntos: [],
+				...(c.reverso ? { reverso: true } : {}),
+				fonte: sourceLink(file, null, c.heading),
+			});
+		}
+		await this.reload();
+		new Notice(`Lembro: ${fresh.length} ${fresh.length === 1 ? 'cartão importado' : 'cartões importados'} de ${file.basename}`);
+	}
+
+	/** Daily reminder: after the set hour, when cards wait and nothing was reviewed today. */
+	private async remind(): Promise<void> {
+		const r = this.settings.reminder;
+		if (!r) return;
+		const now = new Date();
+		const [h, m] = r.split(':').map(Number);
+		if (now.getHours() * 60 + now.getMinutes() < (h ?? 0) * 60 + (m ?? 0)) return;
+		if (this.settings.lastReminder === now.toDateString()) return;
+		if (this.gradedToday(now).size) return;
+		const n = this.session(null).length;
+		if (!n) return;
+		this.settings.lastReminder = now.toDateString();
+		await this.saveSettings();
+		const frag = createFragment();
+		frag.createSpan({ text: `Lembro: ${n} ${n === 1 ? 'cartão espera' : 'cartões esperam'} por você hoje. ` });
+		const btn = frag.createEl('button', { text: 'Revisar', cls: 'mod-cta' });
+		const notice = new Notice(frag, 0);
+		btn.addEventListener('click', () => {
+			notice.hide();
+			void this.review(null);
+		});
+	}
+
+	/** Forgets the schedule of a card (and its reverse): it is new again. */
+	async resetCard(card: Card): Promise<void> {
+		if (!card.id) return;
+		for (const k of Object.keys(this.store.state)) if (k === card.id || k.startsWith(card.id + '-')) delete this.store.state[k];
+		await this.store.saveState();
+		this.updateStatus();
+		new Notice('Lembro: cartão recomeçado, volta como novo');
 	}
 
 	editCard(card: Card, after?: () => void): void {

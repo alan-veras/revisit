@@ -1,4 +1,5 @@
 import { App, MarkdownView, TFile } from 'obsidian';
+export { headingAbove, sectionOf } from '../cards/section';
 
 export interface CaptureContext {
 	selection: string;
@@ -50,11 +51,11 @@ export async function captureContext(app: App): Promise<CaptureContext | null> {
 	return null;
 }
 
-/** `[[path|name]]`, or `[[file.pdf#page=12|file, p. 12]]`. */
-export function sourceLink(file: TFile | null, page: number | null): string {
+/** `[[path|name]]`, `[[path#Seção|name]]`, or `[[file.pdf#page=12|file, p. 12]]`. */
+export function sourceLink(file: TFile | null, page: number | null, heading: string | null = null): string {
 	if (!file) return '';
 	if (file.extension === 'pdf') {
 		return page ? `[[${file.path}#page=${page}|${file.basename}, p. ${page}]]` : `[[${file.path}|${file.basename}]]`;
 	}
-	return `[[${file.path.replace(/\.md$/, '')}|${file.basename}]]`;
+	return `[[${file.path.replace(/\.md$/, '')}${heading ? '#' + heading : ''}|${file.basename}]]`;
 }

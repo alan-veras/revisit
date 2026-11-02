@@ -45,7 +45,10 @@ export class NoteCardsView extends ItemView {
 			const box = root.createDiv({ cls: 'lembro-note-card' });
 			box.createDiv({ cls: 'lembro-note-front', text: c.frente.replace(/\s+/g, ' ').slice(0, 140) });
 			box.createDiv({ cls: 'lembro-muted lembro-small', text: [c.tipo, c.assuntos.join('; '), c.reverso ? 'dois sentidos' : ''].filter(Boolean).join(' · ') });
-			box.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(c, () => this.draw());
+			const b = box.createDiv({ cls: 'lembro-note-btns' });
+			b.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(c, () => this.draw());
+			const st = c.id ? this.plugin.store.state[c.id] : undefined;
+			if (st?.fsrs) b.createEl('button', { text: 'Recomeçar', attr: { title: 'Esquece a agenda: o cartão volta como novo' } }).onclick = () => void this.plugin.resetCard(c);
 		}
 	}
 }

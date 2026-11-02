@@ -11,6 +11,10 @@ export interface LembroSettings {
 	/** extra `pasta: Área` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
 	areaMap: Record<string, string>;
 	lastAssunto: Record<string, string>;
+	/** `HH:MM` of the daily reminder, empty when off */
+	reminder: string;
+	/** day (toDateString) the reminder last showed */
+	lastReminder: string;
 }
 
 export const DEFAULT_SETTINGS: LembroSettings = {
@@ -21,6 +25,8 @@ export const DEFAULT_SETTINGS: LembroSettings = {
 	interleave: true,
 	areaMap: {},
 	lastAssunto: {},
+	reminder: '',
+	lastReminder: '',
 };
 
 export class LembroSettingTab extends PluginSettingTab {
@@ -63,6 +69,11 @@ export class LembroSettingTab extends PluginSettingTab {
 				desc: 'Uma por linha, no formato pasta: área. As pastas de outputs, de resources e da bíblia já são reconhecidas.',
 				control: { type: 'textarea', key: 'areaMap' },
 			},
+			{
+				name: 'Lembrete diário',
+				desc: 'Hora no formato 20:00. Se ainda houver cartões e você não revisou hoje, aparece um aviso com o botão Revisar. Vazio desliga.',
+				control: { type: 'text', key: 'reminder', placeholder: '20:00' },
+			},
 		];
 	}
 
@@ -86,6 +97,7 @@ export class LembroSettingTab extends PluginSettingTab {
 			this.plugin.refreshScheduler();
 		} else if (key === 'interleave') s.interleave = Boolean(value);
 		else if (key === 'areaMap') s.areaMap = parseAreaMap(String(value));
+		else if (key === 'reminder') s.reminder = /^\d{1,2}:\d{2}$/.test(String(value).trim()) ? String(value).trim() : '';
 		await this.plugin.saveSettings();
 		this.plugin.updateStatus();
 	}

@@ -1,3 +1,4 @@
+import { clozes } from './cloze';
 import { Card, isTipo, Tipo } from './types';
 
 /**
@@ -73,7 +74,7 @@ export function parseBlock(block: Block): Card | null {
 	const get = (label: Label) => trimBlock((fields[label] ?? []).join('\n'));
 	const frente = get('Frente');
 	const verso = get('Verso');
-	if (!frente || !verso) return null;
+	if (!frente || (!verso && !clozes(frente).length)) return null;
 	const tipoRaw = get('Tipo');
 	const tipo: Tipo = isTipo(tipoRaw) ? tipoRaw : 'Pergunta';
 	const assuntos = get('Assunto')

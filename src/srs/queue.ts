@@ -6,6 +6,8 @@ export interface QueueItem {
 	/** key in estado.json and the log: the card id, plus `-r` for the reverse */
 	key: string;
 	reverso: boolean;
+	/** which `==highlight==` of a Lacuna this item asks, when the front has them */
+	cloze?: number;
 	card: Card;
 	area: string | null;
 	fsrs?: FsrsCard;
@@ -109,18 +111,22 @@ export function estimateMinutes(items: QueueItem[], secs: Record<Tipo, number>):
 	return Math.ceil(items.reduce((s, it) => s + secs[it.card.tipo], 0) / 60);
 }
 
-export function twinOf(key: string): string {
-	return key.endsWith('-r') ? key.slice(0, -2) : `${key}-r`;
+/** Card id of an item key: `lxxxxx`, `lxxxxx-r` (reverse) and `lxxxxx-c2` (second highlight) share it. */
+export function baseOf(key: string): string {
+	return key.replace(/-.*$/, '');
 }
 
-/** A card and its reverse never meet on the same day: the later one is left out. */
+/** Siblings of one card (reverse, other highlights) never meet on the same day: the later ones are left out. */
 export function buryGemeos(items: QueueItem[], gradedToday: Set<string>): QueueItem[] {
+	const graded = new Map<string, Set<string>>();
+	for (const k of gradedToday) graded.set(baseOf(k), (graded.get(baseOf(k)) ?? new Set()).add(k));
 	const seen = new Set<string>();
 	const out: QueueItem[] = [];
 	for (const it of items) {
-		const twin = twinOf(it.key);
-		if (seen.has(twin) || gradedToday.has(twin)) continue;
-		seen.add(it.key);
+		const base = baseOf(it.key);
+		if (seen.has(base)) continue;
+		if ([...(graded.get(base) ?? [])].some((k) => k !== it.key)) continue;
+		seen.add(base);
 		out.push(it);
 	}
 	return out;

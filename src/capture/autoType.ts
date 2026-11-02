@@ -1,3 +1,4 @@
+import { clozes } from '../cards/cloze';
 import { Tipo } from '../cards/types';
 
 export const LACUNA_MAX_WORDS = 8;
@@ -50,6 +51,7 @@ export function resolveOnSave(o: { tipo: Tipo; frente: string; verso: string; co
 	| { error: string } {
 	const frente = o.frente.trim();
 	const verso = o.verso.trim();
+	if (!verso && clozes(frente).length) return { tipo: 'Lacuna', frente, verso: '' };
 	if (!verso) return { error: 'O verso está vazio.' };
 	if (frente) return { tipo: o.tipo, frente, verso };
 	if (wordCount(verso) <= LACUNA_MAX_WORDS && o.context.trim()) {

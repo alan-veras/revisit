@@ -134,3 +134,6 @@
 .lembro-note h4 { margin: 0; font-size: var(--font-ui-medium); }
 .lembro-note-front { font-size: var(--font-ui-small); line-height: 1.4; }
 .lembro-note-card button { font-size: var(--font-ui-smaller); padding: 2px 10px; height: auto; }
+.lembro-home { display: inline-flex; align-items: center; padding: 4px 8px; }
+.lembro-home svg { width: 16px; height: 16px; }
+.lembro-note-btns { display: flex; gap: 6px; }
