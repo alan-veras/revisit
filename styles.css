@@ -47,3 +47,9 @@
 .lembro-preview p { margin: 2px 0; }
 .lembro-tip { font-size: var(--font-ui-smaller); color: var(--text-muted); border-top: 1px solid var(--background-modifier-border); margin-top: 12px; padding-top: 8px; }
 @media (max-width: 480px) { .lembro-grades { gap: 6px; } .lembro-q { font-size: 1.1em; } }
+
+/* question: statement and alternatives, left aligned, one per paragraph */
+.lembro-q.is-questao { text-align: left; justify-content: flex-start; font-size: 1.15em; font-weight: 400; line-height: 1.5; }
+.lembro-q.is-questao p { margin: 0 0 0.7em; }
+.lembro-q.is-questao p:first-child { margin-bottom: 1em; font-weight: 500; }
+.lembro-backq p { margin: 2px 0; }

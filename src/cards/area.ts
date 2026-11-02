@@ -23,3 +23,13 @@ export function linkPath(fonte: string): string | null {
 	const m = /\[\[([^\]|#]+)/.exec(fonte);
 	return m ? (m[1] as string).trim() : null;
 }
+
+/** `pasta: Área` lines into a map. */
+export function parseAreaMap(text: string): Record<string, string> {
+	const map: Record<string, string> = {};
+	for (const line of text.split('\n')) {
+		const i = line.lastIndexOf(':');
+		if (i > 0) map[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+	}
+	return map;
+}

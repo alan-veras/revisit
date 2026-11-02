@@ -2,7 +2,7 @@ import { Notice, Plugin, SuggestModal, TFile, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
 import { mirrorPath } from './cards/mirror';
 import { AREAS, Card } from './cards/types';
-import { bibleReference, initialType } from './capture/autoType';
+import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
 import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
 import { captureContext, sourceLink } from './capture/selection';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
@@ -166,7 +166,7 @@ export default class LembroPlugin extends Plugin {
 		let frente = '';
 		let verso = selection;
 		if (tipo === 'Questão') {
-			frente = selection;
+			frente = splitAlternatives(selection);
 			verso = '';
 		} else if (tipo === 'Referência' && ctx) {
 			frente = bibleReference(ctx.noteText, ctx.cursorLine) ?? '';

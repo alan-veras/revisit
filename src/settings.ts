@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
+import { parseAreaMap } from './cards/area';
 import type LembroPlugin from './main';
 
 export interface LembroSettings {
@@ -88,14 +89,4 @@ export class LembroSettingTab extends PluginSettingTab {
 		await this.plugin.saveSettings();
 		this.plugin.updateStatus();
 	}
-}
-
-/** `pasta: Área` lines into a map. */
-export function parseAreaMap(text: string): Record<string, string> {
-	const map: Record<string, string> = {};
-	for (const line of text.split('\n')) {
-		const i = line.lastIndexOf(':');
-		if (i > 0) map[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-	}
-	return map;
 }

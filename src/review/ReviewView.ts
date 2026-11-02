@@ -1,5 +1,6 @@
 import { Component, ItemView, MarkdownRenderer, Notice, Scope, WorkspaceLeaf } from 'obsidian';
 import { Card as FsrsCard } from 'ts-fsrs';
+import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
 import { estimateMinutes, QueueItem } from '../srs/queue';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
@@ -121,14 +122,16 @@ export class ReviewView extends ItemView {
 
 		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
 		front.createDiv({ cls: 'lembro-tag', text: tag });
-		const q = front.createDiv({ cls: 'lembro-q' });
-		void MarkdownRenderer.render(this.app, item.card.frente, q, sourcePath, this.render);
+		const isQuestao = item.card.tipo === 'Questão';
+		const frente = isQuestao ? splitAlternatives(item.card.frente) : item.card.frente;
+		const q = front.createDiv({ cls: 'lembro-q' + (isQuestao ? ' is-questao' : '') });
+		void MarkdownRenderer.render(this.app, frente, q, sourcePath, this.render);
 		front.createDiv({ cls: 'lembro-hint', text: 'Clique ou Espaço para virar' });
 
 		const back = card.createDiv({ cls: 'lembro-face lembro-back' });
 		back.createDiv({ cls: 'lembro-tag', text: tag });
 		const bq = back.createDiv({ cls: 'lembro-backq' });
-		void MarkdownRenderer.render(this.app, item.card.frente, bq, sourcePath, this.render);
+		void MarkdownRenderer.render(this.app, frente, bq, sourcePath, this.render);
 		const a = back.createDiv({ cls: 'lembro-a' });
 		void MarkdownRenderer.render(this.app, item.card.verso, a, sourcePath, this.render);
 		if (item.card.fonte) {

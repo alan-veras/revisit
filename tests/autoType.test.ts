@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibleReference, clozeFront, initialType, resolveOnSave } from '../src/capture/autoType';
+import { bibleReference, clozeFront, initialType, resolveOnSave, splitAlternatives } from '../src/capture/autoType';
 
 const HEB = `---
 tags: []
@@ -49,5 +49,19 @@ describe('resolveOnSave', () => {
 	});
 	it('clozeFront without context still hides', () => {
 		expect(clozeFront('', 'x')).toBe('[...]');
+	});
+});
+
+describe('splitAlternatives', () => {
+	it('puts each alternative on its own paragraph', () => {
+		expect(splitAlternatives('A fila retira o elemento que (A) foi inserido por último (B) foi inserido primeiro')).toBe(
+			'A fila retira o elemento que\n\n(A) foi inserido por último\n\n(B) foi inserido primeiro',
+		);
+	});
+	it('accepts lowercase and normalizes it', () => {
+		expect(splitAlternatives('Qual? (a) um (b) dois (c) três')).toBe('Qual?\n\n(A) um\n\n(B) dois\n\n(C) três');
+	});
+	it('leaves text with fewer than two alternatives alone', () => {
+		expect(splitAlternatives('O valor (A) é positivo')).toBe('O valor (A) é positivo');
 	});
 });

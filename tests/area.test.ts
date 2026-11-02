@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { areaOf, linkPath } from '../src/cards/area';
+import { areaOf, linkPath, parseAreaMap } from '../src/cards/area';
 import { mirrorPath } from '../src/cards/mirror';
-import { parseAreaMap } from '../src/settings';
 
 describe('areaOf', () => {
 	it('reads the five areas from outputs and resources', () => {

@@ -57,3 +57,20 @@ export function resolveOnSave(o: { tipo: Tipo; frente: string; verso: string; co
 	}
 	return { error: 'Escreva a pergunta: lacuna só vale para trecho curto.' };
 }
+
+const ALT_RE = /\s*\(([A-Ea-e])\)\s*/g;
+
+/**
+ * Puts each alternative of a question on its own paragraph:
+ * `enunciado (A) x (B) y` becomes `enunciado\n\n(A) x\n\n(B) y`.
+ * Only when there are at least two alternatives; otherwise the text stays.
+ */
+export function splitAlternatives(text: string): string {
+	const found = text.match(ALT_RE);
+	if (!found || found.length < 2) return text;
+	return text
+		.replace(ALT_RE, (_m, letter: string) => `\n\n(${letter.toUpperCase()}) `)
+		.replace(/^\n+/, '')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
