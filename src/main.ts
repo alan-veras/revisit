@@ -12,6 +12,7 @@ import { buildSession, dueReviews, estimateMinutes, QueueItem } from './srs/queu
 import { fromStored, Scheduler } from './srs/scheduler';
 import { Store } from './store/Store';
 import { PainelView, VIEW_TYPE_PAINEL } from './view/PainelView';
+import { registerCli } from './cli/commands';
 
 export default class LembroPlugin extends Plugin {
 	settings: LembroSettings = DEFAULT_SETTINGS;
@@ -27,6 +28,7 @@ export default class LembroPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_PAINEL, (leaf: WorkspaceLeaf) => new PainelView(leaf, this));
 		this.addCommand({ id: 'open-painel', name: 'Abrir painel', callback: () => void this.openPainel() });
 		this.addSettingTab(new LembroSettingTab(this.app, this));
+		registerCli(this);
 
 		this.addCommand({ id: 'capture', name: 'Adicionar à revisão', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
