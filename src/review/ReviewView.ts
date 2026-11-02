@@ -55,6 +55,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'e', (e) => this.key(e, () => this.edit()));
 		this.scope?.register([], 's', (e) => this.key(e, () => void this.suspend()));
 		this.scope?.register(['Mod'], 'z', (e) => this.key(e, () => void this.undoLast()));
+		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'q', (e) => this.key(e, () => this.finish()));
 		this.draw();
 	}
@@ -109,7 +110,11 @@ export class ReviewView extends ItemView {
 		if (!item) return this.drawEnd();
 
 		const head = root.createDiv({ cls: 'lembro-head' });
-		head.createSpan({ text: this.label });
+		const headLeft = head.createSpan({ cls: 'lembro-head-left' });
+		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'lembro-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
+		prevBtn.disabled = !this.undo.length;
+		prevBtn.onclick = () => void this.undoLast();
+		headLeft.createSpan({ text: this.label });
 		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
 		head.createSpan({ text: `${this.index + 1} de ${this.queue.length} · ~${Math.max(1, left)} min` });
 		const bar = root.createDiv({ cls: 'lembro-bar' });
@@ -151,7 +156,7 @@ export class ReviewView extends ItemView {
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · Ctrl+Z desfaz · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · ← volta ao anterior · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -183,6 +188,7 @@ export class ReviewView extends ItemView {
 			}
 		}
 		const btns = box.createDiv({ cls: 'lembro-buttons' });
+		if (this.undo.length) btns.createEl('button', { text: 'Voltar ao último cartão' }).onclick = () => void this.undoLast();
 		btns.createEl('button', { text: 'Mais 5 minutos', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
 	}
 
@@ -248,9 +254,10 @@ export class ReviewView extends ItemView {
 		const item = this.queue[u.index];
 		if (item) item.fsrs = u.before?.fsrs ? fromStored(u.before.fsrs) : undefined;
 		this.index = u.index;
+		this.ended = false;
 		this.flipped = false;
 		this.revealed = false;
-		new Notice('Avaliação desfeita');
+		new Notice('De volta ao cartão anterior');
 		this.plugin.updateStatus();
 		this.draw();
 	}
