@@ -189,6 +189,7 @@ export class ReviewView extends ItemView {
 		}
 		const btns = box.createDiv({ cls: 'lembro-buttons' });
 		if (this.undo.length) btns.createEl('button', { text: 'Voltar ao último cartão' }).onclick = () => void this.undoLast();
+		btns.createEl('button', { text: 'Voltar ao painel' }).onclick = () => void this.plugin.openPainel();
 		btns.createEl('button', { text: 'Mais 5 minutos', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
 	}
 

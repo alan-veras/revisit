@@ -56,3 +56,26 @@
 .lembro-backq p { margin: 2px 0; }
 .lembro-head-left { display: flex; align-items: center; gap: 8px; }
 .lembro-back-btn { padding: 2px 10px; height: auto; font-size: var(--font-ui-smaller); }
+
+/* painel: one screen */
+.lembro-painel { padding: 36px 16px 40px; }
+.lembro-painel-wrap { max-width: 520px; margin: 0 auto; }
+.lembro-hero { text-align: center; padding-bottom: 26px; }
+.lembro-big { font-size: 44px; font-weight: 600; line-height: 1; }
+.lembro-hero .lembro-muted { margin-top: 6px; }
+.lembro-go { margin-top: 18px; padding: 10px 34px; height: auto; font-weight: 600; }
+.lembro-areas { border-top: 1px solid var(--background-modifier-border); }
+.lembro-area { display: flex; align-items: center; gap: 10px; padding: 11px 4px; border-bottom: 1px solid var(--background-modifier-border); cursor: pointer; }
+.lembro-area:hover { background: var(--background-modifier-hover); }
+.lembro-area.is-zero { cursor: default; color: var(--text-faint); }
+.lembro-area.is-zero:hover { background: none; }
+.lembro-area-n { margin-left: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lembro-area-go { color: var(--text-faint); display: flex; width: 16px; }
+.lembro-search { margin-top: 26px; }
+.lembro-search input { width: 100%; }
+.lembro-result { display: flex; gap: 10px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--background-modifier-border); }
+.lembro-result-t { flex: 1; min-width: 0; }
+.lembro-result-f { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lembro-small { font-size: var(--font-ui-smaller); }
+.lembro-empty { padding: 10px 4px; }
+.lembro-result button { padding: 3px 10px; height: auto; font-size: var(--font-ui-smaller); }

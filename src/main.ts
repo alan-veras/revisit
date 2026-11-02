@@ -11,6 +11,7 @@ import { newAllowedToday, newToday, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, QueueItem } from './srs/queue';
 import { fromStored, Scheduler } from './srs/scheduler';
 import { Store } from './store/Store';
+import { PainelView, VIEW_TYPE_PAINEL } from './view/PainelView';
 
 export default class LembroPlugin extends Plugin {
 	settings: LembroSettings = DEFAULT_SETTINGS;
@@ -23,12 +24,14 @@ export default class LembroPlugin extends Plugin {
 		this.scheduler = new Scheduler(this.settings.retention);
 		this.store = new Store(this.app, () => this.settings.folder);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
+		this.registerView(VIEW_TYPE_PAINEL, (leaf: WorkspaceLeaf) => new PainelView(leaf, this));
+		this.addCommand({ id: 'open-painel', name: 'Abrir painel', callback: () => void this.openPainel() });
 		this.addSettingTab(new LembroSettingTab(this.app, this));
 
 		this.addCommand({ id: 'capture', name: 'Adicionar à revisão', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
 		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
-		this.addRibbonIcon('layers', 'Lembro: revisar', () => void this.review(null));
+		this.addRibbonIcon('layers', 'Lembro', () => void this.openPainel());
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				if (!editor.getSelection()) return;
@@ -37,7 +40,7 @@ export default class LembroPlugin extends Plugin {
 		);
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('mod-clickable');
-		this.statusEl.onclick = () => void this.review(null);
+		this.statusEl.onclick = () => void this.openPainel();
 
 		this.app.workspace.onLayoutReady(async () => {
 			await this.reload();
@@ -128,7 +131,18 @@ export default class LembroPlugin extends Plugin {
 		});
 	}
 
+	async openPainel(): Promise<void> {
+		await this.reload();
+		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)[0];
+		if (!leaf) {
+			leaf = this.app.workspace.getLeaf('tab');
+			await leaf.setViewState({ type: VIEW_TYPE_PAINEL, active: true });
+		}
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
 	updateStatus(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)) if (leaf.view instanceof PainelView) leaf.view.draw();
 		if (!this.statusEl) return;
 		const n = this.session(null).length;
 		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje`);
