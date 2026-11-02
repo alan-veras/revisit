@@ -107,3 +107,12 @@
 .lembro-hb-val { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
 .lembro-hb.is-none .lembro-hb-name, .lembro-hb.is-none .lembro-hb-val { color: var(--text-faint); }
 @media (max-width: 480px) { .lembro-kpi-v { font-size: 20px; } .lembro-hb { grid-template-columns: 110px 1fr 40px; } }
+.lembro-snippet { font-size: var(--font-ui-small); color: var(--text-muted); margin: 2px 0; }
+.lembro-snippet-campo { color: var(--text-faint); }
+.lembro-snippet mark { background: var(--text-highlight-bg); color: var(--text-normal); border-radius: 3px; padding: 0 2px; }
+.lembro-col.is-click { cursor: pointer; }
+.lembro-col.is-click:hover { background: var(--background-modifier-hover); border-radius: 4px 4px 0 0; }
+.lembro-col.is-picked { background: var(--background-modifier-hover); border-radius: 4px 4px 0 0; }
+.lembro-xl span.is-picked { color: var(--text-normal); font-weight: 600; }
+.lembro-daylist { margin-top: 12px; }
+.lembro-daylist-h { font-size: var(--font-ui-small); font-weight: 600; padding: 4px; border-bottom: 1px solid var(--background-modifier-border); }

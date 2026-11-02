@@ -1,24 +1,20 @@
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
 import { forecast } from '../srs/budget';
 import { retentionBy, reviewsPerDay } from '../srs/stats';
+import { cardSnippet } from './search';
 import { AREAS } from '../cards/types';
 import type LembroPlugin from '../main';
-import { estimateMinutes } from '../srs/queue';
+import { estimateMinutes, QueueItem } from '../srs/queue';
+import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PAINEL = 'lembro-painel';
-
-/** Without accents and case, so `fe` finds `fé`. */
-export function fold(text: string): string {
-	return text
-		.normalize('NFD')
-		.replace(/[̀-ͯ]/g, '')
-		.toLowerCase();
-}
 
 /** One screen: what fits today, the areas, and a search over every card. */
 export class PainelView extends ItemView {
 	private q = '';
 	private tab: 'hoje' | 'progresso' = 'hoje';
+	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
+	private day: number | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -90,18 +86,24 @@ export class PainelView extends ItemView {
 
 	private drawResults(el: HTMLElement): void {
 		el.empty();
-		const q = fold(this.q.trim());
-		if (!q) return;
+		if (!this.q.trim()) return;
 		const p = this.plugin;
-		const hits = p.store.cards.filter((c) => fold(`${c.frente} ${c.verso} ${c.assuntos.join(' ')} ${c.fonte}`).includes(q));
+		const hits = p.store.cards.map((c) => ({ c, m: cardSnippet(c, this.q) })).filter((h) => h.m);
 		if (!hits.length) {
 			el.createDiv({ cls: 'lembro-muted lembro-empty', text: `Nenhum cartão com “${this.q.trim()}”.` });
 			return;
 		}
-		for (const c of hits.slice(0, 50)) {
+		for (const { c, m } of hits.slice(0, 50)) {
 			const row = el.createDiv({ cls: 'lembro-result' });
 			const t = row.createDiv({ cls: 'lembro-result-t' });
 			t.createDiv({ cls: 'lembro-result-f', text: c.frente.replace(/\s+/g, ' ') });
+			if (m) {
+				const sn = t.createDiv({ cls: 'lembro-snippet' });
+				sn.createSpan({ cls: 'lembro-snippet-campo', text: `${m.campo}: ` });
+				sn.appendText(m.before);
+				sn.createEl('mark', { text: m.hit });
+				sn.appendText(m.after);
+			}
 			t.createDiv({ cls: 'lembro-muted lembro-small', text: [p.areaOfCard(c) ?? 'Sem área', c.assuntos.join('; '), c.tipo].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(c, () => this.draw());
 		}
@@ -138,14 +140,40 @@ export class PainelView extends ItemView {
 		const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 		const budget = p.settings.budgetMinutes;
 		const fut = forecast(items, p.secs(), now).map((m) => Math.ceil(m));
-		const lab7 = fut.map((_, i) => (i === 0 ? 'hoje' : (DIAS[(now.getDay() + i) % 7] as string)));
+		const lab7 = fut.map((_, i) => (i === 0 ? 'hoje' : i === 1 ? 'amanhã' : (DIAS[(now.getDay() + i) % 7] as string)));
+		// cards due on each of the next 7 days (overdue count today)
+		const start = new Date(now);
+		start.setHours(0, 0, 0, 0);
+		const byDay: QueueItem[][] = fut.map(() => []);
+		for (const it of items) {
+			if (it.suspended || !it.fsrs || isNew(it.fsrs)) continue;
+			const d = Math.max(0, Math.floor((it.fsrs.due.getTime() - start.getTime()) / 86400000));
+			if (d < 7) byDay[d]?.push(it);
+		}
+		const pick = this.day ?? Math.max(0, byDay.findIndex((l) => l.length));
+		const next = chart('Próximos 7 dias', 'Minutos previstos por dia; clique num dia para ver os cartões');
 		cols(
-			chart('Próximos 7 dias', 'Minutos de revisão previstos por dia'),
+			next,
 			fut,
 			lab7,
-			fut.map((v, i) => `${lab7[i] ?? ''} · ~${v} min${v > budget ? ' · passa do orçamento' : ''}`),
+			fut.map((v, i) => `${lab7[i] ?? ''} · ${byDay[i]?.length ?? 0} cartões · ~${v} min${v > budget ? ' · passa do orçamento' : ''}`),
 			budget,
+			pick,
+			(i) => {
+				this.day = i;
+				this.draw();
+			},
 		);
+		const list = next.createDiv({ cls: 'lembro-daylist' });
+		const cards = byDay[pick] ?? [];
+		list.createDiv({ cls: 'lembro-daylist-h', text: `${lab7[pick] ?? ''}: ${cards.length ? `${cards.length} ${cards.length === 1 ? 'cartão' : 'cartões'}` : 'nenhum cartão'}` });
+		for (const it of cards) {
+			const row = list.createDiv({ cls: 'lembro-result' });
+			const t = row.createDiv({ cls: 'lembro-result-t' });
+			t.createDiv({ cls: 'lembro-result-f', text: it.card.frente.replace(/\s+/g, ' ') });
+			t.createDiv({ cls: 'lembro-muted lembro-small', text: [it.area ?? 'Sem área', it.card.assuntos.join('; '), it.card.tipo].filter(Boolean).join(' · ') });
+			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(it.card, () => this.draw());
+		}
 		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);
 		cols(
 			chart('Últimos 30 dias', `${past.reduce((a, b) => a + b, 0)} revisões; dias sem barra não tiveram sessão`),
@@ -170,7 +198,7 @@ export class PainelView extends ItemView {
 }
 
 /** Single-series columns, one hue, optional limit line; the value shows on hover. */
-function cols(parent: HTMLElement, values: number[], labels: string[], tips: string[], limit?: number): void {
+function cols(parent: HTMLElement, values: number[], labels: string[], tips: string[], limit?: number, picked?: number, onPick?: (i: number) => void): void {
 	const max = Math.max(1, limit ?? 0, ...values) * 1.1;
 	const box = parent.createDiv({ cls: 'lembro-cols' });
 	if (limit) {
@@ -179,10 +207,11 @@ function cols(parent: HTMLElement, values: number[], labels: string[], tips: str
 		line.createSpan({ text: `orçamento ${limit} min` });
 	}
 	values.forEach((v, i) => {
-		const col = box.createDiv({ cls: 'lembro-col' });
+		const col = box.createDiv({ cls: 'lembro-col' + (onPick ? ' is-click' : '') + (picked === i ? ' is-picked' : '') });
+		if (onPick) col.onclick = () => onPick(i);
 		setTooltip(col, tips[i] ?? '');
 		col.createEl('i').style.height = `${(v / max) * 100}%`;
 	});
 	const xl = parent.createDiv({ cls: 'lembro-xl' });
-	for (const l of labels) xl.createSpan({ text: l });
+	labels.forEach((l, i) => xl.createSpan({ text: l, cls: picked === i ? 'is-picked' : '' }));
 }
