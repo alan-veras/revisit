@@ -79,3 +79,31 @@
 .lembro-small { font-size: var(--font-ui-smaller); }
 .lembro-empty { padding: 10px 4px; }
 .lembro-result button { padding: 3px 10px; height: auto; font-size: var(--font-ui-smaller); }
+
+/* painel: abas e progresso */
+.lembro-ptabs { display: flex; gap: 4px; justify-content: center; margin-bottom: 26px; }
+.lembro-ptabs button { box-shadow: none; background: none; color: var(--text-muted); border-radius: 20px; padding: 4px 12px; height: auto; }
+.lembro-ptabs button.is-on { background: var(--background-modifier-hover); color: var(--text-accent); font-weight: 600; }
+.lembro-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
+.lembro-kpi { border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 12px 14px; }
+.lembro-kpi-v { font-size: 26px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.lembro-kpi-s { font-size: 15px; font-weight: 400; }
+.lembro-chart { margin-bottom: 28px; }
+.lembro-chart h4 { margin: 0; font-size: 14px; }
+.lembro-cols { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 120px; margin-top: 10px; border-bottom: 1px solid var(--background-modifier-border); }
+.lembro-col { flex: 1; display: flex; justify-content: center; align-items: flex-end; height: 100%; }
+.lembro-col i { display: block; width: 100%; max-width: 24px; background: var(--interactive-accent); border-radius: 4px 4px 0 0; }
+.lembro-col:hover i { filter: brightness(1.12); }
+.lembro-limit { position: absolute; left: 0; right: 0; border-top: 1px solid var(--text-faint); pointer-events: none; }
+.lembro-limit span { position: absolute; right: 0; top: -17px; font-size: 11px; color: var(--text-muted); background: var(--background-primary); padding-left: 4px; }
+.lembro-xl { display: flex; gap: 2px; margin-top: 4px; }
+.lembro-xl span { flex: 1; text-align: center; font-size: 11px; color: var(--text-muted); }
+.lembro-hbars { margin-top: 10px; }
+.lembro-hb { display: grid; grid-template-columns: 150px 1fr 44px; gap: 10px; align-items: center; padding: 5px 0; }
+.lembro-hb-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lembro-hb-track { height: 12px; position: relative; }
+.lembro-hb-track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--interactive-accent); border-radius: 0 4px 4px 0; }
+.lembro-hb-track b { position: absolute; top: -3px; bottom: -3px; border-left: 1px solid var(--text-faint); }
+.lembro-hb-val { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.lembro-hb.is-none .lembro-hb-name, .lembro-hb.is-none .lembro-hb-val { color: var(--text-faint); }
+@media (max-width: 480px) { .lembro-kpi-v { font-size: 20px; } .lembro-hb { grid-template-columns: 110px 1fr 40px; } }

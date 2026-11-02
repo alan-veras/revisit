@@ -1,3 +1,4 @@
+import { State } from 'ts-fsrs';
 import { Tipo } from '../cards/types';
 
 export interface RevlogEntry {
@@ -47,4 +48,25 @@ export function newAllowedToday(dueMinutes: number, budgetMinutes: number, cap: 
 	if (used <= 0.8) return cap;
 	if (used >= 1) return 0;
 	return Math.floor(cap * ((1 - used) / 0.2));
+}
+
+/**
+ * Minutes of review per day, from today on: what is overdue counts today, then
+ * each card on the day it falls due. New and pending cards are left out.
+ */
+export function forecast(
+	items: { card: { tipo: Tipo; pendente?: boolean }; fsrs?: { due: Date; state: State }; suspended: boolean }[],
+	secs: Record<Tipo, number>,
+	now: Date,
+	days = 7,
+): number[] {
+	const out = new Array<number>(days).fill(0);
+	const start = new Date(now);
+	start.setHours(0, 0, 0, 0);
+	for (const it of items) {
+		if (it.suspended || it.card.pendente || !it.fsrs || it.fsrs.state === State.New) continue;
+		const d = Math.max(0, Math.floor((it.fsrs.due.getTime() - start.getTime()) / 86400000));
+		if (d < days) out[d] = (out[d] ?? 0) + secs[it.card.tipo];
+	}
+	return out.map((s) => Math.round(s / 6) / 10);
 }
