@@ -18,6 +18,8 @@ export class ReviewView extends ItemView {
 	private queue: QueueItem[] = [];
 	private index = 0;
 	private flipped = false;
+	/** the back of the current card was shown at least once */
+	private revealed = false;
 	private shownAt = 0;
 	private startedAt = 0;
 	private results: Record<Nota, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -73,6 +75,7 @@ export class ReviewView extends ItemView {
 		this.index = 0;
 		this.ended = false;
 		this.flipped = false;
+		this.revealed = false;
 		this.results = { 1: 0, 2: 0, 3: 0, 4: 0 };
 		this.wrong = [];
 		this.undo = [];
@@ -137,7 +140,7 @@ export class ReviewView extends ItemView {
 			this.flip();
 		};
 
-		const grades = root.createDiv({ cls: 'lembro-grades' + (this.flipped ? ' is-on' : '') });
+		const grades = root.createDiv({ cls: 'lembro-grades' + (this.revealed ? ' is-on' : '') });
 		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date());
 		for (const { nota, nome } of NOTAS) {
 			const b = grades.createEl('button', { cls: `lembro-g${nota}` });
@@ -145,7 +148,7 @@ export class ReviewView extends ItemView {
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · E edita · S suspende · Ctrl+Z desfaz · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · Ctrl+Z desfaz · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -180,16 +183,18 @@ export class ReviewView extends ItemView {
 		btns.createEl('button', { text: 'Mais 5 minutos', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
 	}
 
+	/** Turns the card over; again turns it back. The grades stay once the back was seen. */
 	private flip(): void {
-		if (this.ended || this.flipped || !this.current()) return;
-		this.flipped = true;
-		this.contentEl.querySelector('.lembro-card')?.addClass('is-flipped');
-		this.contentEl.querySelector('.lembro-grades')?.addClass('is-on');
+		if (this.ended || !this.current()) return;
+		this.flipped = !this.flipped;
+		if (this.flipped) this.revealed = true;
+		this.contentEl.querySelector('.lembro-card')?.toggleClass('is-flipped', this.flipped);
+		if (this.revealed) this.contentEl.querySelector('.lembro-grades')?.addClass('is-on');
 	}
 
 	private async grade(nota: Nota): Promise<void> {
 		const item = this.current();
-		if (this.ended || !item || !this.flipped || !item.card.id) return;
+		if (this.ended || !item || !this.revealed || !item.card.id) return;
 		const id = item.card.id;
 		const store = this.plugin.store;
 		const before = store.state[id] ? { ...store.state[id] } : undefined;
@@ -218,6 +223,7 @@ export class ReviewView extends ItemView {
 		if (nota === 1) this.wrong.push(item);
 		this.index++;
 		this.flipped = false;
+		this.revealed = false;
 		this.plugin.updateStatus();
 		this.draw();
 	}
@@ -240,6 +246,7 @@ export class ReviewView extends ItemView {
 		if (item) item.fsrs = u.before?.fsrs ? fromStored(u.before.fsrs) : undefined;
 		this.index = u.index;
 		this.flipped = false;
+		this.revealed = false;
 		new Notice('Avaliação desfeita');
 		this.plugin.updateStatus();
 		this.draw();
@@ -267,6 +274,7 @@ export class ReviewView extends ItemView {
 		new Notice('Cartão suspenso');
 		this.queue.splice(this.index, 1);
 		this.flipped = false;
+		this.revealed = false;
 		this.plugin.updateStatus();
 		this.draw();
 	}
