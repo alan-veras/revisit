@@ -1,0 +1,59 @@
+import { Tipo } from '../cards/types';
+
+export const LACUNA_MAX_WORDS = 8;
+
+export function wordCount(text: string): number {
+	return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+/** The type the capture window opens with. */
+export function initialType(o: { isPdf: boolean; path: string | null; selection: string }): Tipo {
+	if (o.isPdf && o.selection) return 'Questão';
+	if (o.path?.startsWith('2_The Bible/') && o.selection) return 'Referência';
+	return 'Pergunta';
+}
+
+/**
+ * `Hebreus 11:1` from a Bible chapter note: the chapter from the first heading
+ * shaped `# <Livro> <n> (...)`, the verse from the closest `###### <n>` heading
+ * at or above the cursor line. Null when the note is not shaped like that.
+ */
+export function bibleReference(noteText: string, cursorLine: number): string | null {
+	const lines = noteText.split('\n');
+	let chapter: string | null = null;
+	for (const line of lines) {
+		const m = /^#\s+(.+?\s\d+)\s*\(/.exec(line);
+		if (m) chapter = m[1] as string;
+	}
+	if (!chapter) return null;
+	for (let i = Math.min(cursorLine, lines.length - 1); i >= 0; i--) {
+		const m = /^######\s+(\d+)\s*$/.exec(lines[i] ?? '');
+		if (m) return `${chapter}:${m[1] as string}`;
+	}
+	return null;
+}
+
+/** Front of a cloze: the sentence with the selection covered. */
+export function clozeFront(context: string, selection: string): string {
+	const sel = selection.trim();
+	const ctx = context.trim();
+	if (!sel || !ctx.includes(sel)) return `[...]`;
+	return ctx.replace(sel, '[...]');
+}
+
+/**
+ * What a card becomes when saved: an empty front on a short selection turns into
+ * a cloze; an empty front on a long one is refused (returns an error message).
+ */
+export function resolveOnSave(o: { tipo: Tipo; frente: string; verso: string; context: string }):
+	| { tipo: Tipo; frente: string; verso: string }
+	| { error: string } {
+	const frente = o.frente.trim();
+	const verso = o.verso.trim();
+	if (!verso) return { error: 'O verso está vazio.' };
+	if (frente) return { tipo: o.tipo, frente, verso };
+	if (wordCount(verso) <= LACUNA_MAX_WORDS && o.context.trim()) {
+		return { tipo: 'Lacuna', frente: clozeFront(o.context, verso), verso };
+	}
+	return { error: 'Escreva a pergunta: lacuna só vale para trecho curto.' };
+}

@@ -1,0 +1,9 @@
+{
+	"id": "lembro",
+	"name": "Lembro",
+	"version": "0.1.0",
+	"minAppVersion": "1.13.0",
+	"description": "Flashcards made from your notes, scheduled with FSRS.",
+	"author": "Alan Veras",
+	"isDesktopOnly": true
+}
