@@ -9,7 +9,7 @@
 .lembro-face { position: absolute; inset: 0; overflow: auto; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 16px; box-shadow: var(--shadow-s); padding: 24px 26px; backface-visibility: hidden; display: flex; flex-direction: column; }
 .lembro-back { transform: rotateY(180deg); }
 .lembro-tag { font-size: var(--font-ui-smaller); color: var(--text-muted); }
-.lembro-q { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.3em; font-weight: 500; padding: 12px 0; }
+.lembro-q { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 1.3em; font-weight: 500; padding: 12px 0; }
 .lembro-q > div > p:first-child { margin-top: 0; }
 .lembro-backq { font-size: var(--font-ui-small); color: var(--text-muted); border-bottom: 1px solid var(--background-modifier-border); margin: 6px 0 10px; }
 .lembro-a { flex: 1; font-size: 1.1em; }
@@ -49,7 +49,8 @@
 @media (max-width: 480px) { .lembro-grades { gap: 6px; } .lembro-q { font-size: 1.1em; } }
 
 /* question: statement and alternatives, left aligned, one per paragraph */
-.lembro-q.is-questao { text-align: left; justify-content: flex-start; font-size: 1.15em; font-weight: 400; line-height: 1.5; }
+.lembro-q.is-questao { text-align: left; align-items: stretch; justify-content: center; font-size: 1.15em; font-weight: 400; line-height: 1.5; }
 .lembro-q.is-questao p { margin: 0 0 0.7em; }
 .lembro-q.is-questao p:first-child { margin-bottom: 1em; font-weight: 500; }
+.lembro-q.is-questao p:last-child { margin-bottom: 0; }
 .lembro-backq p { margin: 2px 0; }
