@@ -26,6 +26,8 @@ export class ReviewView extends ItemView {
 	private results: Record<Nota, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
 	private wrong: QueueItem[] = [];
 	private undo: Undo[] = [];
+	/** grades undone with ← that → gives back, newest last */
+	private redo: Nota[] = [];
 	private label = 'Tudo';
 	private ended = false;
 	private render = new Component();
@@ -56,6 +58,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 's', (e) => this.key(e, () => void this.suspend()));
 		this.scope?.register(['Mod'], 'z', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
+		this.scope?.register([], 'ArrowRight', (e) => this.key(e, () => void this.redoNext()));
 		this.scope?.register([], 'q', (e) => this.key(e, () => this.finish()));
 		this.draw();
 	}
@@ -81,6 +84,7 @@ export class ReviewView extends ItemView {
 		this.results = { 1: 0, 2: 0, 3: 0, 4: 0 };
 		this.wrong = [];
 		this.undo = [];
+		this.redo = [];
 		this.startedAt = Date.now();
 		this.draw();
 	}
@@ -114,6 +118,9 @@ export class ReviewView extends ItemView {
 		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'lembro-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
+		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'lembro-back-btn', attr: { title: 'Avança de novo com a mesma avaliação (→)' } });
+		nextBtn.disabled = !this.redo.length;
+		nextBtn.onclick = () => void this.redoNext();
 		headLeft.createSpan({ text: this.label });
 		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
 		head.createSpan({ text: `${this.index + 1} de ${this.queue.length} · ~${Math.max(1, left)} min` });
@@ -202,9 +209,10 @@ export class ReviewView extends ItemView {
 		if (this.revealed) this.contentEl.querySelector('.lembro-grades')?.addClass('is-on');
 	}
 
-	private async grade(nota: Nota): Promise<void> {
+	private async grade(nota: Nota, fromRedo = false): Promise<void> {
 		const item = this.current();
 		if (this.ended || !item || !this.revealed || !item.card.id) return;
+		if (!fromRedo) this.redo = [];
 		const id = item.card.id;
 		const store = this.plugin.store;
 		const before = store.state[id] ? { ...store.state[id] } : undefined;
@@ -248,6 +256,7 @@ export class ReviewView extends ItemView {
 		const last = store.log[store.log.length - 1];
 		if (last && last.id === u.id) {
 			const nota = last.nota as Nota;
+			this.redo.push(nota);
 			this.results[nota]--;
 			if (nota === 1) this.wrong = this.wrong.filter((w) => w.card.id !== u.id);
 			await store.popLog();
@@ -261,6 +270,14 @@ export class ReviewView extends ItemView {
 		new Notice('De volta ao cartão anterior');
 		this.plugin.updateStatus();
 		this.draw();
+	}
+
+	/** → after ←: gives the card back the grade it had, and moves on. */
+	private async redoNext(): Promise<void> {
+		const nota = this.redo.pop();
+		if (nota === undefined || this.ended || !this.current()) return;
+		this.revealed = true;
+		await this.grade(nota, true);
 	}
 
 	private edit(): void {
