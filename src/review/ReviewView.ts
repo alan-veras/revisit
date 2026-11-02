@@ -73,6 +73,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'q', (e) => this.key(e, () => this.finish()));
 		this.scope?.register([], 'Escape', (e) => this.key(e, () => void this.plugin.openPainel()));
 		this.scope?.register([], 'p', (e) => this.key(e, () => this.skip()));
+		this.scope?.register([], 'r', (e) => this.key(e, () => void this.restart()));
 		this.draw();
 	}
 
@@ -211,7 +212,14 @@ export class ReviewView extends ItemView {
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · P pula · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
+		const tools = root.createDiv({ cls: 'lembro-tools' });
+		const skipBtn = tools.createEl('button', { text: 'Pular', attr: { 'aria-label': 'Manda o cartão para o fim da sessão, sem avaliar' } });
+		skipBtn.disabled = this.index >= this.queue.length - 1;
+		skipBtn.onclick = () => this.skip();
+		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
+		resetBtn.disabled = !item.fsrs;
+		resetBtn.onclick = () => void this.restart();
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · P pula · R recomeça · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -354,6 +362,15 @@ export class ReviewView extends ItemView {
 		this.revealed = false;
 		this.typed = '';
 		new Notice('Cartão pulado: volta no fim');
+		this.draw();
+	}
+
+	/** Forgets the schedule of the current card; it stays in the session as a new card. */
+	private async restart(): Promise<void> {
+		const item = this.current();
+		if (this.ended || !item?.fsrs) return;
+		await this.plugin.resetCard(item.card);
+		for (const it of this.queue) if (it.card.id === item.card.id) delete it.fsrs;
 		this.draw();
 	}
 

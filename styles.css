@@ -149,3 +149,5 @@
 .lembro-reading { font-size: var(--font-ui-small); }
 .lembro-reading h3 { font-size: var(--font-ui-large); line-height: 1.3; }
 .lembro-reading .lembro-link { font-size: var(--font-ui-smaller); background: transparent; }
+.lembro-tools { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+.lembro-tools button { font-size: var(--font-ui-smaller); }
