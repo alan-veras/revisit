@@ -5,7 +5,7 @@ import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
 import { estimateMinutes, QueueItem, requeueIndex } from '../srs/queue';
-import { checkCloze } from './answer';
+import { checkCloze, hintWords } from './answer';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
@@ -39,6 +39,8 @@ export class ReviewView extends ItemView {
 	private extra = false;
 	/** typed cloze answer, or the letter marked on a question */
 	private typed = '';
+	/** words of the back shown as a hint on a Referência front */
+	private hint = 0;
 	private render = new Component();
 
 	constructor(
@@ -73,6 +75,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'Escape', (e) => this.key(e, () => void this.plugin.openPainel()));
 		this.scope?.register([], 'p', (e) => this.key(e, () => this.skip()));
 		this.scope?.register([], 'r', (e) => this.key(e, () => void this.restart()));
+		this.scope?.register([], 'd', (e) => this.key(e, () => this.moreHint()));
 		this.draw();
 	}
 
@@ -102,6 +105,7 @@ export class ReviewView extends ItemView {
 		this.undo = [];
 		this.redo = [];
 		this.typed = '';
+		this.hint = 0;
 		this.startedAt = Date.now();
 		this.draw();
 	}
@@ -170,6 +174,15 @@ export class ReviewView extends ItemView {
 			input.oninput = () => (this.typed = input.value);
 			window.setTimeout(() => input.focus(), 50);
 		}
+		if (this.canHint(item)) {
+			const dica = front.createDiv({ cls: 'lembro-dica' });
+			if (this.hint) dica.createDiv({ cls: 'lembro-dica-text', text: hintWords(item.card.verso, this.hint) });
+			const btn = dica.createEl('button', { text: 'Dica', attr: { 'aria-label': 'Mostra mais 3 palavras do texto' } });
+			btn.onclick = (e) => {
+				e.stopPropagation();
+				this.moreHint();
+			};
+		}
 		front.createDiv({ cls: 'lembro-hint', text: typeCloze ? 'Enter confere e vira' : 'Clique ou Espaço para virar' });
 
 		const back = card.createDiv({ cls: 'lembro-face lembro-back' });
@@ -207,7 +220,7 @@ export class ReviewView extends ItemView {
 		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · P pula · R recomeça · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · D dica · P pula · R recomeça · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -242,6 +255,19 @@ export class ReviewView extends ItemView {
 		if (this.undo.length) btns.createEl('button', { text: 'Voltar ao último cartão' }).onclick = () => void this.undoLast();
 		btns.createEl('button', { text: 'Voltar ao painel' }).onclick = () => void this.plugin.openPainel();
 		btns.createEl('button', { text: 'Mais 5 minutos', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
+	}
+
+	/** A Referência asked from the reference: the first words of the text can be revealed. */
+	private canHint(item: QueueItem): boolean {
+		return item.card.tipo === 'Referência' && !item.reverso && item.cloze === undefined;
+	}
+
+	/** Shows three more words of the back on the front. */
+	private moreHint(): void {
+		const item = this.current();
+		if (this.ended || !item || this.flipped || !this.canHint(item)) return;
+		this.hint += 3;
+		this.draw();
 	}
 
 	/** Turns the card over; again turns it back. The grades stay once the back was seen. */
@@ -292,6 +318,7 @@ export class ReviewView extends ItemView {
 		}
 		this.undo.push({ index: this.index, id, before, requeued });
 		this.typed = '';
+		this.hint = 0;
 		this.results[nota]++;
 		if (nota === 1 && !this.wrong.some((w) => w.key === item.key)) this.wrong.push(item);
 		this.index++;
@@ -321,6 +348,7 @@ export class ReviewView extends ItemView {
 		if (item) item.fsrs = u.before?.fsrs ? fromStored(u.before.fsrs) : undefined;
 		this.index = u.index;
 		this.typed = '';
+		this.hint = 0;
 		this.ended = false;
 		this.flipped = false;
 		this.revealed = false;
@@ -346,6 +374,7 @@ export class ReviewView extends ItemView {
 		this.flipped = false;
 		this.revealed = false;
 		this.typed = '';
+		this.hint = 0;
 		new Notice('Cartão pulado: volta no fim');
 		this.draw();
 	}
@@ -382,6 +411,7 @@ export class ReviewView extends ItemView {
 		const cid = item.card.id;
 		this.queue = this.queue.filter((it, i) => i < this.index || it.card.id !== cid);
 		this.flipped = false;
+		this.hint = 0;
 		this.revealed = false;
 		this.plugin.updateStatus();
 		this.draw();

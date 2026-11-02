@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { checkCloze, normalizeAnswer } from '../src/review/answer';
+import { checkCloze, hintWords, normalizeAnswer } from '../src/review/answer';
+
+describe('hintWords', () => {
+	it('gives the first words, skipping verse numbers and marks', () => {
+		const verso = '<sup>4</sup> Mesmo quando eu andar\n<sup>5</sup> **Preparas** um banquete';
+		expect(hintWords(verso, 3)).toBe('Mesmo quando eu…');
+		expect(hintWords(verso, 5)).toBe('Mesmo quando eu andar Preparas…');
+		expect(hintWords('**4** Ora, a fé', 1)).toBe('Ora,…');
+	});
+	it('shows the whole text without … when n covers it, and nothing for n = 0', () => {
+		expect(hintWords('Jesus chorou.', 9)).toBe('Jesus chorou.');
+		expect(hintWords('Jesus chorou.', 0)).toBe('');
+		expect(hintWords('', 3)).toBe('');
+	});
+});
 
 describe('answer', () => {
 	it('normalizes accents and case', () => {
