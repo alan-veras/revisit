@@ -1,7 +1,7 @@
-import { Notice, Plugin, SuggestModal, TFile, WorkspaceLeaf } from 'obsidian';
+import { getAllTags, Notice, Plugin, SuggestModal, TFile, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
 import { clozes } from './cards/cloze';
-import { parseInline } from './cards/inline';
+import { daysLabel, dueNotes, Leitura, read, Releitura } from './notes/reread';
 import { mirrorPath } from './cards/mirror';
 import { AREAS, Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
@@ -37,14 +37,21 @@ export default class LembroPlugin extends Plugin {
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
 		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
 		this.addCommand({ id: 'review-extra', name: 'Sessão extra antes da prova', callback: () => this.pickArea(true) });
-		this.addCommand({ id: 'import-inline', name: 'Importar cartões escritos na nota', callback: () => void this.importInline(this.app.workspace.getActiveFile()) });
+		this.addCommand({ id: 'reread-toggle', name: 'Reler esta nota de tempos em tempos (liga ou desliga)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
+		this.addCommand({ id: 'reread-next', name: 'Reler a próxima nota', callback: () => void this.openNextReread() });
 		this.addCommand({ id: 'note-cards', name: 'Cartões desta nota', callback: () => void this.openNoteCards() });
 		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta nota', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!isSource(file)) return;
-				if (file.extension === 'md') menu.addItem((i) => i.setTitle('Importar cartões escritos nesta nota').setIcon('download').onClick(() => void this.importInline(file)));
+				if (file.extension === 'md')
+					menu.addItem((i) =>
+						i
+							.setTitle(this.isReread(file.path) ? 'Parar de reler esta nota' : 'Reler esta nota de tempos em tempos')
+							.setIcon('book-open')
+							.onClick(() => void this.toggleReread(file)),
+					);
 				menu.addItem((i) => i.setTitle('Revisar os cartões desta nota').setIcon('layers').onClick(() => void this.reviewNote(file)));
 				menu.addItem((i) =>
 					i.setTitle('Cartões desta nota').setIcon('layers').onClick(() => {
@@ -312,28 +319,91 @@ export default class LembroPlugin extends Plugin {
 		new Notice(`Lembro: cartão criado em ${r.area}${r.assuntos.length ? ' > ' + r.assuntos[0] : ''} (^${id})`);
 	}
 
-	/** Copies the cards written in a note (`::`, `:::`, `?`, `??`) into the Lembro; the note is not changed. */
-	async importInline(file: TFile | null): Promise<void> {
-		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma nota primeiro.');
-		await this.reload();
-		const found = parseInline(await this.app.vault.cachedRead(file));
-		const have = new Set(this.cardsOf(file).map((c) => c.frente.trim()));
-		const fresh = found.filter((c) => !have.has(c.frente.trim()));
-		if (!fresh.length) return void new Notice(found.length ? 'Lembro: esses cartões já foram importados.' : 'Lembro: nenhum cartão :: ou ? nesta nota.');
-		const target = mirrorPath(file.path, this.settings.folder);
-		for (const c of fresh) {
-			await this.store.addCard(target, {
-				id: null,
-				tipo: 'Pergunta',
-				frente: c.frente,
-				verso: c.verso,
-				assuntos: [],
-				...(c.reverso ? { reverso: true } : {}),
-				fonte: sourceLink(file, null, c.heading),
+	// ---- releitura de notas inteiras ----
+
+	private rereadKey(path: string): string {
+		return `nota:${path}`;
+	}
+
+	private hasTag(file: TFile): boolean {
+		const tag = this.settings.rereadTag.toLowerCase();
+		if (!tag) return false;
+		const cache = this.app.metadataCache.getFileCache(file);
+		return !!cache && (getAllTags(cache) ?? []).some((t) => t.toLowerCase() === tag || t.toLowerCase().startsWith(tag + '/'));
+	}
+
+	isReread(path: string): boolean {
+		const st = this.store.state[this.rereadKey(path)];
+		if (st) return st.st === 'ativo';
+		const f = this.app.vault.getAbstractFileByPath(path);
+		return f instanceof TFile && this.hasTag(f);
+	}
+
+	/** Every note to reread, with its schedule: marked by command, or carrying the tag. */
+	rereadNotes(): { path: string; r?: Releitura }[] {
+		const paths = new Set<string>();
+		for (const [k, v] of Object.entries(this.store.state)) if (k.startsWith('nota:') && v.st === 'ativo') paths.add(k.slice(5));
+		if (this.settings.rereadTag) for (const f of this.app.vault.getMarkdownFiles()) if (!f.path.startsWith(this.settings.folder + '/') && this.hasTag(f)) paths.add(f.path);
+		return [...paths]
+			.filter((p) => this.store.state[this.rereadKey(p)]?.st !== 'suspenso' && this.app.vault.getAbstractFileByPath(p))
+			.sort()
+			.map((path) => {
+				const r = this.store.state[this.rereadKey(path)]?.releitura;
+				return r ? { path, r } : { path };
 			});
-		}
+	}
+
+	dueRereads(now = new Date()): string[] {
+		return dueNotes(this.rereadNotes(), now, this.settings.newNotesPerDay);
+	}
+
+	async toggleReread(file: TFile | null): Promise<void> {
+		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma nota primeiro.');
+		const key = this.rereadKey(file.path);
+		const on = !this.isReread(file.path);
+		this.store.state[key] = { ...(this.store.state[key] ?? {}), st: on ? 'ativo' : 'suspenso' };
+		await this.store.saveState();
+		this.updateStatus();
+		new Notice(on ? `Lembro: ${file.basename} entra na releitura` : `Lembro: ${file.basename} sai da releitura`);
+	}
+
+	/** Note being reread now, shown in the Notas tab of the painel. */
+	reading: string | null = null;
+
+	async openNextReread(): Promise<void> {
 		await this.reload();
-		new Notice(`Lembro: ${fresh.length} ${fresh.length === 1 ? 'cartão importado' : 'cartões importados'} de ${file.basename}`);
+		const next = this.dueRereads()[0];
+		if (!next) {
+			this.reading = null;
+			new Notice('Lembro: nenhuma nota para reler hoje.');
+		} else {
+			await this.openReread(next);
+			return;
+		}
+		this.updateStatus();
+	}
+
+	private readLeaf: WorkspaceLeaf | null = null;
+
+	/** Opens a note to reread beside the painel, reusing the same pane each time. */
+	async openReread(path: string): Promise<void> {
+		this.reading = path;
+		const f = this.app.vault.getAbstractFileByPath(path);
+		if (f instanceof TFile) {
+			const alive = this.readLeaf && this.app.workspace.getLeavesOfType('markdown').includes(this.readLeaf);
+			if (!alive) this.readLeaf = this.app.workspace.getLeaf('split', 'vertical');
+			await (this.readLeaf as WorkspaceLeaf).openFile(f);
+		}
+		this.updateStatus();
+	}
+
+	async gradeReread(path: string, l: Leitura): Promise<void> {
+		const key = this.rereadKey(path);
+		const prev = this.store.state[key]?.releitura;
+		this.store.state[key] = { st: 'ativo', releitura: read(prev, l, new Date()) };
+		await this.store.saveState();
+		new Notice(`Lembro: volta a esta nota em ${daysLabel(this.store.state[key].releitura?.dias ?? 1)}`);
+		await this.openNextReread();
 	}
 
 	/** Daily reminder: after the set hour, when cards wait and nothing was reviewed today. */

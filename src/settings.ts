@@ -13,6 +13,9 @@ export interface LembroSettings {
 	lastAssunto: Record<string, string>;
 	/** `HH:MM` of the daily reminder, empty when off */
 	reminder: string;
+	/** notes with this tag are reread too */
+	rereadTag: string;
+	newNotesPerDay: number;
 	/** day (toDateString) the reminder last showed */
 	lastReminder: string;
 }
@@ -26,6 +29,8 @@ export const DEFAULT_SETTINGS: LembroSettings = {
 	areaMap: {},
 	lastAssunto: {},
 	reminder: '',
+	rereadTag: '#review/permanent',
+	newNotesPerDay: 2,
 	lastReminder: '',
 };
 
@@ -70,6 +75,16 @@ export class LembroSettingTab extends PluginSettingTab {
 				control: { type: 'textarea', key: 'areaMap' },
 			},
 			{
+				name: 'Tag das notas para reler',
+				desc: 'Notas com esta tag entram na releitura, além das que você marca pelo comando. Vazio ignora a tag.',
+				control: { type: 'text', key: 'rereadTag', placeholder: '#review/permanent' },
+			},
+			{
+				name: 'Notas novas para reler por dia',
+				desc: 'Quantas notas que você nunca releu entram por dia.',
+				control: { type: 'number', key: 'newNotesPerDay', min: 0 },
+			},
+			{
 				name: 'Lembrete diário',
 				desc: 'Hora no formato 20:00. Se ainda houver cartões e você não revisou hoje, aparece um aviso com o botão Revisar. Vazio desliga.',
 				control: { type: 'text', key: 'reminder', placeholder: '20:00' },
@@ -97,6 +112,8 @@ export class LembroSettingTab extends PluginSettingTab {
 			this.plugin.refreshScheduler();
 		} else if (key === 'interleave') s.interleave = Boolean(value);
 		else if (key === 'areaMap') s.areaMap = parseAreaMap(String(value));
+		else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
+		else if (key === 'newNotesPerDay') s.newNotesPerDay = Math.max(0, Number(value) || 0);
 		else if (key === 'reminder') s.reminder = /^\d{1,2}:\d{2}$/.test(String(value).trim()) ? String(value).trim() : '';
 		await this.plugin.saveSettings();
 		this.plugin.updateStatus();

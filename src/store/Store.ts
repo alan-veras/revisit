@@ -3,11 +3,14 @@ import { appendCard, ensureIds, newId, parseCardFile, removeCard, replaceCard, s
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
+import { Releitura } from '../notes/reread';
 
 export type Estado = 'ativo' | 'suspenso';
 
 export interface CardState {
 	fsrs?: StoredFsrs;
+	/** notes to reread live here too, under the key `nota:<path>` */
+	releitura?: Releitura;
 	st: Estado;
 }
 

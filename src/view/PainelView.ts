@@ -1,4 +1,5 @@
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
+import { daysLabel, nextInterval } from '../notes/reread';
 import { forecast } from '../srs/budget';
 import { retentionBy, reviewsPerDay } from '../srs/stats';
 import { cardSnippet } from './search';
@@ -12,7 +13,7 @@ export const VIEW_TYPE_PAINEL = 'lembro-painel';
 /** One screen: what fits today, the areas, and a search over every card. */
 export class PainelView extends ItemView {
 	private q = '';
-	private tab: 'hoje' | 'progresso' = 'hoje';
+	private tab: 'hoje' | 'notas' | 'progresso' = 'hoje';
 	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
 	private day: number | null = null;
 
@@ -43,7 +44,7 @@ export class PainelView extends ItemView {
 		root.addClass('lembro-painel');
 		const wrap = root.createDiv({ cls: 'lembro-painel-wrap' });
 		const tabs = wrap.createDiv({ cls: 'lembro-ptabs' });
-		for (const [id, name] of [['hoje', 'Hoje'], ['progresso', 'Progresso']] as const) {
+		for (const [id, name] of [['hoje', 'Hoje'], ['notas', 'Notas'], ['progresso', 'Progresso']] as const) {
 			const b = tabs.createEl('button', { text: name, cls: this.tab === id ? 'is-on' : '' });
 			b.onclick = () => {
 				this.tab = id;
@@ -51,6 +52,7 @@ export class PainelView extends ItemView {
 			};
 		}
 		if (this.tab === 'progresso') return this.drawProgresso(wrap);
+		if (this.tab === 'notas') return this.drawNotas(wrap);
 
 		const today = p.session(null);
 		const hero = wrap.createDiv({ cls: 'lembro-hero' });
@@ -82,6 +84,77 @@ export class PainelView extends ItemView {
 			this.drawResults(results);
 		};
 		this.drawResults(results);
+	}
+
+	/** Whole notes to reread: today's, the one being read, and the next ones. */
+	private drawNotas(wrap: HTMLElement): void {
+		const p = this.plugin;
+		const now = new Date();
+		const due = p.dueRereads(now);
+		const all = p.rereadNotes();
+		const name = (path: string) => path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+		const open = (path: string) => void p.openReread(path);
+
+		const hero = wrap.createDiv({ cls: 'lembro-hero' });
+		hero.createDiv({ cls: 'lembro-big', text: String(due.length) });
+		hero.createDiv({ cls: 'lembro-muted', text: due.length ? `${due.length === 1 ? 'nota para reler' : 'notas para reler'} hoje` : 'nenhuma nota para reler hoje' });
+		const go = hero.createEl('button', { text: 'Ler a próxima', cls: 'mod-cta lembro-go' });
+		go.disabled = !due.length;
+		go.onclick = () => void p.openNextReread();
+
+		if (p.reading) {
+			const path = p.reading;
+			const box = wrap.createDiv({ cls: 'lembro-reading' });
+			box.createDiv({ cls: 'lembro-muted', text: 'Lendo agora' });
+			box.createEl('h3', { text: name(path) });
+			box.createDiv({ cls: 'lembro-muted', text: 'Terminou? Diga como foi a releitura:' });
+			const prev = all.find((n) => n.path === path)?.r;
+			const row = box.createDiv({ cls: 'lembro-reading-btns' });
+			for (const [l, nome] of [['dificil', 'Difícil'], ['bom', 'Bom'], ['facil', 'Fácil']] as const) {
+				const b = row.createEl('button', { cls: l === 'bom' ? 'mod-cta' : '' });
+				b.createEl('b', { text: nome });
+				b.createEl('small', { text: daysLabel(nextInterval(prev, l)) });
+				b.onclick = () => void p.gradeReread(path, l);
+			}
+			const skip = box.createEl('button', { text: 'Agora não', cls: 'lembro-link' });
+			skip.onclick = () => {
+				p.reading = null;
+				this.draw();
+			};
+		}
+
+		if (due.length) {
+			wrap.createEl('h4', { text: 'Para hoje', cls: 'lembro-sub' });
+			const list = wrap.createDiv({ cls: 'lembro-areas' });
+			for (const path of due) {
+				const r = all.find((n) => n.path === path)?.r;
+				const row = list.createDiv({ cls: 'lembro-area' });
+				row.createSpan({ text: name(path) });
+				row.createSpan({ cls: 'lembro-area-n', text: r ? `lida ${r.vezes}x` : 'nova' });
+				setIcon(row.createSpan({ cls: 'lembro-area-go' }), 'chevron-right');
+				row.onclick = () => open(path);
+			}
+		}
+
+		const later = all
+			.filter((n) => n.r && new Date(n.r.due) > now)
+			.sort((a, b) => (a.r?.due ?? '').localeCompare(b.r?.due ?? ''))
+			.slice(0, 8);
+		if (later.length) {
+			wrap.createEl('h4', { text: 'Próximas', cls: 'lembro-sub' });
+			const list = wrap.createDiv({ cls: 'lembro-areas' });
+			for (const n of later) {
+				const row = list.createDiv({ cls: 'lembro-area' });
+				row.createSpan({ text: name(n.path) });
+				row.createSpan({ cls: 'lembro-area-n', text: new Date(n.r?.due ?? '').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) });
+				row.onclick = () => open(n.path);
+			}
+		}
+
+		wrap.createEl('p', {
+			cls: 'lembro-muted lembro-small',
+			text: `${all.length} ${all.length === 1 ? 'nota' : 'notas'} na releitura. Para incluir uma nota, clique com o botão direito nela e escolha "Reler esta nota de tempos em tempos"${p.settings.rereadTag ? `, ou use a tag ${p.settings.rereadTag}` : ''}.`,
+		});
 	}
 
 	private drawResults(el: HTMLElement): void {
