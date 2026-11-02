@@ -3,6 +3,9 @@ import { Card, Tipo } from '../cards/types';
 import { isNew } from './scheduler';
 
 export interface QueueItem {
+	/** key in estado.json and the log: the card id, plus `-r` for the reverse */
+	key: string;
+	reverso: boolean;
 	card: Card;
 	area: string | null;
 	fsrs?: FsrsCard;
@@ -19,6 +22,10 @@ export interface QueueOptions {
 	secs: Record<Tipo, number>;
 	interleave: boolean;
 	retrievability: (card: FsrsCard, now: Date) => number;
+	/** keys graded today, to keep a card and its reverse apart */
+	gradedToday?: Set<string>;
+	/** extra session before an exam: everything in the filter, no new-card cap, no budget cut */
+	extra?: boolean;
 }
 
 export function matchesFilter(item: QueueItem, area?: string | null, assunto?: string | null): boolean {
@@ -67,11 +74,25 @@ export function dueReviews(items: QueueItem[], now: Date): QueueItem[] {
  */
 export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	const pool = items.filter((it) => !it.suspended && matchesFilter(it, o.area, o.assunto));
+	if (o.extra) {
+		const r = (it: QueueItem) => (it.fsrs ? o.retrievability(it.fsrs, o.now) : 0);
+		const all = [...pool].sort((a, b) => r(a) - r(b));
+		return buryGemeos(o.interleave ? interleave(all) : all, new Set());
+	}
 	const reviews = dueReviews(pool, o.now).sort(
 		(a, b) => o.retrievability(a.fsrs as FsrsCard, o.now) - o.retrievability(b.fsrs as FsrsCard, o.now),
 	);
-	const fresh = pool.filter((it) => isNew(it.fsrs)).slice(0, Math.max(0, o.newAllowed));
-	const ordered = o.interleave ? interleave(reviews).concat(interleave(fresh)) : reviews.concat(fresh);
+	// a new card and its new reverse count as one introduction
+	const fresh: QueueItem[] = [];
+	const introduced = new Set<string>();
+	for (const it of pool) {
+		if (!isNew(it.fsrs)) continue;
+		const base = it.card.id ?? it.key;
+		if (!introduced.has(base) && introduced.size >= Math.max(0, o.newAllowed)) continue;
+		introduced.add(base);
+		fresh.push(it);
+	}
+	const ordered = buryGemeos(o.interleave ? interleave(reviews).concat(interleave(fresh)) : reviews.concat(fresh), o.gradedToday ?? new Set());
 	const out: QueueItem[] = [];
 	let secs = 0;
 	const max = o.budgetMinutes * 60;
@@ -86,4 +107,32 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 
 export function estimateMinutes(items: QueueItem[], secs: Record<Tipo, number>): number {
 	return Math.ceil(items.reduce((s, it) => s + secs[it.card.tipo], 0) / 60);
+}
+
+export function twinOf(key: string): string {
+	return key.endsWith('-r') ? key.slice(0, -2) : `${key}-r`;
+}
+
+/** A card and its reverse never meet on the same day: the later one is left out. */
+export function buryGemeos(items: QueueItem[], gradedToday: Set<string>): QueueItem[] {
+	const seen = new Set<string>();
+	const out: QueueItem[] = [];
+	for (const it of items) {
+		const twin = twinOf(it.key);
+		if (seen.has(twin) || gradedToday.has(twin)) continue;
+		seen.add(it.key);
+		out.push(it);
+	}
+	return out;
+}
+
+/**
+ * Where a card graded now comes back in the same session: when its next due time
+ * falls before the session should end, a few cards ahead (or at the end); -1 otherwise.
+ */
+export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: Date, secs: Record<Tipo, number>, gap = 3): number {
+	const left = queue.slice(index + 1).reduce((s, it) => s + secs[it.card.tipo], 0);
+	const end = now.getTime() + Math.max(left, 600) * 1000;
+	if (due.getTime() > end) return -1;
+	return Math.min(queue.length, index + 1 + gap);
 }

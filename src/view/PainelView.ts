@@ -115,7 +115,7 @@ export class PainelView extends ItemView {
 		const items = p.items();
 		const log = p.store.log;
 		const meta = Math.round(p.settings.retention * 100);
-		const areaOf = new Map(items.map((i) => [i.card.id, i.area]));
+		const areaOf = new Map(items.map((i) => [i.key, i.area]));
 		const ret = retentionBy(log, (id) => areaOf.get(id) ?? null);
 		const all = [...ret.values()].reduce((a, r) => ({ ok: a.ok + r.ok, total: a.total + r.total }), { ok: 0, total: 0 });
 		const past = reviewsPerDay(log, now, 30);

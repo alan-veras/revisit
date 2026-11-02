@@ -12,8 +12,8 @@ import { Card, isTipo, Tipo } from './types';
  *   Fonte: [[...|Cronograma do CKA]] ^lk7q2a
  */
 
-type Label = 'Frente' | 'Verso' | 'Tipo' | 'Área' | 'Assunto' | 'Fonte';
-const LABEL_RE = /^(Frente|Verso|Tipo|Área|Assunto|Fonte):[ \t]?(.*)$/;
+type Label = 'Frente' | 'Verso' | 'Tipo' | 'Área' | 'Assunto' | 'Reverso' | 'Fonte';
+const LABEL_RE = /^(Frente|Verso|Tipo|Área|Assunto|Reverso|Fonte):[ \t]?(.*)$/;
 const ID_RE = /\s\^(l[a-z0-9]{5})\s*$/;
 const FENCE_RE = /^\s*(```|~~~)/;
 
@@ -81,7 +81,19 @@ export function parseBlock(block: Block): Card | null {
 		.map((a) => normalizeAssunto(a))
 		.filter(Boolean);
 	const area = get('Área');
-	return { id, tipo, frente, verso, ...(area ? { area } : {}), assuntos, fonte: get('Fonte'), start: block.start, end: block.end };
+	const reverso = /^(sim|s|yes|true)$/i.test(get('Reverso'));
+	return {
+		id,
+		tipo,
+		frente,
+		verso,
+		...(area ? { area } : {}),
+		assuntos,
+		...(reverso ? { reverso } : {}),
+		fonte: get('Fonte'),
+		start: block.start,
+		end: block.end,
+	};
 }
 
 export function parseCardFile(text: string): Card[] {
@@ -104,10 +116,13 @@ function field(label: Label, value: string): string {
 }
 
 /** Writes a card block (without the `---` separator). */
-export function serializeCard(card: Pick<Card, 'id' | 'tipo' | 'frente' | 'verso' | 'assuntos' | 'fonte' | 'area'>): string {
+export type CardFields = Pick<Card, 'id' | 'tipo' | 'frente' | 'verso' | 'assuntos' | 'fonte' | 'area' | 'reverso'>;
+
+export function serializeCard(card: CardFields): string {
 	const lines = [field('Frente', card.frente.trim()), field('Verso', card.verso.trim()), `Tipo: ${card.tipo}`];
 	if (card.area) lines.push(`Área: ${card.area}`);
 	if (card.assuntos.length) lines.push(`Assunto: ${card.assuntos.join('; ')}`);
+	if (card.reverso) lines.push('Reverso: sim');
 	if (card.fonte) lines.push(`Fonte: ${card.fonte}`);
 	if (card.id) {
 		const last = lines.length - 1;
@@ -169,4 +184,23 @@ export function ensureIds(text: string, taken: Set<string>, random?: () => numbe
 		added++;
 	}
 	return { text: added ? lines.join('\n') : text, added };
+}
+
+/**
+ * Rewrites `Fonte:` links that point to `from` (a vault path, with or without
+ * `.md`) so they point to `to`, keeping `#page=`, headings and aliases.
+ */
+export function renameSource(text: string, from: string, to: string): string {
+	const strip = (p: string) => p.replace(/\.md$/, '');
+	const a = strip(from);
+	const b = strip(to);
+	return text
+		.split('\n')
+		.map((line) => {
+			if (!line.startsWith('Fonte:')) return line;
+			return line.replace(/\[\[([^\]|#]+)([^\]]*)\]\]/g, (m, target: string, rest: string) =>
+				strip(target) === a ? `[[${b}${rest}]]` : m,
+			);
+		})
+		.join('\n');
 }

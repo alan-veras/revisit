@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
 import { DEFAULT_SECS, newAllowedToday, newToday, RevlogEntry, secsPerType } from '../src/srs/budget';
-import { buildSession, interleave, matchesFilter, QueueItem } from '../src/srs/queue';
+import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex } from '../src/srs/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/srs/scheduler';
 
 const NOW = new Date('2026-11-02T10:00:00');
@@ -18,7 +18,7 @@ function reviewed(id: string, daysAgo: number, assuntos: string[] = [], area = '
 	f = sch.apply(f, 3, at(lastAgo + 10));
 	f = sch.apply(f, 3, at(lastAgo));
 	f = { ...f, due: at(daysAgo) };
-	return { card: card(id, assuntos), area, fsrs: f, suspended: false };
+	return { key: id, reverso: false, card: card(id, assuntos), area, fsrs: f, suspended: false };
 }
 
 const opts = (over: Partial<Parameters<typeof buildSession>[1]> = {}) => ({
@@ -57,17 +57,17 @@ describe('scheduler', () => {
 
 describe('buildSession', () => {
 	it('puts the most at-risk reviews first, then new cards', () => {
-		const items = [reviewed('recent', 0, [], 'Carreira', 5), reviewed('old', 0, [], 'Carreira', 60), { card: card('new'), area: 'Carreira', suspended: false }];
+		const items = [reviewed('recent', 0, [], 'Carreira', 5), reviewed('old', 0, [], 'Carreira', 60), { key: 'new', reverso: false, card: card('new'), area: 'Carreira', suspended: false }];
 		expect(buildSession(items, opts()).map((i) => i.card.id)).toEqual(['old', 'recent', 'new']);
 	});
 	it('limits new cards and skips suspended and future ones', () => {
-		const fresh = ['a', 'b', 'c'].map((id) => ({ card: card(id), area: 'Carreira', suspended: false }));
+		const fresh = ['a', 'b', 'c'].map((id) => ({ key: id, reverso: false, card: card(id), area: 'Carreira', suspended: false }));
 		const future = reviewed('future', -5);
 		const susp = { ...reviewed('susp', 3), suspended: true };
 		expect(buildSession([...fresh, future, susp], opts({ newAllowed: 2 })).map((i) => i.card.id)).toEqual(['a', 'b']);
 	});
 	it('cuts at the time budget using seconds per type', () => {
-		const items = Array.from({ length: 10 }, (_, i) => ({ card: card(`q${i}`, [], 'Questão'), area: 'Carreira', suspended: false }));
+		const items = Array.from({ length: 10 }, (_, i) => ({ key: `q${i}`, reverso: false, card: card(`q${i}`, [], 'Questão'), area: 'Carreira', suspended: false }));
 		expect(buildSession(items, opts({ budgetMinutes: 3 }))).toHaveLength(3);
 	});
 	it('filters by area and by assunto prefix', () => {
@@ -80,6 +80,29 @@ describe('buildSession', () => {
 	it('interleaves by first assunto', () => {
 		const xs = [reviewed('a1', 1, ['A']), reviewed('a2', 1, ['A']), reviewed('b1', 1, ['B'])];
 		expect(interleave(xs).map((i) => i.card.id)).toEqual(['a1', 'b1', 'a2']);
+	});
+});
+
+describe('fase 2', () => {
+	const twin = (id: string): QueueItem[] => [
+		{ key: id, reverso: false, card: card(id), area: 'Carreira', suspended: false },
+		{ key: `${id}-r`, reverso: true, card: card(id), area: 'Carreira', suspended: false },
+	];
+	it('keeps a card and its reverse apart', () => {
+		expect(buryGemeos(twin('a'), new Set()).map((i) => i.key)).toEqual(['a']);
+		expect(buryGemeos(twin('a'), new Set(['a'])).map((i) => i.key)).toEqual(['a']);
+		expect(buildSession(twin('a').concat(twin('b')), opts({ newAllowed: 1 })).map((i) => i.key)).toEqual(['a']);
+	});
+	it('brings back a card due within the session', () => {
+		const q = Array.from({ length: 6 }, (_, i) => reviewed(`c${i}`, 1));
+		expect(requeueIndex(q, 0, new Date(NOW.getTime() + 60000), NOW, DEFAULT_SECS)).toBe(4);
+		expect(requeueIndex(q, 4, new Date(NOW.getTime() + 60000), NOW, DEFAULT_SECS)).toBe(6);
+		expect(requeueIndex(q, 0, new Date(NOW.getTime() + 86400000), NOW, DEFAULT_SECS)).toBe(-1);
+	});
+	it('extra session takes everything', () => {
+		const items = [reviewed('due', 1), reviewed('later', -20)];
+		expect(buildSession(items, opts({ extra: true })).map((i) => i.key).sort()).toEqual(['due', 'later']);
+		expect(buildSession(items, opts()).map((i) => i.key)).toEqual(['due']);
 	});
 });
 

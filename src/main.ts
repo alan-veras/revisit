@@ -12,6 +12,7 @@ import { buildSession, dueReviews, estimateMinutes, QueueItem } from './srs/queu
 import { fromStored, Scheduler } from './srs/scheduler';
 import { Store } from './store/Store';
 import { PainelView, VIEW_TYPE_PAINEL } from './view/PainelView';
+import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
 import { registerCli } from './cli/commands';
 
 export default class LembroPlugin extends Plugin {
@@ -33,6 +34,17 @@ export default class LembroPlugin extends Plugin {
 		this.addCommand({ id: 'capture', name: 'Adicionar à revisão', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
 		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
+		this.addCommand({ id: 'review-extra', name: 'Sessão extra antes da prova', callback: () => this.pickArea(true) });
+		this.addCommand({ id: 'note-cards', name: 'Cartões desta nota', callback: () => void this.openNoteCards() });
+		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta nota', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
+		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
+		this.registerEvent(
+			this.app.workspace.on('file-open', (f) => {
+				if (!isSource(f)) return;
+				this.lastSource = f;
+				this.redrawNoteCards();
+			}),
+		);
 		this.addRibbonIcon('layers', 'Lembro', () => void this.openPainel());
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
@@ -45,6 +57,8 @@ export default class LembroPlugin extends Plugin {
 		this.statusEl.onclick = () => void this.openPainel();
 
 		this.app.workspace.onLayoutReady(async () => {
+			const active = this.app.workspace.getActiveFile();
+			if (isSource(active)) this.lastSource = active;
 			await this.reload();
 			// a card file edited by hand (or by an agent) is read again
 			this.registerEvent(
@@ -101,21 +115,30 @@ export default class LembroPlugin extends Plugin {
 		return file ? file.path : link;
 	}
 
+	/** One item per card, plus one for its reverse (key `id-r`). Suspending the card suspends both. */
 	items(): QueueItem[] {
-		return this.store.cards
-			.filter((c) => c.id)
-			.map((card) => {
-				const st = this.store.state[card.id as string];
-				return {
-					card,
-					area: this.areaOfCard(card),
-					...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}),
-					suspended: st?.st === 'suspenso',
-				};
-			});
+		const out: QueueItem[] = [];
+		for (const card of this.store.cards) {
+			if (!card.id) continue;
+			const area = this.areaOfCard(card);
+			const suspended = this.store.state[card.id]?.st === 'suspenso';
+			const keys: [string, boolean][] = [[card.id, false]];
+			if (card.reverso) keys.push([`${card.id}-r`, true]);
+			for (const [key, reverso] of keys) {
+				const st = this.store.state[key];
+				out.push({ key, reverso, card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
+			}
+		}
+		return out;
 	}
 
-	session(area: string | null, minutes?: number): QueueItem[] {
+	/** Keys graded today, outside extra sessions. */
+	gradedToday(now = new Date()): Set<string> {
+		const day = now.toDateString();
+		return new Set(this.store.log.filter((e) => !e.extra && new Date(e.t).toDateString() === day).map((e) => e.id));
+	}
+
+	session(area: string | null, minutes?: number, extra = false): QueueItem[] {
 		const now = new Date();
 		const items = this.items();
 		const secs = this.secs();
@@ -130,6 +153,8 @@ export default class LembroPlugin extends Plugin {
 			secs,
 			interleave: this.settings.interleave,
 			retrievability: (c, n) => this.scheduler.retrievability(c, n),
+			gradedToday: this.gradedToday(now),
+			extra,
 		});
 	}
 
@@ -144,15 +169,19 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	updateStatus(): void {
+		this.redrawNoteCards();
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)) if (leaf.view instanceof PainelView) leaf.view.draw();
 		if (!this.statusEl) return;
 		const n = this.session(null).length;
 		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje`);
 	}
 
-	async review(area: string | null, minutes?: number): Promise<void> {
+	async review(area: string | null, minutes?: number, extra = false): Promise<void> {
 		await this.reload();
-		const queue = this.session(area, minutes);
+		await this.startReview(this.session(area, minutes, extra), area ?? 'Tudo', extra);
+	}
+
+	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
 		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
 		if (!leaf) {
 			leaf = this.app.workspace.getLeaf('tab');
@@ -160,12 +189,55 @@ export default class LembroPlugin extends Plugin {
 		}
 		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view;
-		if (view instanceof ReviewView) view.start(queue, area ?? 'Tudo');
+		if (view instanceof ReviewView) view.start(queue, label, extra);
 		if (!queue.length) new Notice('Lembro: nada para revisar agora.');
 	}
 
-	private pickArea(): void {
-		new AreaModal(this).open();
+	private pickArea(extra = false): void {
+		new AreaModal(this, extra).open();
+	}
+
+	/** Last note or PDF opened, followed by the side panel. */
+	lastSource: TFile | null = null;
+
+	/** Cards whose source is this file. */
+	cardsOf(file: TFile): Card[] {
+		return this.store.cards.filter((c) => c.id && this.resolveSource(c) === file.path);
+	}
+
+	redrawNoteCards(): void {
+		for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTE)) if (l.view instanceof NoteCardsView) l.view.draw();
+	}
+
+	async openNoteCards(): Promise<void> {
+		const active = this.app.workspace.getActiveFile();
+		if (isSource(active)) this.lastSource = active;
+		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTE)[0];
+		if (!leaf) {
+			leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split');
+			await leaf.setViewState({ type: VIEW_TYPE_NOTE, active: true });
+		}
+		await this.app.workspace.revealLeaf(leaf);
+		this.redrawNoteCards();
+	}
+
+	/** Every due or new card of one note, outside the daily caps. */
+	async reviewNote(file: TFile | null): Promise<void> {
+		if (!file) return void new Notice('Lembro: abra uma nota primeiro.');
+		await this.reload();
+		const now = new Date();
+		const items = this.items().filter((it) => this.resolveSource(it.card) === file.path);
+		const queue = buildSession(items, {
+			now,
+			area: null,
+			budgetMinutes: 600,
+			newAllowed: items.length,
+			secs: this.secs(),
+			interleave: false,
+			retrievability: (c, n) => this.scheduler.retrievability(c, n),
+			gradedToday: this.gradedToday(now),
+		});
+		await this.startReview(queue, file.basename, false);
 	}
 
 	assuntos(): string[] {
@@ -210,6 +282,7 @@ export default class LembroPlugin extends Plugin {
 			verso: r.verso,
 			...(r.area && r.area !== derivedArea ? { area: r.area } : {}),
 			assuntos: r.assuntos,
+			...(r.reverso ? { reverso: true } : {}),
 			fonte: r.fonte,
 		});
 		this.settings.lastAssunto[r.area] = r.assuntos.join('; ');
@@ -234,6 +307,7 @@ export default class LembroPlugin extends Plugin {
 				verso: r.verso,
 				...(r.area && r.area !== derived ? { area: r.area } : {}),
 				assuntos: r.assuntos,
+				...(r.reverso ? { reverso: true } : {}),
 				fonte: r.fonte,
 			});
 			this.updateStatus();
@@ -248,16 +322,20 @@ export default class LembroPlugin extends Plugin {
 
 
 class AreaModal extends SuggestModal<string> {
-	constructor(private plugin: LembroPlugin) {
+	constructor(
+		private plugin: LembroPlugin,
+		private extra = false,
+	) {
 		super(plugin.app);
+		if (extra) this.setPlaceholder('Sessão extra: todos os cartões da área, sem mudar a agenda');
 	}
 	getSuggestions(q: string): string[] {
 		return AREAS.filter((a) => a.toLowerCase().includes(q.toLowerCase()));
 	}
 	renderSuggestion(a: string, el: HTMLElement): void {
-		el.setText(`${a} · ${this.plugin.session(a).length}`);
+		el.setText(`${a} · ${this.plugin.session(a, undefined, this.extra).length}`);
 	}
 	onChooseSuggestion(a: string): void {
-		void this.plugin.review(a);
+		void this.plugin.review(a, undefined, this.extra);
 	}
 }

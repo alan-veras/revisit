@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, ensureIds, normalizeAssunto, parseCardFile, removeCard, replaceCard, serializeCard } from '../src/cards/format';
+import { appendCard, ensureIds, normalizeAssunto, parseCardFile, removeCard, renameSource, replaceCard, serializeCard } from '../src/cards/format';
 
 const FILE = `Frente: Como desfazer o último rollout de um deployment?
 Verso:
@@ -93,5 +93,17 @@ describe('ensureIds', () => {
 describe('normalizeAssunto', () => {
 	it('trims the levels', () => {
 		expect(normalizeAssunto(' Concursos>TI  >  Árvores ')).toBe('Concursos > TI > Árvores');
+	});
+	it('reads and writes Reverso', () => {
+		const c = parseCardFile('Frente: a\nVerso: b\nReverso: sim ^labcde')[0];
+		expect(c?.reverso).toBe(true);
+		expect(serializeCard({ ...(c as NonNullable<typeof c>) })).toContain('Reverso: sim ^labcde');
+	});
+	it('renames a source link', () => {
+		const t = 'Frente: a\nVerso: b\nFonte: [[3_Outputs/X/Nota|Nota]] ^labcde\n\n---\n\nFonte: [[Outra]]';
+		const out = renameSource(t, '3_Outputs/X/Nota.md', '3_Outputs/Y/Nova.md');
+		expect(out).toContain('[[3_Outputs/Y/Nova|Nota]] ^labcde');
+		expect(out).toContain('[[Outra]]');
+		expect(renameSource('Fonte: [[a.pdf#page=3|a, p. 3]]', 'a.pdf', 'b/a.pdf')).toBe('Fonte: [[b/a.pdf#page=3|a, p. 3]]');
 	});
 });

@@ -21,7 +21,7 @@ interface Command {
 	run: (p: Params, plugin: LembroPlugin) => Promise<string>;
 }
 
-const BOOL_FLAGS = ['dry', 'reativar'];
+const BOOL_FLAGS = ['dry', 'reativar', 'reverso'];
 
 function stateOf(it: QueueItem): string {
 	if (it.suspended) return 'suspenso';
@@ -121,7 +121,7 @@ const COMMANDS: Record<string, Command> = {
 	},
 	novo: {
 		desc: 'Cria um cartão no arquivo-espelho da fonte',
-		flags: { frente: 'Frente (\\n quebra linha)', verso: 'Verso', fonte: 'Link [[...]] da origem', assunto: 'Assunto; outro', tipo: 'Pergunta, Lacuna, Referência, Questão', area: 'Dedicação, se a fonte não disser', dry: 'Só mostra, não grava' },
+		flags: { frente: 'Frente (\\n quebra linha)', verso: 'Verso', fonte: 'Link [[...]] da origem', assunto: 'Assunto; outro', tipo: 'Pergunta, Lacuna, Referência, Questão', area: 'Dedicação, se a fonte não disser', reverso: 'Revisar também do verso para a frente', dry: 'Só mostra, não grava' },
 		run: async (p, plugin) => {
 			const tipo = tipoOf(p.tipo ?? 'Pergunta');
 			const fonte = p.fonte ?? '';
@@ -134,6 +134,7 @@ const COMMANDS: Record<string, Command> = {
 				verso: unescape(need(p, 'verso')),
 				...(a && a !== derived ? { area: a } : {}),
 				assuntos: assuntosOf(p),
+				...(flag(p, 'reverso') ? { reverso: true } : {}),
 				fonte,
 			};
 			if (flag(p, 'dry')) return json({ dry: true, arquivo: path, area: a ?? derived, cartao: card });

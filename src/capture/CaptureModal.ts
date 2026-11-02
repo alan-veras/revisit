@@ -14,6 +14,7 @@ export interface CaptureDraft {
 	context: string;
 	/** where the source note is, to resolve links in the preview */
 	sourcePath: string;
+	reverso?: boolean;
 }
 
 export interface CaptureResult {
@@ -23,6 +24,7 @@ export interface CaptureResult {
 	area: string;
 	assuntos: string[];
 	fonte: string;
+	reverso: boolean;
 }
 
 /** The capture window: one front, one back, the area and the subject. */
@@ -82,6 +84,12 @@ export class CaptureModal extends Modal {
 		fonteBox.createEl('label', { text: 'Fonte' });
 		const fonte = fonteBox.createEl('input', { type: 'text', value: this.draft.fonte });
 		fonte.oninput = () => (this.draft.fonte = fonte.value);
+
+		const rev = contentEl.createEl('label', { cls: 'lembro-check' });
+		const cb = rev.createEl('input', { type: 'checkbox' });
+		cb.checked = !!this.draft.reverso;
+		cb.onchange = () => (this.draft.reverso = cb.checked);
+		rev.appendText(' Revisar nos dois sentidos (o verso também vira pergunta)');
 
 		contentEl.createEl('label', { text: 'Prévia', cls: 'lembro-label' });
 		this.preview = contentEl.createDiv({ cls: 'lembro-preview' });
@@ -150,7 +158,7 @@ export class CaptureModal extends Modal {
 			.map(normalizeAssunto)
 			.filter(Boolean);
 		try {
-			await this.onSave({ ...r, area: this.draft.area, assuntos, fonte: this.draft.fonte.trim() });
+			await this.onSave({ ...r, area: this.draft.area, assuntos, fonte: this.draft.fonte.trim(), reverso: !!this.draft.reverso });
 			this.close();
 		} catch (e) {
 			new Notice(`Lembro: ${e instanceof Error ? e.message : String(e)}`);
@@ -173,5 +181,6 @@ export function draftFromCard(card: Card, area: string, sourcePath: string): Cap
 		fonte: card.fonte,
 		context: '',
 		sourcePath,
+		reverso: !!card.reverso,
 	};
 }

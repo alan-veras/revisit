@@ -2,7 +2,8 @@ import { Component, ItemView, MarkdownRenderer, Notice, Scope, WorkspaceLeaf } f
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
-import { estimateMinutes, QueueItem } from '../srs/queue';
+import { estimateMinutes, QueueItem, requeueIndex } from '../srs/queue';
+import { checkCloze, questaoLetra } from './answer';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
@@ -12,6 +13,8 @@ interface Undo {
 	index: number;
 	id: string;
 	before: CardState | undefined;
+	/** where the card was put back in this session, if it was */
+	requeued: number;
 }
 
 /** The session: one card at a time, the front first, then it turns over. */
@@ -30,6 +33,10 @@ export class ReviewView extends ItemView {
 	private redo: Nota[] = [];
 	private label = 'Tudo';
 	private ended = false;
+	/** extra session: grades go to the log only, the schedule stays */
+	private extra = false;
+	/** typed cloze answer, or the letter marked on a question */
+	private typed = '';
 	private render = new Component();
 
 	constructor(
@@ -54,7 +61,9 @@ export class ReviewView extends ItemView {
 		this.scope = new Scope(this.app.scope);
 		this.scope?.register([], ' ', (e) => this.key(e, () => this.flip()));
 		for (const { nota } of NOTAS) this.scope?.register([], String(nota), (e) => this.key(e, () => void this.grade(nota)));
-		this.scope?.register([], 'e', (e) => this.key(e, () => this.edit()));
+		this.scope?.register([], 'Enter', (e) => this.key(e, () => this.flip()));
+		for (const l of ['a', 'b', 'c', 'd']) this.scope?.register([], l, (e) => this.key(e, () => this.mark(l)));
+		this.scope?.register([], 'e', (e) => this.key(e, () => (this.answering() ? this.mark('e') : this.edit())));
 		this.scope?.register([], 's', (e) => this.key(e, () => void this.suspend()));
 		this.scope?.register(['Mod'], 'z', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
@@ -68,14 +77,17 @@ export class ReviewView extends ItemView {
 	}
 
 	private key(e: KeyboardEvent, run: () => void): boolean {
+		// typing in the answer field: only Enter reaches the session
+		if ((e.target as HTMLElement | null)?.tagName === 'INPUT' && e.key !== 'Enter') return true;
 		e.preventDefault();
 		run();
 		return false;
 	}
 
 	/** Starts a session with the given items. */
-	start(queue: QueueItem[], label: string): void {
+	start(queue: QueueItem[], label: string, extra = false): void {
 		this.queue = queue;
+		this.extra = extra;
 		this.label = label;
 		this.index = 0;
 		this.ended = false;
@@ -85,6 +97,7 @@ export class ReviewView extends ItemView {
 		this.wrong = [];
 		this.undo = [];
 		this.redo = [];
+		this.typed = '';
 		this.startedAt = Date.now();
 		this.draw();
 	}
@@ -121,7 +134,7 @@ export class ReviewView extends ItemView {
 		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'lembro-back-btn', attr: { title: 'Avança de novo com a mesma avaliação (→)' } });
 		nextBtn.disabled = !this.redo.length;
 		nextBtn.onclick = () => void this.redoNext();
-		headLeft.createSpan({ text: this.label });
+		headLeft.createSpan({ text: this.extra ? `${this.label} · extra, não muda a agenda` : this.label });
 		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
 		head.createSpan({ text: `${this.index + 1} de ${this.queue.length} · ~${Math.max(1, left)} min` });
 		const bar = root.createDiv({ cls: 'lembro-bar' });
@@ -130,22 +143,47 @@ export class ReviewView extends ItemView {
 		const scene = root.createDiv({ cls: 'lembro-scene' });
 		const card = scene.createDiv({ cls: 'lembro-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
-		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + item.card.assuntos.join('; ') : ''} · ${item.card.tipo}`;
+		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + item.card.assuntos.join('; ') : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}`;
+		const ask = item.reverso ? item.card.verso : item.card.frente;
+		const answer = item.reverso ? item.card.frente : item.card.verso;
 
 		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
 		front.createDiv({ cls: 'lembro-tag', text: tag });
-		const isQuestao = item.card.tipo === 'Questão';
-		const frente = isQuestao ? splitAlternatives(item.card.frente) : item.card.frente;
+		const isQuestao = item.card.tipo === 'Questão' && !item.reverso;
+		const frente = isQuestao ? splitAlternatives(ask) : ask;
 		const q = front.createDiv({ cls: 'lembro-q' + (isQuestao ? ' is-questao' : '') });
 		void MarkdownRenderer.render(this.app, frente, q, sourcePath, this.render);
-		front.createDiv({ cls: 'lembro-hint', text: 'Clique ou Espaço para virar' });
+		const typeCloze = item.card.tipo === 'Lacuna' && !item.reverso;
+		if (typeCloze) {
+			const input = front.createEl('input', { type: 'text', cls: 'lembro-type', attr: { placeholder: 'Digite a resposta' } });
+			input.value = this.typed;
+			input.onclick = (e) => e.stopPropagation();
+			input.oninput = () => (this.typed = input.value);
+			window.setTimeout(() => input.focus(), 50);
+		}
+		const letra = isQuestao ? questaoLetra(answer) : null;
+		if (letra) {
+			const marks = front.createDiv({ cls: 'lembro-marks' });
+			for (const l of ['a', 'b', 'c', 'd', 'e']) {
+				const m = marks.createEl('button', { text: l.toUpperCase(), cls: this.typed === l ? 'is-on' : '' });
+				m.onclick = (e) => {
+					e.stopPropagation();
+					this.mark(l);
+				};
+			}
+		}
+		front.createDiv({ cls: 'lembro-hint', text: typeCloze ? 'Enter confere e vira' : letra ? 'A a E marcam a letra · Espaço vira' : 'Clique ou Espaço para virar' });
 
 		const back = card.createDiv({ cls: 'lembro-face lembro-back' });
 		back.createDiv({ cls: 'lembro-tag', text: tag });
 		const bq = back.createDiv({ cls: 'lembro-backq' });
 		void MarkdownRenderer.render(this.app, frente, bq, sourcePath, this.render);
+		const check = typeCloze ? (this.typed.trim() ? checkCloze(this.typed, answer) : null) : letra && this.typed ? this.typed === letra : null;
+		if (check !== null) {
+			back.createDiv({ cls: 'lembro-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${typeCloze ? this.typed.trim() : this.typed.toUpperCase()}` });
+		}
 		const a = back.createDiv({ cls: 'lembro-a' });
-		void MarkdownRenderer.render(this.app, item.card.verso, a, sourcePath, this.render);
+		void MarkdownRenderer.render(this.app, answer, a, sourcePath, this.render);
 		if (item.card.fonte) {
 			const src = back.createDiv({ cls: 'lembro-src' });
 			void MarkdownRenderer.render(this.app, `Fonte: ${item.card.fonte}`, src, sourcePath, this.render);
@@ -163,7 +201,7 @@ export class ReviewView extends ItemView {
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · ← volta ao anterior · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira e desvira · 1 a 4 avaliam · E edita · S suspende · ← volta · → avança · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -205,6 +243,10 @@ export class ReviewView extends ItemView {
 		if (this.ended || !this.current()) return;
 		this.flipped = !this.flipped;
 		if (this.flipped) this.revealed = true;
+		if (this.flipped && this.typed) {
+			this.draw();
+			return;
+		}
 		this.contentEl.querySelector('.lembro-card')?.toggleClass('is-flipped', this.flipped);
 		if (this.revealed) this.contentEl.querySelector('.lembro-grades')?.addClass('is-on');
 	}
@@ -213,13 +255,13 @@ export class ReviewView extends ItemView {
 		const item = this.current();
 		if (this.ended || !item || !this.revealed || !item.card.id) return;
 		if (!fromRedo) this.redo = [];
-		const id = item.card.id;
+		const id = item.key;
 		const store = this.plugin.store;
 		const before = store.state[id] ? { ...store.state[id] } : undefined;
 		const now = new Date();
 		const wasNew = isNew(item.fsrs);
 		const next = this.plugin.scheduler.apply(this.fsrsOf(item), nota, now);
-		store.state[id] = { st: 'ativo', fsrs: toStored(next) };
+		if (!this.extra) store.state[id] = { st: 'ativo', fsrs: toStored(next) };
 		try {
 			await store.saveState();
 			await store.appendLog({
@@ -229,16 +271,26 @@ export class ReviewView extends ItemView {
 				segundos: Math.round((Date.now() - this.shownAt) / 1000),
 				tipo: item.card.tipo,
 				novo: wasNew,
-				extra: false,
+				extra: this.extra,
 			});
 		} catch (e) {
 			new Notice(`Lembro: não consegui gravar (${e instanceof Error ? e.message : String(e)})`);
 			return;
 		}
-		item.fsrs = next;
-		this.undo.push({ index: this.index, id, before });
+		if (!this.extra) item.fsrs = next;
+		// a card due again before the session ends comes back a few cards ahead
+		let requeued = -1;
+		if (!this.extra) {
+			requeued = requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs());
+			if (requeued >= 0) this.queue.splice(requeued, 0, { ...item });
+		} else if (nota === 1) {
+			requeued = Math.min(this.queue.length, this.index + 4);
+			this.queue.splice(requeued, 0, { ...item });
+		}
+		this.undo.push({ index: this.index, id, before, requeued });
+		this.typed = '';
 		this.results[nota]++;
-		if (nota === 1) this.wrong.push(item);
+		if (nota === 1 && !this.wrong.some((w) => w.key === item.key)) this.wrong.push(item);
 		this.index++;
 		this.flipped = false;
 		this.revealed = false;
@@ -250,6 +302,7 @@ export class ReviewView extends ItemView {
 		const u = this.undo.pop();
 		if (!u) return;
 		const store = this.plugin.store;
+		if (u.requeued >= 0) this.queue.splice(u.requeued, 1);
 		if (u.before) store.state[u.id] = u.before;
 		else delete store.state[u.id];
 		await store.saveState();
@@ -258,12 +311,13 @@ export class ReviewView extends ItemView {
 			const nota = last.nota as Nota;
 			this.redo.push(nota);
 			this.results[nota]--;
-			if (nota === 1) this.wrong = this.wrong.filter((w) => w.card.id !== u.id);
+			if (nota === 1) this.wrong = this.wrong.filter((w) => w.key !== u.id);
 			await store.popLog();
 		}
 		const item = this.queue[u.index];
 		if (item) item.fsrs = u.before?.fsrs ? fromStored(u.before.fsrs) : undefined;
 		this.index = u.index;
+		this.typed = '';
 		this.ended = false;
 		this.flipped = false;
 		this.revealed = false;
@@ -280,6 +334,18 @@ export class ReviewView extends ItemView {
 		await this.grade(nota, true);
 	}
 
+	/** On the front of a question, marks the letter chosen before turning over. */
+	private answering(): boolean {
+		const item = this.current();
+		return !!item && !this.flipped && item.card.tipo === 'Questão' && !item.reverso && questaoLetra(item.card.verso) !== null;
+	}
+
+	private mark(letter: string): void {
+		if (!this.answering()) return;
+		this.typed = letter;
+		this.draw();
+	}
+
 	private edit(): void {
 		const item = this.current();
 		if (item) this.plugin.editCard(item.card, () => this.refreshCurrent());
@@ -289,7 +355,7 @@ export class ReviewView extends ItemView {
 		const item = this.current();
 		if (!item) return;
 		const fresh = this.plugin.store.cards.find((c) => c.id === item.card.id);
-		if (fresh) item.card = fresh;
+		if (fresh) for (const it of this.queue) if (it.card.id === fresh.id) it.card = fresh;
 		this.draw();
 	}
 
@@ -300,7 +366,8 @@ export class ReviewView extends ItemView {
 		store.state[item.card.id] = { ...(store.state[item.card.id] ?? {}), st: 'suspenso' };
 		await store.saveState();
 		new Notice('Cartão suspenso');
-		this.queue.splice(this.index, 1);
+		const cid = item.card.id;
+		this.queue = this.queue.filter((it, i) => i < this.index || it.card.id !== cid);
 		this.flipped = false;
 		this.revealed = false;
 		this.plugin.updateStatus();

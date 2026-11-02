@@ -12,6 +12,8 @@ export interface Card {
 	/** written only when it cannot be read from the source path, or differs */
 	area?: string;
 	assuntos: string[];
+	/** also reviewed back to front */
+	reverso?: boolean;
 	fonte: string;
 	/** card file this card lives in (vault path); set by the store */
 	file?: string;

@@ -116,3 +116,21 @@
 .lembro-xl span.is-picked { color: var(--text-normal); font-weight: 600; }
 .lembro-daylist { margin-top: 12px; }
 .lembro-daylist-h { font-size: var(--font-ui-small); font-weight: 600; padding: 4px; border-bottom: 1px solid var(--background-modifier-border); }
+
+/* resposta digitada */
+.lembro-type { width: 100%; margin-top: 16px; font-size: 1.05em; }
+.lembro-marks { display: flex; gap: 6px; margin-top: 14px; }
+.lembro-marks button { min-width: 36px; }
+.lembro-marks button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.lembro-verdict { font-weight: 600; font-size: var(--font-ui-medium); margin-bottom: 8px; }
+.lembro-verdict.is-ok { color: var(--color-green); }
+.lembro-verdict.is-bad { color: var(--color-red); }
+
+/* cartões desta nota */
+.lembro-note-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lembro-note-card { padding: 8px 0; border-bottom: 1px solid var(--background-modifier-border); display: grid; gap: 4px; justify-items: start; }
+.lembro-small { font-size: var(--font-ui-smaller); }
+.lembro-note { font-size: var(--font-ui-small); }
+.lembro-note h4 { margin: 0; font-size: var(--font-ui-medium); }
+.lembro-note-front { font-size: var(--font-ui-small); line-height: 1.4; }
+.lembro-note-card button { font-size: var(--font-ui-smaller); padding: 2px 10px; height: auto; }
