@@ -296,14 +296,11 @@ export class ReviewView extends ItemView {
 			return;
 		}
 		if (!this.extra) item.fsrs = next;
-		// a card due again before the session ends comes back a few cards ahead
+		// only a missed card (Errei) comes back a few cards ahead; Difícil/Bom wait for the next session
 		let requeued = -1;
-		if (!this.extra) {
-			requeued = requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs());
+		if (nota === 1) {
+			requeued = this.extra ? Math.min(this.queue.length, this.index + 4) : requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs());
 			if (requeued >= 0) this.queue.splice(requeued, 0, { ...item });
-		} else if (nota === 1) {
-			requeued = Math.min(this.queue.length, this.index + 4);
-			this.queue.splice(requeued, 0, { ...item });
 		}
 		this.undo.push({ index: this.index, id, before, requeued });
 		this.typed = '';
