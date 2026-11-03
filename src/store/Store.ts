@@ -1,9 +1,10 @@
-import { App, normalizePath, TFile } from 'obsidian';
+import { App, normalizePath, Notice, TFile } from 'obsidian';
 import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../cards/format';
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
 import { Releitura } from '../notes/reread';
+import { parseEstadoText, parseLogLines } from './parse';
 
 export type Estado = 'ativo' | 'suspenso';
 
@@ -19,6 +20,9 @@ export class Store {
 	cards: Card[] = [];
 	state: Record<string, CardState> = {};
 	log: RevlogEntry[] = [];
+	/** goes up whenever cards or state change on disk; keys the items() memo */
+	version = 0;
+	private lastSavedState: string | null = null;
 
 	constructor(
 		private app: App,
@@ -31,6 +35,9 @@ export class Store {
 	private get statePath(): string {
 		return `${this.base}/estado.json`;
 	}
+	private get backupPath(): string {
+		return `${this.base}/estado.backup.json`;
+	}
 	private get logPath(): string {
 		return `${this.base}/revisoes.jsonl`;
 	}
@@ -39,17 +46,29 @@ export class Store {
 		return this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/'));
 	}
 
+	/** estado.json first; when it is unreadable, the last good copy written before it. */
+	private async readEstado(): Promise<Record<string, CardState>> {
+		for (const path of [this.statePath, this.backupPath]) {
+			try {
+				if (!(await this.app.vault.adapter.exists(path))) continue;
+				return parseEstadoText(await this.app.vault.adapter.read(path));
+			} catch (e) {
+				new Notice(`Lembro: ${path} está ilegível (${e instanceof Error ? e.message : String(e)}); tentando o backup.`);
+			}
+		}
+		return {};
+	}
+
 	async load(): Promise<void> {
 		const adapter = this.app.vault.adapter;
-		this.state = (await adapter.exists(this.statePath))
-			? (JSON.parse(await adapter.read(this.statePath)) as Record<string, CardState>)
-			: {};
-		this.log = (await adapter.exists(this.logPath))
-			? (await adapter.read(this.logPath))
-					.split('\n')
-					.filter((l) => l.trim())
-					.map((l) => JSON.parse(l) as RevlogEntry)
-			: [];
+		this.state = await this.readEstado();
+		this.lastSavedState = JSON.stringify(this.state);
+		this.log = [];
+		if (await adapter.exists(this.logPath)) {
+			const parsed = parseLogLines(await adapter.read(this.logPath));
+			this.log = parsed.entries;
+			if (parsed.bad) new Notice(`Lembro: ${parsed.bad} linha(s) ilegível(is) ignoradas em revisoes.jsonl.`);
+		}
 		const taken = new Set<string>();
 		const files = this.cardFiles();
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
@@ -65,6 +84,7 @@ export class Store {
 			for (const c of parseCardFile(text)) cards.push({ ...c, file: file.path });
 		}
 		this.cards = cards;
+		this.version++;
 	}
 
 	takenIds(): Set<string> {
@@ -135,8 +155,20 @@ export class Store {
 	}
 
 	async saveState(): Promise<void> {
+		const next = JSON.stringify(this.state);
+		if (next === this.lastSavedState) return;
 		await this.ensureFolder(this.statePath);
-		await this.app.vault.adapter.write(this.statePath, JSON.stringify(this.state));
+		// the copy written before this one is the recovery point if the write dies halfway
+		if (this.lastSavedState !== null) {
+			try {
+				await this.app.vault.adapter.write(this.backupPath, this.lastSavedState);
+			} catch {
+				// the backup is best-effort; the main write still happens
+			}
+		}
+		await this.app.vault.adapter.write(this.statePath, next);
+		this.lastSavedState = next;
+		this.version++;
 	}
 
 	async appendLog(entry: RevlogEntry): Promise<void> {
