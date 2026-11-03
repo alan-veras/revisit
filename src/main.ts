@@ -107,6 +107,9 @@ export default class LembroPlugin extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<LembroSettings> | null);
 		// the general cap is gone: each area has its own cota
 		delete (this.settings as Partial<LembroSettings> & { newPerDay?: number }).newPerDay;
+		// the FSRS advises against asking for more than 95%
+		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
+		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
 	}
 
 	async saveSettings(): Promise<void> {
@@ -320,6 +323,11 @@ export default class LembroPlugin extends Plugin {
 		const selection = ctx?.selection.trim() ?? '';
 		const file = ctx?.file ?? null;
 		const path = file?.path ?? null;
+		// a card whose source is a card file would mirror itself inside the mirror
+		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
+			new Notice('Lembro: a fonte não pode ser um arquivo de cartões do plugin; abra a nota de origem.');
+			return;
+		}
 		const tipo = initialType({ isPdf: !!ctx?.isPdf, path, selection });
 		const area = (path && areaOf(path, this.settings.areaMap)) ?? '';
 		let frente = '';

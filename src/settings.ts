@@ -82,13 +82,13 @@ export class LembroSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Retenção desejada, em %',
-						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais vezes.',
-						control: { type: 'slider', key: 'retention', min: 70, max: 97, step: 1 },
+						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais vezes. Acima de 95 o FSRS recomenda não passar.',
+						control: { type: 'slider', key: 'retention', min: 70, max: 95, step: 1 },
 					},
 					{
 						name: 'Retenção dos cartões #importante, em %',
-						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais vezes.',
-						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 99, step: 1 },
+						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais vezes. O teto é 95, teto que o FSRS recomenda.',
+						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 95, step: 1 },
 					},
 					{
 						name: 'Intercalar assuntos',
@@ -187,10 +187,10 @@ export class LembroSettingTab extends PluginSettingTab {
 		} else if (key === 'folder') s.folder = String(value).trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
 		else if (key === 'budgetMinutes') s.budgetMinutes = Math.max(1, Number(value) || DEFAULT_SETTINGS.budgetMinutes);
 		else if (key === 'retention') {
-			s.retention = Number(value) / 100;
+			s.retention = Math.min(95, Number(value)) / 100;
 			this.plugin.refreshScheduler();
 		} else if (key === 'retentionImportant') {
-			s.retentionImportant = Number(value) / 100;
+			s.retentionImportant = Math.min(95, Number(value)) / 100;
 			this.plugin.refreshScheduler();
 		} else if (key === 'interleave') s.interleave = Boolean(value);
 		else if (key === 'requeueGap') s.requeueGap = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.requeueGap));
@@ -199,7 +199,7 @@ export class LembroSettingTab extends PluginSettingTab {
 		else if (key === 'areaMap') s.areaMap = parseAreaMap(String(value));
 		else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
 		else if (key === 'newNotesPerDay') s.newNotesPerDay = Math.max(0, Number(value) || 0);
-		else if (key === 'reminder') s.reminder = /^\d{1,2}:\d{2}$/.test(String(value).trim()) ? String(value).trim() : '';
+		else if (key === 'reminder') s.reminder = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(value).trim()) ? String(value).trim() : '';
 		await this.plugin.saveSettings();
 		this.plugin.updateStatus();
 	}
