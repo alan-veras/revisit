@@ -46,13 +46,19 @@ export function formatInterval(ms: number): string {
 
 export class Scheduler {
 	private f: FSRS;
-	constructor(retention: number) {
+	private fImportant: FSRS;
+	constructor(retention: number, retentionImportant = retention) {
 		this.f = fsrs({ request_retention: retention, enable_fuzz: true });
+		this.fImportant = fsrs({ request_retention: retentionImportant, enable_fuzz: true });
+	}
+
+	private pick(important: boolean): FSRS {
+		return important ? this.fImportant : this.f;
 	}
 
 	/** The next card for each grade, plus a label for the buttons. */
-	preview(card: FsrsCard, now: Date): Record<Nota, { card: FsrsCard; label: string }> {
-		const p = this.f.repeat(card, now);
+	preview(card: FsrsCard, now: Date, important = false): Record<Nota, { card: FsrsCard; label: string }> {
+		const p = this.pick(important).repeat(card, now);
 		const out = {} as Record<Nota, { card: FsrsCard; label: string }>;
 		for (const { nota } of NOTAS) {
 			const next = p[nota].card;
@@ -61,8 +67,8 @@ export class Scheduler {
 		return out;
 	}
 
-	apply(card: FsrsCard, nota: Nota, now: Date): FsrsCard {
-		return this.f.next(card, now, nota).card;
+	apply(card: FsrsCard, nota: Nota, now: Date, important = false): FsrsCard {
+		return this.pick(important).next(card, now, nota).card;
 	}
 
 	retrievability(card: FsrsCard, now: Date): number {

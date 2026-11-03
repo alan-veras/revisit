@@ -120,3 +120,19 @@ describe('lote numa escrita só', () => {
 		expect(g.get('a')).toEqual(['a1', 'a2']);
 	});
 });
+
+describe('Tags', () => {
+	it('lê e grava a linha Tags só quando existe', () => {
+		const base = { id: 'lab123', tipo: 'Pergunta' as const, frente: 'f', verso: 'v', assuntos: [], fonte: '' };
+		const text = serializeCard({ ...base, tags: ['importante'] });
+		expect(text).toContain('Tags: #importante');
+		expect(parseCardFile(text)[0]?.tags).toEqual(['importante']);
+		expect(serializeCard(base)).not.toContain('Tags:');
+		expect(parseCardFile(serializeCard(base))[0]?.tags).toBeUndefined();
+	});
+});
+
+it('assuntosLabel mostra só o último nível', async () => {
+	const { assuntosLabel } = await import('../src/cards/format');
+	expect(assuntosLabel(['Sustento > Perseguição', 'Kubernetes'])).toBe('Perseguição; Kubernetes');
+});

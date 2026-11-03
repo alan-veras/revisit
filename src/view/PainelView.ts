@@ -1,3 +1,4 @@
+import { assuntosLabel } from '../cards/format';
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
 import { assuntoTree, TreeNode } from '../srs/tree';
@@ -263,7 +264,7 @@ export class PainelView extends ItemView {
 				sn.createEl('mark', { text: m.hit });
 				sn.appendText(m.after);
 			}
-			t.createDiv({ cls: 'lembro-muted lembro-small', text: [p.areaOfCard(c) ?? 'Sem área', c.assuntos.join('; '), c.tipo].filter(Boolean).join(' · ') });
+			t.createDiv({ cls: 'lembro-muted lembro-small', text: [p.areaOfCard(c) ?? 'Sem área', assuntosLabel(c.assuntos), c.tipo].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(c, () => this.draw());
 		}
 	}
@@ -330,7 +331,7 @@ export class PainelView extends ItemView {
 			const row = list.createDiv({ cls: 'lembro-result' });
 			const t = row.createDiv({ cls: 'lembro-result-t' });
 			t.createDiv({ cls: 'lembro-result-f', text: it.card.frente.replace(/\s+/g, ' ') });
-			t.createDiv({ cls: 'lembro-muted lembro-small', text: [it.area ?? 'Sem área', it.card.assuntos.join('; '), it.card.tipo].filter(Boolean).join(' · ') });
+			t.createDiv({ cls: 'lembro-muted lembro-small', text: [it.area ?? 'Sem área', assuntosLabel(it.card.assuntos), it.card.tipo].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(it.card, () => this.draw());
 		}
 		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);

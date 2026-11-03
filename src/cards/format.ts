@@ -1,5 +1,5 @@
 import { clozes } from './cloze';
-import { Card, isTipo, Tipo } from './types';
+import { Card, isTipo, parseTags, Tipo } from './types';
 
 /**
  * Card files: blocks separated by a line `---` (outside code fences), each with
@@ -13,8 +13,8 @@ import { Card, isTipo, Tipo } from './types';
  *   Fonte: [[...|Cronograma do CKA]] ^lk7q2a
  */
 
-type Label = 'Frente' | 'Verso' | 'Tipo' | 'Área' | 'Assunto' | 'Reverso' | 'Fonte';
-const LABEL_RE = /^(Frente|Verso|Tipo|Área|Assunto|Reverso|Fonte):[ \t]?(.*)$/;
+type Label = 'Frente' | 'Verso' | 'Tipo' | 'Área' | 'Assunto' | 'Tags' | 'Reverso' | 'Fonte';
+const LABEL_RE = /^(Frente|Verso|Tipo|Área|Assunto|Tags|Reverso|Fonte):[ \t]?(.*)$/;
 const ID_RE = /\s\^(l[a-z0-9]{5})\s*$/;
 const FENCE_RE = /^\s*(```|~~~)/;
 
@@ -81,6 +81,7 @@ export function parseBlock(block: Block): Card | null {
 		.split(';')
 		.map((a) => normalizeAssunto(a))
 		.filter(Boolean);
+	const tags = parseTags(get('Tags'));
 	const area = get('Área');
 	const reverso = /^(sim|s|yes|true)$/i.test(get('Reverso'));
 	return {
@@ -90,6 +91,7 @@ export function parseBlock(block: Block): Card | null {
 		verso,
 		...(area ? { area } : {}),
 		assuntos,
+		...(tags.length ? { tags } : {}),
 		...(reverso ? { reverso } : {}),
 		fonte: get('Fonte'),
 		start: block.start,
@@ -117,12 +119,13 @@ function field(label: Label, value: string): string {
 }
 
 /** Writes a card block (without the `---` separator). */
-export type CardFields = Pick<Card, 'id' | 'tipo' | 'frente' | 'verso' | 'assuntos' | 'fonte' | 'area' | 'reverso'>;
+export type CardFields = Pick<Card, 'id' | 'tipo' | 'frente' | 'verso' | 'assuntos' | 'fonte' | 'area' | 'reverso' | 'tags'>;
 
 export function serializeCard(card: CardFields): string {
 	const lines = [field('Frente', card.frente.trim()), field('Verso', card.verso.trim()), `Tipo: ${card.tipo}`];
 	if (card.area) lines.push(`Área: ${card.area}`);
 	if (card.assuntos.length) lines.push(`Assunto: ${card.assuntos.join('; ')}`);
+	if (card.tags?.length) lines.push(`Tags: ${card.tags.map((t) => `#${t}`).join(' ')}`);
 	if (card.reverso) lines.push('Reverso: sim');
 	if (card.fonte) lines.push(`Fonte: ${card.fonte}`);
 	if (card.id) {
@@ -221,4 +224,9 @@ export function renameSource(text: string, from: string, to: string): string {
 			);
 		})
 		.join('\n');
+}
+
+/** Assuntos as shown on screen: only the last level (`Sustento > Perseguição` reads `Perseguição`). */
+export function assuntosLabel(assuntos: string[]): string {
+	return assuntos.map((a) => a.split(' > ').pop() ?? a).join('; ');
 }

@@ -1,5 +1,5 @@
 import { Card as FsrsCard } from 'ts-fsrs';
-import { Card, Tipo } from '../cards/types';
+import { Card, isImportant, Tipo } from '../cards/types';
 import { isNew } from './scheduler';
 
 export interface QueueItem {
@@ -93,7 +93,8 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	const fresh: QueueItem[] = [];
 	const introduced = new Set<string>();
 	const byArea = new Map<string, number>();
-	for (const it of pool) {
+	const byImportance = [...pool].sort((a, b) => Number(isImportant(b.card)) - Number(isImportant(a.card)));
+	for (const it of byImportance) {
 		if (!isNew(it.fsrs)) continue;
 		const base = it.card.id ?? it.key;
 		if (!introduced.has(base)) {
@@ -106,7 +107,9 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 		introduced.add(base);
 		fresh.push(it);
 	}
-	const ordered = buryGemeos(o.interleave ? interleave(reviews).concat(interleave(fresh)) : reviews.concat(fresh), o.gradedToday ?? new Set());
+	// at the budget cut, important cards go first inside each block (reviews, then new)
+	const important = (l: QueueItem[]) => [...l].sort((a, b) => Number(isImportant(b.card)) - Number(isImportant(a.card)));
+	const ordered = buryGemeos(o.interleave ? interleave(reviews).concat(interleave(important(fresh))) : reviews.concat(important(fresh)), o.gradedToday ?? new Set());
 	const out: QueueItem[] = [];
 	let secs = 0;
 	const max = o.budgetMinutes * 60;

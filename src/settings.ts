@@ -10,6 +10,8 @@ export interface LembroSettings {
 	/** new cards per day of each area; an area left out gets DEFAULT_AREA_CAP */
 	newPerArea: Record<string, number>;
 	retention: number;
+	/** target retention of cards tagged #importante */
+	retentionImportant: number;
 	interleave: boolean;
 	/** words of the text shown by each Dica on a Referência */
 	hintWords: number;
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: LembroSettings = {
 	budgetMinutes: 20,
 	newPerArea: {},
 	retention: 0.9,
+	retentionImportant: 0.95,
 	interleave: true,
 	hintWords: 3,
 	showNewBadge: true,
@@ -81,6 +84,11 @@ export class LembroSettingTab extends PluginSettingTab {
 						name: 'Retenção desejada, em %',
 						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais vezes.',
 						control: { type: 'slider', key: 'retention', min: 70, max: 97, step: 1 },
+					},
+					{
+						name: 'Retenção dos cartões #importante, em %',
+						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais vezes.',
+						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 99, step: 1 },
 					},
 					{
 						name: 'Intercalar assuntos',
@@ -162,6 +170,7 @@ export class LembroSettingTab extends PluginSettingTab {
 			return s.newPerArea[key.slice(COTA.length)] ?? DEFAULT_AREA_CAP;
 		}
 		if (key === 'retention') return Math.round(s.retention * 100);
+		if (key === 'retentionImportant') return Math.round(s.retentionImportant * 100);
 		if (key === 'areaMap')
 			return Object.entries(s.areaMap)
 				.map(([k, v]) => `${k}: ${v}`)
@@ -179,6 +188,9 @@ export class LembroSettingTab extends PluginSettingTab {
 		else if (key === 'budgetMinutes') s.budgetMinutes = Math.max(1, Number(value) || DEFAULT_SETTINGS.budgetMinutes);
 		else if (key === 'retention') {
 			s.retention = Number(value) / 100;
+			this.plugin.refreshScheduler();
+		} else if (key === 'retentionImportant') {
+			s.retentionImportant = Number(value) / 100;
 			this.plugin.refreshScheduler();
 		} else if (key === 'interleave') s.interleave = Boolean(value);
 		else if (key === 'requeueGap') s.requeueGap = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.requeueGap));

@@ -1,3 +1,4 @@
+import { assuntosLabel } from '../cards/format';
 import { Component, ItemView, MarkdownRenderer, Notice, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { sectionOf } from '../cards/section';
 import { clozes, hideCloze } from '../cards/cloze';
@@ -6,6 +7,7 @@ import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
 import { estimateMinutes, QueueItem, requeueIndex } from '../srs/queue';
 import { checkCloze, hintWords } from './answer';
+import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
@@ -67,6 +69,7 @@ export class ReviewView extends ItemView {
 		for (const { nota } of NOTAS) this.scope?.register([], String(nota), (e) => this.key(e, () => void this.grade(nota)));
 		this.scope?.register([], 'Enter', (e) => this.key(e, () => this.flip()));
 		this.scope?.register([], 'e', (e) => this.key(e, () => this.edit()));
+		this.scope?.register([], 'i', (e) => this.key(e, () => void this.toggleImportant()));
 		this.scope?.register([], 's', (e) => this.key(e, () => void this.suspend()));
 		this.scope?.register(['Mod'], 'z', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
@@ -154,7 +157,7 @@ export class ReviewView extends ItemView {
 		const scene = root.createDiv({ cls: 'lembro-scene' });
 		const card = scene.createDiv({ cls: 'lembro-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
-		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + item.card.assuntos.join('; ') : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}${sectionOf(item.card.fonte) ? ' · § ' + sectionOf(item.card.fonte) : ''}`;
+		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + assuntosLabel(item.card.assuntos) : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}${sectionOf(item.card.fonte) ? ' · § ' + sectionOf(item.card.fonte) : ''}`;
 		const hole = item.cloze !== undefined ? clozes(item.card.frente)[item.cloze] : undefined;
 		const ask = hole !== undefined ? hideCloze(item.card.frente, item.cloze as number) : item.reverso ? item.card.verso : item.card.frente;
 		const answer = hole ?? (item.reverso ? item.card.frente : item.card.verso);
@@ -207,7 +210,7 @@ export class ReviewView extends ItemView {
 		};
 
 		const grades = root.createDiv({ cls: 'lembro-grades' + (this.revealed ? ' is-on' : '') });
-		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date());
+		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date(), isImportant(item.card));
 		for (const { nota, nome } of NOTAS) {
 			const b = grades.createEl('button', { cls: `lembro-g${nota}` });
 			b.createEl('b', { text: nome });
@@ -221,7 +224,7 @@ export class ReviewView extends ItemView {
 		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · D dica · P pula · R recomeça · E edita · S suspende · ← volta · → avança · Esc painel · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · D dica · P pula · R recomeça · E edita · I importante · S suspende · ← volta · → avança · Esc painel · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -293,7 +296,7 @@ export class ReviewView extends ItemView {
 		const before = store.state[id] ? { ...store.state[id] } : undefined;
 		const now = new Date();
 		const wasNew = isNew(item.fsrs);
-		const next = this.plugin.scheduler.apply(this.fsrsOf(item), nota, now);
+		const next = this.plugin.scheduler.apply(this.fsrsOf(item), nota, now, isImportant(item.card));
 		if (!this.extra) store.state[id] = { st: 'ativo', fsrs: toStored(next) };
 		try {
 			await store.saveState();
@@ -401,6 +404,17 @@ export class ReviewView extends ItemView {
 		const fresh = this.plugin.store.cards.find((c) => c.id === item.card.id);
 		if (fresh) for (const it of this.queue) if (it.card.id === fresh.id) it.card = fresh;
 		this.draw();
+	}
+
+	/** Marks or unmarks the current card as #importante (writes the Tags line). */
+	private async toggleImportant(): Promise<void> {
+		const item = this.current();
+		if (!item?.card.id) return;
+		const { start: _s, end: _e, file: _f, ...fields } = item.card;
+		const tags = isImportant(item.card) ? (item.card.tags ?? []).filter((t) => t !== IMPORTANT_TAG) : [...(item.card.tags ?? []), IMPORTANT_TAG];
+		await this.plugin.store.updateCard(item.card, { ...fields, tags });
+		new Notice(tags.includes(IMPORTANT_TAG) ? 'Cartão marcado como importante' : 'Marca de importante removida');
+		this.refreshCurrent();
 	}
 
 	private async suspend(): Promise<void> {

@@ -25,7 +25,7 @@ export default class LembroPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.scheduler = new Scheduler(this.settings.retention);
+		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
 		this.store = new Store(this.app, () => this.settings.folder);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PAINEL, (leaf: WorkspaceLeaf) => new PainelView(leaf, this));
@@ -104,7 +104,7 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	refreshScheduler(): void {
-		this.scheduler = new Scheduler(this.settings.retention);
+		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
 	}
 
 	private reloading: Promise<void> | null = null;
@@ -471,6 +471,7 @@ export default class LembroPlugin extends Plugin {
 				verso: r.verso,
 				...(r.area && r.area !== derived ? { area: r.area } : {}),
 				assuntos: r.assuntos,
+				...(card.tags?.length ? { tags: card.tags } : {}),
 				...(r.reverso ? { reverso: true } : {}),
 				fonte: r.fonte,
 			});

@@ -12,6 +12,8 @@ export interface Card {
 	/** written only when it cannot be read from the source path, or differs */
 	area?: string;
 	assuntos: string[];
+	/** `#importante` and the like: written only when the card has some */
+	tags?: string[];
 	/** also reviewed back to front */
 	reverso?: boolean;
 	fonte: string;
@@ -24,4 +26,18 @@ export interface Card {
 
 export function isTipo(value: string): value is Tipo {
 	return (TIPOS as readonly string[]).includes(value);
+}
+
+export const IMPORTANT_TAG = 'importante';
+
+/** Tags as written (`#importante #fe`) into a clean list without the `#`. */
+export function parseTags(value: string): string[] {
+	return value
+		.split(/[\s,;]+/)
+		.map((t) => t.replace(/^#/, '').trim().toLowerCase())
+		.filter(Boolean);
+}
+
+export function isImportant(card: Pick<Card, 'tags'> | undefined): boolean {
+	return !!card?.tags?.includes(IMPORTANT_TAG);
 }

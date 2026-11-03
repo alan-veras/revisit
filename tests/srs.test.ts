@@ -47,11 +47,34 @@ describe('scheduler', () => {
 		expect(back.state).toBe(f.state);
 		expect(back.stability).toBe(f.stability);
 	});
+	it('important cards get shorter intervals from the higher retention', () => {
+		const both = new Scheduler(0.9, 0.97);
+		let f = freshCard(NOW);
+		f = both.apply(f, 3, NOW);
+		f = both.apply(f, 3, new Date(NOW.getTime() + 86400000));
+		const later = new Date(NOW.getTime() + 5 * 86400000);
+		const normal = both.preview(f, later)[3].card.scheduled_days;
+		const important = both.preview(f, later, true)[3].card.scheduled_days;
+		expect(important).toBeLessThan(normal);
+	});
 	it('formats intervals in Portuguese', () => {
 		expect(formatInterval(10 * 60000)).toBe('10 min');
 		expect(formatInterval(86400000)).toBe('amanhã');
 		expect(formatInterval(5 * 86400000)).toBe('5 dias');
 		expect(formatInterval(60 * 86400000)).toBe('2 meses');
+	});
+});
+
+describe('importante na fila', () => {
+	const tagged = (it: QueueItem): QueueItem => ({ ...it, card: { ...it.card, tags: ['importante'] } });
+	const fresh = (id: string): QueueItem => ({ key: id, reverso: false, card: card(id), area: 'Carreira', suspended: false });
+	it('importantes entram primeiro entre os novos quando a cota aperta', () => {
+		const items = [fresh('a'), fresh('b'), tagged(fresh('c'))];
+		expect(buildSession(items, opts({ newAllowed: 1 })).map((i) => i.card.id)).toEqual(['c']);
+	});
+	it('importantes não furam vencidos', () => {
+		const items = [tagged(fresh('c')), reviewed('old', 3)];
+		expect(buildSession(items, opts()).map((i) => i.card.id)).toEqual(['old', 'c']);
 	});
 });
 

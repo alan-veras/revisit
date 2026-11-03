@@ -1,3 +1,4 @@
+import { assuntosLabel } from '../cards/format';
 import { ItemView, TFile, WorkspaceLeaf } from 'obsidian';
 import type LembroPlugin from '../main';
 
@@ -44,7 +45,7 @@ export class NoteCardsView extends ItemView {
 		for (const c of cards) {
 			const box = root.createDiv({ cls: 'lembro-note-card' });
 			box.createDiv({ cls: 'lembro-note-front', text: c.frente.replace(/\s+/g, ' ').slice(0, 140) });
-			box.createDiv({ cls: 'lembro-muted lembro-small', text: [c.tipo, c.assuntos.join('; '), c.reverso ? 'dois sentidos' : ''].filter(Boolean).join(' · ') });
+			box.createDiv({ cls: 'lembro-muted lembro-small', text: [c.tipo, assuntosLabel(c.assuntos), c.reverso ? 'dois sentidos' : ''].filter(Boolean).join(' · ') });
 			const b = box.createDiv({ cls: 'lembro-note-btns' });
 			b.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(c, () => this.draw());
 			const st = c.id ? this.plugin.store.state[c.id] : undefined;
