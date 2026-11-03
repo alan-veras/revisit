@@ -81,7 +81,7 @@ export class PainelView extends ItemView {
 	/** Started once: areas with something for today open on the first draw. */
 	private seeded = false;
 
-	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's cota as a small meter. */
+	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's cota as a small meter; an open parent shows only its name. */
 	private drawDecks(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const q = p.quota();
@@ -120,19 +120,21 @@ export class PainelView extends ItemView {
 			r.createSpan({ cls: 'lembro-li-title', text: node.name });
 			const susp = suspendedOf(node.path);
 
+			// rollup: an open parent is only a title; the numbers live on the deepest visible row
+			const summary = !(kids && open);
 			const pills = r.createSpan({ cls: 'lembro-li-pills' });
-			if (revisar) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(revisar) }), `${revisar} para revisar hoje`);
-			if (novos) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(novos) }), `${novos} ${novos === 1 ? 'novo entra' : 'novos entram'} hoje`);
+			if (summary && revisar) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(revisar) }), `${revisar} para revisar hoje`);
+			if (summary && novos) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(novos) }), `${novos} ${novos === 1 ? 'novo entra' : 'novos entram'} hoje`);
 
 			// nothing for today: say when the next review falls, so the row is never mute
-			if (!s.length) {
+			if (summary && !s.length) {
 				const next = items
 					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === 'Sem área' ? null : node.area, node.assunto))
 					.reduce<Date | null>((m, it) => (it.fsrs && (!m || it.fsrs.due < m) ? it.fsrs.due : m), null);
 				if (next) setTooltip(r.createSpan({ cls: 'lembro-li-next', text: untilLabel(next, new Date()) }), `Próxima revisão: ${next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`);
 			}
-			const total = r.createSpan({ cls: 'lembro-li-total', text: String(node.cards) });
-			setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
+			const total = r.createSpan({ cls: 'lembro-li-total', text: summary ? String(node.cards) : '' });
+			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
 
 			const cota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
 			const meter = r.createSpan({ cls: 'lembro-li-cota' });
@@ -167,18 +169,6 @@ export class PainelView extends ItemView {
 		};
 		for (const t of tree) row(t, 0);
 
-		const legend = list.createDiv({ cls: 'lembro-li-legend' });
-		legend.createSpan({ cls: 'lembro-np is-due', text: 'n' });
-		legend.createSpan({ text: 'revisar' });
-		legend.createSpan({ cls: 'lembro-np is-new', text: 'n' });
-		legend.createSpan({ text: 'novos' });
-		legend.createSpan({ cls: 'lembro-li-bar lembro-li-bar-legend' }).createEl('i');
-		legend.createSpan({ text: 'cota de novos da área' });
-		legend.createSpan({ cls: 'lembro-li-total lembro-li-legend-total', text: '86' });
-		legend.createSpan({ text: 'total de cartões' });
-
-		const empty = AREAS.filter((a) => !tree.some((t) => t.area === a));
-		if (empty.length) list.createDiv({ cls: 'lembro-deck-empty', text: `${empty.join(', ').replace(/, ([^,]*)$/, ' e $1')} ${empty.length === 1 ? 'não tem' : 'não têm'} cartões` });
 		if (q.reduced) list.createDiv({ cls: 'lembro-deck-empty', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas de novos encolheram hoje.' });
 	}
 
