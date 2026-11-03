@@ -250,6 +250,10 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
+		if (!queue.length) {
+			new Notice('Lembro: nada para revisar agora.');
+			return;
+		}
 		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
 		if (!leaf) {
 			leaf = this.app.workspace.getLeaf('tab');
@@ -258,7 +262,6 @@ export default class LembroPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view;
 		if (view instanceof ReviewView) view.start(queue, label, extra);
-		if (!queue.length) new Notice('Lembro: nada para revisar agora.');
 	}
 
 	private pickArea(extra = false): void {

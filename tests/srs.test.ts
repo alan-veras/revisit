@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
 import { DEFAULT_SECS, newAllowedToday, newToday, newTodayByArea, parseAreaQuota, quotaStatus, RevlogEntry, secsPerType } from '../src/srs/budget';
-import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex } from '../src/srs/queue';
+import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex, sessionRequeue } from '../src/srs/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/srs/scheduler';
 
 const NOW = new Date('2026-11-02T10:00:00');
@@ -121,6 +121,15 @@ describe('fase 2', () => {
 		expect(requeueIndex(q, 0, new Date(NOW.getTime() + 60000), NOW, DEFAULT_SECS)).toBe(4);
 		expect(requeueIndex(q, 4, new Date(NOW.getTime() + 60000), NOW, DEFAULT_SECS)).toBe(6);
 		expect(requeueIndex(q, 0, new Date(NOW.getTime() + 86400000), NOW, DEFAULT_SECS)).toBe(-1);
+	});
+	it('sessionRequeue traz o prazo curto de qualquer nota, e na extra só o Errei', () => {
+		const q = Array.from({ length: 6 }, (_, i) => reviewed(`c${i}`, 1));
+		const o = { queue: q, index: 0, now: NOW, secs: DEFAULT_SECS, gap: 3 };
+		expect(sessionRequeue({ ...o, extra: false, nota: 3, due: new Date(NOW.getTime() + 600000) })).toBe(4);
+		expect(sessionRequeue({ ...o, extra: false, nota: 2, due: new Date(NOW.getTime() + 360000) })).toBe(4);
+		expect(sessionRequeue({ ...o, extra: false, nota: 3, due: new Date(NOW.getTime() + 3 * 86400000) })).toBe(-1);
+		expect(sessionRequeue({ ...o, extra: true, nota: 1, due: new Date(NOW.getTime() + 86400000) })).toBe(4);
+		expect(sessionRequeue({ ...o, extra: true, nota: 3, due: new Date(NOW.getTime() + 600000) })).toBe(-1);
 	});
 	it('extra session takes everything', () => {
 		const items = [reviewed('due', 1), reviewed('later', -20)];

@@ -5,7 +5,7 @@ import { clozes, hideCloze } from '../cards/cloze';
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type LembroPlugin from '../main';
-import { estimateMinutes, QueueItem, requeueIndex } from '../srs/queue';
+import { estimateMinutes, QueueItem, sessionRequeue } from '../srs/queue';
 import { checkCloze, hintWords } from './answer';
 import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
@@ -17,8 +17,8 @@ interface Undo {
 	index: number;
 	id: string;
 	before: CardState | undefined;
-	/** where the card was put back in this session, if it was */
-	requeued: number;
+	/** the copy put back in this session, if it was */
+	requeuedItem?: QueueItem;
 }
 
 /** The session: one card at a time, the front first, then it turns over. */
@@ -39,7 +39,7 @@ export class ReviewView extends ItemView {
 	private ended = false;
 	/** extra session: grades go to the log only, the schedule stays */
 	private extra = false;
-	/** typed cloze answer, or the letter marked on a question */
+	/** resposta digitada na lacuna */
 	private typed = '';
 	/** words of the back shown as a hint on a Referência front */
 	private hint = 0;
@@ -296,7 +296,8 @@ export class ReviewView extends ItemView {
 		const before = store.state[id] ? { ...store.state[id] } : undefined;
 		const now = new Date();
 		const wasNew = isNew(item.fsrs);
-		const next = this.plugin.scheduler.apply(this.fsrsOf(item), nota, now, isImportant(item.card));
+		const prevCard = this.fsrsOf(item);
+		const next = this.plugin.scheduler.apply(prevCard, nota, now, isImportant(item.card));
 		if (!this.extra) store.state[id] = { st: 'ativo', fsrs: toStored(next) };
 		try {
 			await store.saveState();
@@ -308,20 +309,21 @@ export class ReviewView extends ItemView {
 				tipo: item.card.tipo,
 				novo: wasNew,
 				extra: this.extra,
+				estado: prevCard.state,
 			});
 		} catch (e) {
 			new Notice(`Lembro: não consegui gravar (${e instanceof Error ? e.message : String(e)})`);
 			return;
 		}
 		if (!this.extra) item.fsrs = next;
-		// only a missed card (Errei) comes back a few cards ahead; Difícil/Bom wait for the next session
-		let requeued = -1;
-		if (nota === 1) {
-			const gap = this.plugin.settings.requeueGap;
-			requeued = this.extra ? Math.min(this.queue.length, this.index + 1 + gap) : requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs(), gap);
-			if (requeued >= 0) this.queue.splice(requeued, 0, { ...item });
+		// a card whose next due falls inside the session comes back a few cards ahead
+		const at = sessionRequeue({ extra: this.extra, nota, queue: this.queue, index: this.index, due: next.due, now, secs: this.plugin.secs(), gap: this.plugin.settings.requeueGap });
+		let copy: QueueItem | undefined;
+		if (at >= 0) {
+			copy = { ...item };
+			this.queue.splice(at, 0, copy);
 		}
-		this.undo.push({ index: this.index, id, before, requeued });
+		this.undo.push({ index: this.index, id, before, requeuedItem: copy });
 		this.typed = '';
 		this.hint = 0;
 		this.results[nota]++;
@@ -337,7 +339,10 @@ export class ReviewView extends ItemView {
 		const u = this.undo.pop();
 		if (!u) return;
 		const store = this.plugin.store;
-		if (u.requeued >= 0) this.queue.splice(u.requeued, 1);
+		if (u.requeuedItem) {
+			const at = this.queue.indexOf(u.requeuedItem);
+			if (at >= 0) this.queue.splice(at, 1);
+		}
 		if (u.before) store.state[u.id] = u.before;
 		else delete store.state[u.id];
 		await store.saveState();

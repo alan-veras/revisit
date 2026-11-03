@@ -12,6 +12,8 @@ export interface RevlogEntry {
 	/** the card was new before this grade */
 	novo: boolean;
 	extra: boolean;
+	/** ts-fsrs State just before the grade (0 new, 1 learning, 2 review, 3 relearning); absent in old lines */
+	estado?: number;
 }
 
 export const DEFAULT_SECS: Record<Tipo, number> = { Pergunta: 10, Lacuna: 10, 'Referência': 10, 'Questão': 60 };

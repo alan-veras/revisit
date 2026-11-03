@@ -157,3 +157,23 @@ export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: 
 	if (due.getTime() > end) return -1;
 	return Math.min(queue.length, index + 1 + gap);
 }
+
+/**
+ * Where a graded card comes back in the same session. An extra session brings
+ * only an Errei back, always. A normal session brings any grade back whose next
+ * due time falls inside the remaining session: the Errei, and the short first
+ * steps of a Difícil or Bom on a new card too. -1 stays out.
+ */
+export function sessionRequeue(o: {
+	extra: boolean;
+	nota: number;
+	queue: QueueItem[];
+	index: number;
+	due: Date;
+	now: Date;
+	secs: Record<Tipo, number>;
+	gap: number;
+}): number {
+	if (o.extra) return o.nota === 1 ? Math.min(o.queue.length, o.index + 1 + o.gap) : -1;
+	return requeueIndex(o.queue, o.index, o.due, o.now, o.secs, o.gap);
+}
