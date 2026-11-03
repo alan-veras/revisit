@@ -64,6 +64,7 @@ export class PainelView extends ItemView {
 		const go = hero.createEl('button', { text: 'Revisar', cls: 'mod-cta lembro-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.review(null);
+		this.drawQuota(wrap);
 
 		const areas = wrap.createDiv({ cls: 'lembro-areas' });
 		const tree = assuntoTree(p.items().filter((it) => !it.reverso && !it.cloze));
@@ -83,6 +84,34 @@ export class PainelView extends ItemView {
 		this.drawResults(results);
 	}
 
+	/** Meters of today's new cards: the general cap and each area's own. */
+	private drawQuota(wrap: HTMLElement): void {
+		const q = this.plugin.quota();
+		const box = wrap.createDiv({ cls: 'lembro-quota' });
+		const head = box.createDiv({ cls: 'lembro-quota-head' });
+		head.createSpan({ cls: 'lembro-quota-title', text: 'Cartões novos hoje' });
+		head.createSpan({ cls: 'lembro-muted', text: 'cada área tem a sua cota, dentro do teto geral' });
+		const bars = box.createDiv({ cls: 'lembro-hbars' });
+		const row = (name: string, usados: number, teto: number, geral: boolean) => {
+			const full = teto > 0 && usados >= teto;
+			const r = bars.createDiv({ cls: 'lembro-hb' + (full ? ' is-full' : '') + (teto === 0 ? ' is-none' : '') + (geral ? ' is-geral' : '') });
+			r.createSpan({ cls: 'lembro-hb-name', text: name });
+			const track = r.createDiv({ cls: 'lembro-hb-track lembro-quota-track' });
+			track.createEl('i').style.width = `${teto ? Math.min(100, (usados / teto) * 100) : 0}%`;
+			const val = r.createSpan({ cls: 'lembro-hb-val lembro-quota-val' });
+			val.setText(`${usados} de ${teto}`);
+			if (full) {
+				const ok = val.createSpan({ cls: 'lembro-quota-ok' });
+				setIcon(ok, 'check');
+			}
+			setTooltip(r, full ? 'Cota de hoje completa: novos voltam amanhã' : `${Math.max(0, teto - usados)} ${teto - usados === 1 ? 'vaga' : 'vagas'} para cartões novos hoje`);
+		};
+		row('Geral', q.geral.usados, q.geral.teto, true);
+		for (const a of q.areas) row(a.area, a.usados, a.teto, false);
+		if (q.geral.teto < q.geral.cap)
+			box.createDiv({ cls: 'lembro-muted lembro-quota-note', text: `As revisões vencidas ocupam o orçamento: o teto geral caiu de ${q.geral.cap} para ${q.geral.teto} hoje.` });
+	}
+
 	/** One row of the Área > Assunto tree: clicking opens its subjects, the play button reviews it. */
 	private drawNode(parent: HTMLElement, node: TreeNode, depth: number): void {
 		const p = this.plugin;
@@ -94,8 +123,16 @@ export class PainelView extends ItemView {
 		const caret = row.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
 		if (kids) setIcon(caret, 'chevron-right');
 		row.createSpan({ cls: 'lembro-area-name', text: node.name });
+		// an area with its own cap shows the slots left for new cards today
+		const novos = p.session(node.area, undefined, false, node.assunto).filter((it) => isNew(it.fsrs)).length;
+		// an area with its own cap: the new cards that enter today, or a full cap; nothing when no new card waits
+		const cota = depth === 0 ? p.quota().areas.find((a) => a.area === node.area) : undefined;
+		if (cota && (novos || !cota.livres)) {
+			const pill = row.createSpan({ cls: 'lembro-pill' + (novos ? '' : ' is-full'), text: novos ? `+${novos} ${novos === 1 ? 'novo' : 'novos'}` : 'cota cheia' });
+			setTooltip(pill, `Novos hoje em ${node.area}: ${cota.usados} de ${cota.teto}`);
+		}
 		const count = row.createSpan({ cls: 'lembro-area-n', text: n ? String(n) : '—' });
-		setTooltip(count, `${n} para hoje · ${node.cards} ${node.cards === 1 ? 'cartão' : 'cartões'} no total`);
+		setTooltip(count, `${n} para hoje${novos ? ` · ${novos} ${novos === 1 ? 'novo' : 'novos'}` : ''} · ${node.cards} ${node.cards === 1 ? 'cartão' : 'cartões'} no total`);
 		const play = row.createSpan({ cls: 'lembro-area-go' + (n ? '' : ' is-off') });
 		if (n) {
 			setIcon(play, 'play');

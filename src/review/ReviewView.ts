@@ -161,7 +161,8 @@ export class ReviewView extends ItemView {
 		const extraBack = hole !== undefined ? item.card.verso : '';
 
 		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
-		front.createDiv({ cls: 'lembro-tag', text: tag });
+		const ftag = front.createDiv({ cls: 'lembro-tag', text: tag });
+		if (isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'lembro-new-badge', text: 'Novo' }));
 		const isQuestao = item.card.tipo === 'Questão' && !item.reverso;
 		const frente = isQuestao ? splitAlternatives(ask) : ask;
 		const q = front.createDiv({ cls: 'lembro-q' + (isQuestao ? ' is-questao' : '') });

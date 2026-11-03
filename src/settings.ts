@@ -1,11 +1,14 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import { parseAreaMap } from './cards/area';
+import { parseAreaQuota } from './srs/budget';
 import type LembroPlugin from './main';
 
 export interface LembroSettings {
 	folder: string;
 	budgetMinutes: number;
 	newPerDay: number;
+	/** new cards per day per area, inside the general cap; an area left out has only the general cap */
+	newPerArea: Record<string, number>;
 	retention: number;
 	interleave: boolean;
 	/** extra `pasta: Área` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
@@ -24,6 +27,7 @@ export const DEFAULT_SETTINGS: LembroSettings = {
 	folder: '8_System/Lembro',
 	budgetMinutes: 20,
 	newPerDay: 15,
+	newPerArea: { 'Desenvolvimento Pessoal': 10, Espiritual: 3, Carreira: 2 },
 	retention: 0.9,
 	interleave: true,
 	areaMap: {},
@@ -56,8 +60,13 @@ export class LembroSettingTab extends PluginSettingTab {
 			},
 			{
 				name: 'Cartões novos por dia',
-				desc: 'O teto. O orçamento pode reduzir.',
+				desc: 'O teto geral, somando todas as áreas. O orçamento pode reduzir.',
 				control: { type: 'number', key: 'newPerDay', min: 0 },
+			},
+			{
+				name: 'Novos por dia por área',
+				desc: 'Uma por linha, no formato área: número, dentro do teto geral. Assim uma área não gasta a cota das outras. Área fora da lista só respeita o teto geral.',
+				control: { type: 'textarea', key: 'newPerArea' },
 			},
 			{
 				name: 'Retenção desejada, em %',
@@ -95,6 +104,10 @@ export class LembroSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
 		if (key === 'retention') return Math.round(s.retention * 100);
+		if (key === 'newPerArea')
+			return Object.entries(s.newPerArea)
+				.map(([k, v]) => `${k}: ${v}`)
+				.join('\n');
 		if (key === 'areaMap')
 			return Object.entries(s.areaMap)
 				.map(([k, v]) => `${k}: ${v}`)
@@ -111,6 +124,7 @@ export class LembroSettingTab extends PluginSettingTab {
 			s.retention = Number(value) / 100;
 			this.plugin.refreshScheduler();
 		} else if (key === 'interleave') s.interleave = Boolean(value);
+		else if (key === 'newPerArea') s.newPerArea = parseAreaQuota(String(value));
 		else if (key === 'areaMap') s.areaMap = parseAreaMap(String(value));
 		else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
 		else if (key === 'newNotesPerDay') s.newNotesPerDay = Math.max(0, Number(value) || 0);

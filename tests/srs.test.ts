@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
-import { DEFAULT_SECS, newAllowedToday, newToday, RevlogEntry, secsPerType } from '../src/srs/budget';
+import { DEFAULT_SECS, newAllowedToday, newToday, newTodayByArea, parseAreaQuota, quotaStatus, RevlogEntry, secsPerType } from '../src/srs/budget';
 import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex } from '../src/srs/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/srs/scheduler';
 
@@ -121,5 +121,36 @@ describe('budget', () => {
 		expect(newAllowedToday(10, 20, 15)).toBe(15);
 		expect(newAllowedToday(18, 20, 15)).toBe(7);
 		expect(newAllowedToday(25, 20, 15)).toBe(0);
+	});
+});
+
+describe('cota por área', () => {
+	const novo = (id: string, area: string): QueueItem => ({ key: id, reverso: false, card: card(id), area, suspended: false });
+	const entry = (id: string, over: Partial<RevlogEntry> = {}): RevlogEntry => ({ id, t: NOW.toISOString(), nota: 3, segundos: 10, tipo: 'Pergunta', novo: true, extra: false, ...over });
+	it('newTodayByArea conta cada id novo uma vez, por área, sem extra', () => {
+		const area = (id: string) => (id.startsWith('e') ? 'Espiritual' : id.startsWith('d') ? 'Desenvolvimento Pessoal' : null);
+		const log = [entry('e1'), entry('e1'), entry('e2'), entry('d1'), entry('d2', { extra: true }), entry('e3', { t: '2026-11-01T10:00:00' }), entry('x1')];
+		const m = newTodayByArea(log, NOW, area);
+		expect(m.get('Espiritual')).toBe(2);
+		expect(m.get('Desenvolvimento Pessoal')).toBe(1);
+	});
+	it('parseAreaQuota lê Área: n e aceita 0', () => {
+		expect(parseAreaQuota('Espiritual: 3\nDesenvolvimento Pessoal: 10\nlixo\nCarreira: 0\nLazer: x')).toEqual({ Espiritual: 3, 'Desenvolvimento Pessoal': 10, Carreira: 0 });
+	});
+	it('a área para na cota dela enquanto as outras seguem; o geral ainda corta', () => {
+		const items = [...['e1', 'e2', 'e3', 'e4', 'e5'].map((id) => novo(id, 'Espiritual')), ...['d1', 'd2', 'd3', 'd4'].map((id) => novo(id, 'Desenvolvimento Pessoal')), novo('l1', 'Lazer')];
+		const left = new Map([['Espiritual', 3], ['Desenvolvimento Pessoal', 10]]);
+		const keys = buildSession(items, opts({ newLeftByArea: left })).map((i) => i.key);
+		expect(keys.filter((k) => k.startsWith('e'))).toHaveLength(3);
+		expect(keys.filter((k) => k.startsWith('d'))).toHaveLength(4);
+		expect(keys).toContain('l1');
+		expect(buildSession(items, opts({ newLeftByArea: left, newAllowed: 2 }))).toHaveLength(2);
+		expect(buildSession(items, opts({ newLeftByArea: new Map([['Espiritual', 0]]) })).some((i) => i.area === 'Espiritual')).toBe(false);
+	});
+	it('quotaStatus mostra usados, teto e livres, com o teto cortado pelo orçamento', () => {
+		const q = quotaStatus({ dueMinutes: 0, budgetMinutes: 20, cap: 15, perArea: { Espiritual: 3, Carreira: 2 }, usedTotal: 6, usedByArea: new Map([['Espiritual', 3]]) });
+		expect(q.geral).toMatchObject({ usados: 6, teto: 15, livres: 9 });
+		expect(q.areas).toEqual([{ area: 'Espiritual', usados: 3, teto: 3, livres: 0 }, { area: 'Carreira', usados: 0, teto: 2, livres: 2 }]);
+		expect(quotaStatus({ dueMinutes: 18, budgetMinutes: 20, cap: 15, perArea: {}, usedTotal: 6, usedByArea: new Map() }).geral).toMatchObject({ teto: 7, livres: 1, cap: 15 });
 	});
 });

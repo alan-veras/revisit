@@ -162,3 +162,23 @@
 .lembro-area-go { display: inline-flex; padding: 4px; border-radius: 6px; }
 .lembro-area-go:not(.is-off):hover { background: var(--background-modifier-hover); color: var(--interactive-accent); cursor: pointer; }
 .lembro-area-go svg { width: 14px; height: 14px; }
+
+/* cota de novos por área */
+.lembro-quota { margin: 0 0 22px; padding: 14px 16px 10px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background: var(--background-secondary); }
+.lembro-quota-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.lembro-quota-title { font-weight: 600; }
+.lembro-quota-head .lembro-muted { font-size: var(--font-ui-smaller); }
+.lembro-quota .lembro-hb { grid-template-columns: 170px 1fr 70px; }
+.lembro-quota-track { background: var(--background-modifier-border); border-radius: 6px; overflow: hidden; height: 10px; }
+.lembro-quota-track i { border-radius: 6px; transition: width .3s; }
+.lembro-hb.is-geral .lembro-hb-name { font-weight: 600; }
+.lembro-hb.is-full .lembro-quota-track i { background: var(--color-green); }
+.lembro-hb.is-full .lembro-hb-val { color: var(--color-green); }
+.lembro-quota-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.lembro-quota-ok { display: inline-flex; }
+.lembro-quota-ok svg { width: 13px; height: 13px; }
+.lembro-quota-note { font-size: var(--font-ui-smaller); margin-top: 6px; }
+.lembro-pill { font-size: var(--font-ui-smaller); padding: 1px 8px; border-radius: 999px; background: hsla(var(--interactive-accent-hsl), 0.15); color: var(--interactive-accent); white-space: nowrap; }
+.lembro-pill.is-full { background: var(--background-modifier-border); color: var(--text-faint); }
+.lembro-new-badge { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: var(--interactive-accent); color: var(--text-on-accent); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: .02em; }
+@media (max-width: 480px) { .lembro-quota .lembro-hb { grid-template-columns: 110px 1fr 60px; } }

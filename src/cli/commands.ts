@@ -78,6 +78,10 @@ const COMMANDS: Record<string, Command> = {
 				minutos: estimateMinutes(s, plugin.secs()),
 				orcamento: plugin.settings.budgetMinutes,
 				proximos7: forecast(items, plugin.secs(), new Date()),
+				novos: (() => {
+					const q = plugin.quota();
+					return { geral: { usados: q.geral.usados, teto: q.geral.teto, cap: q.geral.cap }, areas: Object.fromEntries(q.areas.map((x) => [x.area, { usados: x.usados, teto: x.teto }])) };
+				})(),
 			});
 		},
 	},

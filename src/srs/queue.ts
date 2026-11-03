@@ -21,6 +21,8 @@ export interface QueueOptions {
 	assunto?: string | null;
 	budgetMinutes: number;
 	newAllowed: number;
+	/** new cards still allowed today per area; an area missing here has no cap of its own */
+	newLeftByArea?: Map<string, number>;
 	secs: Record<Tipo, number>;
 	interleave: boolean;
 	retrievability: (card: FsrsCard, now: Date) => number;
@@ -87,10 +89,16 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	// a new card and its new reverse count as one introduction
 	const fresh: QueueItem[] = [];
 	const introduced = new Set<string>();
+	const byArea = new Map<string, number>();
 	for (const it of pool) {
 		if (!isNew(it.fsrs)) continue;
 		const base = it.card.id ?? it.key;
-		if (!introduced.has(base) && introduced.size >= Math.max(0, o.newAllowed)) continue;
+		if (!introduced.has(base)) {
+			if (introduced.size >= Math.max(0, o.newAllowed)) continue;
+			const left = it.area ? o.newLeftByArea?.get(it.area) : undefined;
+			if (left !== undefined && (byArea.get(it.area as string) ?? 0) >= left) continue;
+			if (it.area) byArea.set(it.area, (byArea.get(it.area) ?? 0) + 1);
+		}
 		introduced.add(base);
 		fresh.push(it);
 	}
