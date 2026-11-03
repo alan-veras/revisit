@@ -1,7 +1,7 @@
 import { State } from 'ts-fsrs';
 import { CliFlags, normalizePath, TFile } from 'obsidian';
 import { areaOf, linkPath } from '../cards/area';
-import { normalizeAssunto } from '../cards/format';
+import { groupBy, normalizeAssunto } from '../cards/format';
 import { mirrorPath } from '../cards/mirror';
 import { AREAS, Card, isTipo } from '../cards/types';
 import type LembroPlugin from '../main';
@@ -52,6 +52,10 @@ function placeFor(plugin: LembroPlugin, fonte: string): { path: string; derived:
 	const link = linkPath(fonte);
 	const file = link ? plugin.app.metadataCache.getFirstLinkpathDest(link, '') : null;
 	const src = file?.path ?? (link || null);
+	// a source that is itself a card file would be mirrored inside the mirror (Lembro/x/Lembro/x.md)
+	const folder = normalizePath(plugin.settings.folder);
+	if (src && (src === folder || src.startsWith(folder + '/')))
+		throw new CliError('fonte', `a fonte ${fonte} aponta para um arquivo de cartões do Lembro (${src}); use a nota de origem`);
 	return { path: mirrorPath(src, plugin.settings.folder), derived: src ? areaOf(src, plugin.settings.areaMap) : null };
 }
 
@@ -157,9 +161,23 @@ const COMMANDS: Record<string, Command> = {
 			}));
 			const dests = cards.map((c) => placeFor(plugin, c.fonte).path);
 			if (flag(p, 'dry')) return json({ dry: true, cartoes: cards.length, arquivos: [...new Set(dests)], previa: cards.slice(0, 5).map((c) => ({ frente: short(c.frente), tipo: c.tipo, assunto: c.assuntos })) });
-			const ids: string[] = [];
-			for (let i = 0; i < cards.length; i++) ids.push(await plugin.store.addCard(dests[i] as string, cards[i] as (typeof cards)[number]));
+			// one write per destination file, then check that every card landed; retry the missing once
+			const items = cards.map((card, i) => ({ card, dest: dests[i] as string }));
+			const written: typeof items = [];
+			for (const [dest, group] of groupBy(items, (it) => it.dest)) {
+				const ids = await plugin.store.addCards(dest, group.map((it) => it.card));
+				group.forEach((it, i) => written.push({ dest, card: { ...it.card, id: ids[i] as string } }));
+			}
 			await plugin.reload();
+			const present = () => new Set(plugin.store.cards.map((c) => c.id));
+			let missing = written.filter((it) => !present().has(it.card.id));
+			if (missing.length) {
+				for (const [dest, group] of groupBy(missing, (it) => it.dest)) await plugin.store.addCards(dest, group.map((it) => it.card));
+				await plugin.reload();
+				missing = written.filter((it) => !present().has(it.card.id));
+			}
+			const ids = written.map((it) => it.card.id as string);
+			if (missing.length) return json({ ok: false, criados: ids.length - missing.length, faltando: missing.map((it) => ({ id: it.card.id, frente: short(it.card.frente), arquivo: it.dest })) });
 			return json({ ok: true, criados: ids.length, ids });
 		},
 	},

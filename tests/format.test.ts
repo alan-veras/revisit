@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, ensureIds, normalizeAssunto, parseCardFile, removeCard, renameSource, replaceCard, serializeCard } from '../src/cards/format';
+import { appendCard, appendCards, ensureIds, groupBy, normalizeAssunto, parseCardFile, removeCard, renameSource, replaceCard, serializeCard } from '../src/cards/format';
 
 const FILE = `Frente: Como desfazer o último rollout de um deployment?
 Verso:
@@ -105,5 +105,18 @@ describe('normalizeAssunto', () => {
 		expect(out).toContain('[[3_Outputs/Y/Nova|Nota]] ^labcde');
 		expect(out).toContain('[[Outra]]');
 		expect(renameSource('Fonte: [[a.pdf#page=3|a, p. 3]]', 'a.pdf', 'b/a.pdf')).toBe('Fonte: [[b/a.pdf#page=3|a, p. 3]]');
+	});
+});
+
+describe('lote numa escrita só', () => {
+	it('appendCards junta os blocos em ordem, igual a vários appendCard', () => {
+		const one = appendCard(appendCard('Frente: A\nVerso: a', 'Frente: B\nVerso: b'), 'Frente: C\nVerso: c');
+		expect(appendCards('Frente: A\nVerso: a', ['Frente: B\nVerso: b', 'Frente: C\nVerso: c'])).toBe(one);
+		expect(parseCardFile(appendCards('', ['Frente: B\nVerso: b', 'Frente: C\nVerso: c']))).toHaveLength(2);
+	});
+	it('groupBy mantém a ordem dos destinos e dos itens', () => {
+		const g = groupBy(['a1', 'b1', 'a2', 'c1', 'b2'], (x) => x[0] as string);
+		expect([...g.keys()]).toEqual(['a', 'b', 'c']);
+		expect(g.get('a')).toEqual(['a1', 'a2']);
 	});
 });

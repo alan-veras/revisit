@@ -1,5 +1,5 @@
 import { App, normalizePath, TFile } from 'obsidian';
-import { appendCard, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../cards/format';
+import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../cards/format';
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
@@ -92,6 +92,25 @@ export class Store {
 		}
 		await this.load();
 		return id;
+	}
+
+	/**
+	 * Adds several cards to one file in a single write. Writing them one by one let a
+	 * concurrent stale write (a reload, another plugin) drop a card now and then.
+	 * Cards that already have an id keep it, so a retry does not duplicate them.
+	 */
+	async addCards(path: string, cards: Omit<Card, 'start' | 'end' | 'file'>[]): Promise<string[]> {
+		const taken = this.takenIds();
+		const withIds = cards.map((c) => ({ ...c, id: c.id ?? newId(taken) }));
+		const blocks = withIds.map((c) => serializeCard(c));
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) {
+			await this.app.vault.process(file, (t) => appendCards(t, blocks));
+		} else {
+			await this.ensureFolder(path);
+			await this.app.vault.create(path, appendCards('', blocks));
+		}
+		return withIds.map((c) => c.id);
 	}
 
 	private async withCardFile(card: Card, edit: (text: string, fresh: Card) => string): Promise<void> {

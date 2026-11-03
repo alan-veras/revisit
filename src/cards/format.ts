@@ -138,6 +138,23 @@ export function appendCard(text: string, block: string): string {
 	return base ? `${base}\n\n---\n\n${block}\n` : `${block}\n`;
 }
 
+/** Appends several blocks at once, in order: one write for a whole batch. */
+export function appendCards(text: string, blocks: string[]): string {
+	return blocks.reduce((t, b) => appendCard(t, b), text);
+}
+
+/** Groups items by destination, keeping the first-seen order of destinations and of items. */
+export function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+	const out = new Map<string, T[]>();
+	for (const it of items) {
+		const k = key(it);
+		const g = out.get(k);
+		if (g) g.push(it);
+		else out.set(k, [it]);
+	}
+	return out;
+}
+
 /** Replaces the block of `card` inside `text` with `block`. */
 export function replaceCard(text: string, card: Pick<Card, 'start' | 'end'>, block: string): string {
 	const lines = text.split('\n');
