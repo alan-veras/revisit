@@ -81,7 +81,7 @@ export class PainelView extends ItemView {
 	/** Started once: areas with something for today open on the first draw. */
 	private seeded = false;
 
-	/** The decks as a table, like Anki: Revisar, Novos and Total per area and assunto. */
+	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's cota as a small meter. */
 	private drawDecks(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const q = p.quota();
@@ -106,47 +106,39 @@ export class PainelView extends ItemView {
 			for (const t of tree) if (p.session(t.area).length) this.expanded.add(t.path);
 		}
 
-		const table = wrap.createDiv({ cls: 'lembro-decks' });
-		const head = table.createDiv({ cls: 'lembro-deck lembro-deck-head' });
-		head.createSpan({ cls: 'lembro-deck-name', text: 'Deck' });
-		for (const [t, tip] of [
-			['Revisar', 'Cartões que vencem hoje e cabem no orçamento'],
-			['Novos', 'Cartões novos que entram hoje; na área, quantos ainda cabem na cota'],
-			['Total', 'Cartões ativos (os suspensos ficam de fora)'],
-		] as const)
-			setTooltip(head.createSpan({ cls: 'lembro-deck-n', text: t }), tip);
-		head.createSpan({ cls: 'lembro-deck-go' });
-
+		const list = wrap.createDiv({ cls: 'lembro-list' });
 		const row = (node: TreeNode, depth: number) => {
 			const s = p.session(node.area, undefined, false, node.assunto);
 			const novos = s.filter((it) => isNew(it.fsrs)).length;
 			const revisar = s.length - novos;
 			const kids = node.children.length > 0;
 			const open = this.expanded.has(node.path);
-			const r = table.createDiv({ cls: `lembro-deck is-d${Math.min(depth, 3)}` + (s.length ? '' : ' is-quiet') });
-			const name = r.createSpan({ cls: 'lembro-deck-name' });
-			name.style.paddingLeft = `${depth * 18}px`;
-			const caret = name.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
+			const r = list.createDiv({ cls: `lembro-li is-d${Math.min(depth, 3)}` + (s.length ? '' : ' is-quiet') });
+			r.style.paddingLeft = `${6 + depth * 20}px`;
+			const caret = r.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
 			if (kids) setIcon(caret, 'chevron-right');
-			name.createSpan({ cls: 'lembro-deck-title', text: node.name });
+			const title = r.createSpan({ cls: 'lembro-li-title', text: node.name });
+			const susp = suspendedOf(node.path);
+			setTooltip(title, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
 
-			const cell = (cls: string, n: number) => r.createSpan({ cls: `lembro-deck-n ${n ? cls : 'is-zero'}`, text: n ? String(n) : '·' });
-			cell('is-due', revisar);
+			const pills = r.createSpan({ cls: 'lembro-li-pills' });
+			if (revisar) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(revisar) }), `${revisar} para revisar hoje`);
+			if (novos) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(novos) }), `${novos} ${novos === 1 ? 'novo entra' : 'novos entram'} hoje`);
+
 			const cota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
+			const meter = r.createSpan({ cls: 'lembro-li-cota' });
 			if (cota) {
-				const c = r.createSpan({ cls: 'lembro-deck-n lembro-deck-cota' });
 				const full = cota.teto > 0 && cota.livres === 0;
 				const paused = cota.cota === 0;
-				c.createSpan({ cls: novos ? 'is-new' : 'is-zero', text: paused ? 'pausado' : full ? 'cheia' : novos ? String(novos) : '·' });
-				const bar = c.createSpan({ cls: 'lembro-deck-bar' + (full ? ' is-full' : '') });
+				if (full) meter.addClass('is-full');
+				const bar = meter.createSpan({ cls: 'lembro-li-bar' });
 				bar.createEl('i').style.width = `${cota.teto ? Math.min(100, (cota.usados / cota.teto) * 100) : 0}%`;
-				setTooltip(c, paused ? 'Cota 0: novos desta área pausados' : `Novos hoje em ${node.area}: ${cota.usados} de ${cota.teto} usados${novos ? ` · ${novos} ${novos === 1 ? 'entra' : 'entram'} agora` : ''}${q.reduced ? ' · cota encolhida pelo orçamento' : ''}`);
-			} else cell('is-new', novos);
-			const total = r.createSpan({ cls: 'lembro-deck-n lembro-deck-total', text: String(node.cards) });
-			const susp = suspendedOf(node.path);
-			if (susp) setTooltip(total, `${node.cards} ativos · ${susp} suspensos`);
+				meter.createSpan({ cls: 'lembro-li-cota-n', text: paused ? 'pausado' : `${cota.usados}/${cota.teto}` });
+				if (full) setIcon(meter.createSpan({ cls: 'lembro-li-ok' }), 'check');
+				setTooltip(meter, paused ? 'Cota 0: novos desta área pausados' : full ? `Cota de novos completa hoje (${cota.teto}): voltam amanhã` : `Novos hoje: ${cota.usados} de ${cota.teto}${q.reduced ? ' · cota encolhida pelo orçamento' : ''}`);
+			}
 
-			const go = r.createSpan({ cls: 'lembro-deck-go' });
+			const go = r.createSpan({ cls: 'lembro-li-go' });
 			if (s.length) {
 				setIcon(go, 'play');
 				setTooltip(go, `Revisar ${node.assunto ?? node.area} (${s.length})`);
@@ -166,9 +158,17 @@ export class PainelView extends ItemView {
 		};
 		for (const t of tree) row(t, 0);
 
+		const legend = list.createDiv({ cls: 'lembro-li-legend' });
+		legend.createSpan({ cls: 'lembro-np is-due', text: 'n' });
+		legend.createSpan({ text: 'revisar' });
+		legend.createSpan({ cls: 'lembro-np is-new', text: 'n' });
+		legend.createSpan({ text: 'novos' });
+		legend.createSpan({ cls: 'lembro-li-bar lembro-li-bar-legend' }).createEl('i');
+		legend.createSpan({ text: 'cota de novos da área' });
+
 		const empty = AREAS.filter((a) => !tree.some((t) => t.area === a));
-		if (empty.length) table.createDiv({ cls: 'lembro-deck-empty', text: `${empty.join(', ').replace(/, ([^,]*)$/, ' e $1')} ${empty.length === 1 ? 'não tem' : 'não têm'} cartões` });
-		if (q.reduced) table.createDiv({ cls: 'lembro-deck-empty', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas de novos encolheram hoje.' });
+		if (empty.length) list.createDiv({ cls: 'lembro-deck-empty', text: `${empty.join(', ').replace(/, ([^,]*)$/, ' e $1')} ${empty.length === 1 ? 'não tem' : 'não têm'} cartões` });
+		if (q.reduced) list.createDiv({ cls: 'lembro-deck-empty', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas de novos encolheram hoje.' });
 	}
 
 	/** Whole notes to reread: today's, the one being read, and the next ones. */

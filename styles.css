@@ -163,31 +163,34 @@
 .lembro-area-go:not(.is-off):hover { background: var(--background-modifier-hover); color: var(--interactive-accent); cursor: pointer; }
 .lembro-area-go svg { width: 14px; height: 14px; }
 
-/* decks: tabela estilo Anki */
-.lembro-decks { margin-top: 4px; font-size: var(--font-ui-medium); }
-.lembro-deck { display: grid; grid-template-columns: 1fr 64px 76px 56px 26px; align-items: center; gap: 4px; padding: 6px 6px; border-radius: 6px; cursor: pointer; }
-.lembro-deck:not(.lembro-deck-head):hover { background: var(--background-modifier-hover); }
-.lembro-deck-head { cursor: default; color: var(--text-muted); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--background-modifier-border); border-radius: 0; padding-bottom: 8px; margin-bottom: 4px; }
-.lembro-deck-name { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.lembro-deck-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lembro-deck.is-d0 { font-weight: 600; margin-top: 6px; }
-.lembro-deck.is-d1 { font-size: 0.95em; }
-.lembro-deck.is-d2, .lembro-deck.is-d3 { font-size: 0.92em; color: var(--text-muted); }
-.lembro-deck.is-quiet .lembro-deck-title { color: var(--text-muted); }
-.lembro-deck-n { text-align: right; font-variant-numeric: tabular-nums; }
-.lembro-deck-n.is-zero, .lembro-deck-n .is-zero { color: var(--text-faint); font-weight: 400; }
-.lembro-deck-n.is-due { color: var(--interactive-accent); font-weight: 600; }
-.lembro-deck-n.is-new, .lembro-deck-n .is-new { color: var(--color-green); font-weight: 600; }
-.lembro-deck-total { color: var(--text-muted); font-weight: 400; }
-.lembro-deck-cota { position: relative; padding-bottom: 5px; }
-.lembro-deck-of { color: var(--text-faint); font-weight: 400; font-size: 0.85em; }
-.lembro-deck-bar { position: absolute; right: 0; bottom: 0; width: 44px; height: 3px; border-radius: 2px; background: var(--background-modifier-border); overflow: hidden; }
-.lembro-deck-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--color-green); opacity: .55; }
-.lembro-deck-bar.is-full i { opacity: 1; }
-.lembro-deck-go { display: inline-flex; justify-content: center; color: var(--text-faint); opacity: 0; transition: opacity .15s; }
-.lembro-deck:hover .lembro-deck-go { opacity: 1; }
-.lembro-deck-go svg { width: 14px; height: 14px; }
-.lembro-deck-go:hover { color: var(--interactive-accent); }
-.lembro-deck .lembro-caret { flex: none; }
+/* decks: lista limpa */
+.lembro-list { margin-top: 2px; }
+.lembro-li { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 3px 6px; border-radius: 8px; cursor: pointer; font-size: var(--font-ui-small); }
+.lembro-li:hover { background: var(--background-modifier-hover); }
+.lembro-li.is-d0 { font-weight: 600; font-size: var(--font-ui-medium); margin-top: 6px; }
+.lembro-li.is-d2, .lembro-li.is-d3 { color: var(--text-muted); }
+.lembro-li.is-quiet .lembro-li-title { color: var(--text-muted); }
+.lembro-li.is-d0.is-quiet .lembro-li-title { color: var(--text-normal); opacity: .75; }
+.lembro-li .lembro-caret { flex: none; }
+.lembro-li-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembro-li-pills { display: inline-flex; gap: 4px; }
+.lembro-np { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; font-size: var(--font-ui-smaller); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lembro-np.is-due { background: hsla(var(--interactive-accent-hsl), 0.18); color: var(--interactive-accent); }
+.lembro-np.is-new { background: rgba(var(--color-green-rgb), 0.18); color: var(--color-green); }
+.lembro-li-cota { display: inline-flex; align-items: center; gap: 6px; width: 92px; justify-content: flex-end; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 400; }
+.lembro-li-bar { position: relative; display: inline-block; width: 40px; height: 4px; border-radius: 2px; background: var(--background-modifier-border); overflow: hidden; }
+.lembro-li-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--color-green); opacity: .6; border-radius: 2px; }
+.lembro-li-cota.is-full .lembro-li-bar i { opacity: 1; }
+.lembro-li-cota.is-full { color: var(--color-green); }
+.lembro-li-cota-n { font-variant-numeric: tabular-nums; }
+.lembro-li-ok { display: inline-flex; }
+.lembro-li-ok svg { width: 12px; height: 12px; }
+.lembro-li-go { display: inline-flex; width: 20px; justify-content: center; color: var(--text-faint); opacity: 0; transition: opacity .15s; }
+.lembro-li:hover .lembro-li-go { opacity: 1; }
+.lembro-li-go:hover { color: var(--interactive-accent); }
+.lembro-li-go svg { width: 14px; height: 14px; }
+.lembro-li-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 14px; padding: 0 6px; color: var(--text-faint); font-size: var(--font-ui-smaller); }
+.lembro-li-legend .lembro-np { min-width: 18px; height: 16px; padding: 0 5px; }
+.lembro-li-legend span + .lembro-np, .lembro-li-legend span + .lembro-li-bar { margin-left: 8px; }
 .lembro-deck-empty { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 10px 6px 0; }
-@media (max-width: 480px) { .lembro-deck { grid-template-columns: 1fr 48px 60px 40px 20px; } }
+.lembro-li-bar-legend i { width: 60%; }
