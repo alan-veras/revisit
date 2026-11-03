@@ -88,6 +88,48 @@ describe('ensureIds', () => {
 	it('leaves a complete file unchanged', () => {
 		expect(ensureIds(FILE, new Set()).text).toBe(FILE);
 	});
+
+	it('verso terminando em code fence recebe o id fora da fence e converge', () => {
+		const text = 'Frente: O que faz o comando?\nVerso:\n```bash\nkubectl rollout undo\n```\nTipo: Pergunta\n';
+		const taken = new Set<string>();
+		const first = ensureIds(text, taken);
+		expect(first.added).toBe(1);
+		expect(first.text).not.toContain('``` ^');
+		const again = ensureIds(first.text, taken);
+		expect(again.added).toBe(0);
+		const [c] = parseCardFile(first.text);
+		expect(c?.id).toMatch(/^l[a-z0-9]{5}$/);
+		expect(c?.verso).toContain('kubectl rollout undo');
+		expect(c?.tipo).toBe('Pergunta');
+	});
+
+	it('verso que é só code fence recebe o id numa linha de campo que aguenta', () => {
+		const text = 'Frente: a\nVerso:\n```bash\nls\n```\n';
+		const { text: out, added } = ensureIds(text, new Set());
+		expect(added).toBe(1);
+		const [c] = parseCardFile(out);
+		expect(c?.id).toMatch(/^l[a-z0-9]{5}$/);
+		expect(c?.verso).toContain('ls');
+	});
+});
+
+describe('removeCard com frontmatter', () => {
+	it('preserva o frontmatter ao remover o primeiro cartão', () => {
+		const text = '---\ntags: [lembro]\n---\n\nFrente: A\nVerso: B\n\n---\n\nFrente: C\nVerso: D\n';
+		const [first] = parseCardFile(text);
+		if (!first) throw new Error('no card');
+		const out = removeCard(text, first);
+		expect(out.startsWith('---\ntags: [lembro]\n---')).toBe(true);
+		expect(parseCardFile(out).map((c) => c.frente)).toEqual(['C']);
+	});
+
+	it('não colapsa linhas vazias dentro de fences de outros cartões', () => {
+		const text = 'Frente: A\nVerso: a\n\n---\n\nFrente: B\nVerso:\n```js\n\n\n\nf()\n```\nTipo: Pergunta\n';
+		const [first] = parseCardFile(text);
+		if (!first) throw new Error('no card');
+		const out = removeCard(text, first);
+		expect(out).toContain('```js\n\n\n\nf()');
+	});
 });
 
 describe('normalizeAssunto', () => {

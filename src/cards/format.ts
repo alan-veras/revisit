@@ -170,15 +170,31 @@ export function replaceCard(text: string, card: Pick<Card, 'start' | 'end'>, blo
 	return lines.join('\n');
 }
 
-/** Removes the block of `card` and its separator. */
+/** End line (0-based) of a YAML frontmatter, or -1 when the file has none. */
+export function frontmatterEnd(lines: string[]): number {
+	if ((lines[0] ?? '').trim() !== '---') return -1;
+	for (let i = 1; i < lines.length; i++) if ((lines[i] ?? '').trim() === '---') return i;
+	return -1;
+}
+
+/** Removes the block of `card` and one of its separators, keeping the frontmatter. */
 export function removeCard(text: string, card: Pick<Card, 'start' | 'end'>): string {
 	const lines = text.split('\n');
+	const fmEnd = frontmatterEnd(lines);
 	let s = card.start;
 	let e = card.end;
-	if (s > 0 && (lines[s - 1] ?? '').trim() === '---') s--;
+	// the separator above the first card is the frontmatter closer when there is one
+	if (s > fmEnd + 1 && (lines[s - 1] ?? '').trim() === '---') s--;
 	else if ((lines[e + 1] ?? '').trim() === '---') e++;
 	lines.splice(s, e - s + 1);
-	return lines.join('\n').replace(/^\s*---\s*\n/, '').replace(/\n{3,}/g, '\n\n');
+	let lo = s;
+	let hi = s;
+	while (hi < lines.length && (lines[hi] ?? '').trim() === '') hi++;
+	while (lo > 0 && (lines[lo - 1] ?? '').trim() === '') lo--;
+	// one blank line between the neighbors at the seam, none at the file edges
+	lines.splice(lo, hi - lo, ...(lo > 0 && hi < lines.length ? [''] : []));
+	const out = lines.join('\n');
+	return fmEnd < 0 ? out.replace(/^\s*---\s*\n/, '') : out;
 }
 
 export function newId(taken: Set<string>, random: () => number = Math.random): string {
@@ -192,6 +208,29 @@ export function newId(taken: Set<string>, random: () => number = Math.random): s
 	}
 }
 
+/**
+ * Line of the block that carries the block id: the last one outside a code
+ * fence, never a bare label (`Verso:` alone would lose its field when the id
+ * is stripped on the next read), so a card whose back is only a code block
+ * gets the id on an earlier line.
+ */
+function idLineFor(lines: string[], start: number, end: number): number {
+	let fence = false;
+	const candidates: number[] = [];
+	for (let i = start; i <= end; i++) {
+		const line = lines[i] ?? '';
+		const isFence = FENCE_RE.test(line);
+		if (!fence && !isFence && line.trim() !== '') candidates.push(i);
+		if (isFence) fence = !fence;
+	}
+	while (candidates.length) {
+		const at = candidates[candidates.length - 1] as number;
+		if (!/^(Frente|Verso|Tipo|Área|Assunto|Tags|Reverso|Fonte):[ \t]?$/i.test(lines[at] ?? '')) return at;
+		candidates.pop();
+	}
+	return -1;
+}
+
 /** Gives an id to every card without one; returns the new text (or the same). */
 export function ensureIds(text: string, taken: Set<string>, random?: () => number): { text: string; added: number } {
 	const lines = text.split('\n');
@@ -199,9 +238,9 @@ export function ensureIds(text: string, taken: Set<string>, random?: () => numbe
 	for (const block of splitBlocks(text)) {
 		const card = parseBlock(block);
 		if (!card || card.id) continue;
-		let last = block.end;
-		while (last > block.start && (lines[last] ?? '').trim() === '') last--;
-		lines[last] = `${(lines[last] ?? '').replace(/\s+$/, '')} ^${newId(taken, random)}`;
+		const at = idLineFor(lines, block.start, block.end);
+		if (at < 0) continue;
+		lines[at] = `${(lines[at] as string).replace(/\s+$/, '')} ^${newId(taken, random)}`;
 		added++;
 	}
 	return { text: added ? lines.join('\n') : text, added };
