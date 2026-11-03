@@ -14,6 +14,9 @@ export interface QueueItem {
 	suspended: boolean;
 }
 
+/** Area key of the cards whose source has no area: they share one cota. */
+export const NO_AREA = 'Sem área';
+
 export interface QueueOptions {
 	now: Date;
 	area?: string | null;
@@ -95,9 +98,10 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 		const base = it.card.id ?? it.key;
 		if (!introduced.has(base)) {
 			if (introduced.size >= Math.max(0, o.newAllowed)) continue;
-			const left = it.area ? o.newLeftByArea?.get(it.area) : undefined;
-			if (left !== undefined && (byArea.get(it.area as string) ?? 0) >= left) continue;
-			if (it.area) byArea.set(it.area, (byArea.get(it.area) ?? 0) + 1);
+			const key = it.area ?? NO_AREA;
+			const left = o.newLeftByArea?.get(key);
+			if (left !== undefined && (byArea.get(key) ?? 0) >= left) continue;
+			byArea.set(key, (byArea.get(key) ?? 0) + 1);
 		}
 		introduced.add(base);
 		fresh.push(it);

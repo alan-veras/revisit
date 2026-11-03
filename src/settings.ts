@@ -2,12 +2,12 @@ import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import { parseAreaMap } from './cards/area';
 import { AREAS } from './cards/types';
 import type LembroPlugin from './main';
+import { DEFAULT_AREA_CAP } from './srs/budget';
 
 export interface LembroSettings {
 	folder: string;
 	budgetMinutes: number;
-	newPerDay: number;
-	/** new cards per day per area, inside the general cap; an area left out has only the general cap */
+	/** new cards per day of each area; an area left out gets DEFAULT_AREA_CAP */
 	newPerArea: Record<string, number>;
 	retention: number;
 	interleave: boolean;
@@ -32,8 +32,7 @@ export interface LembroSettings {
 export const DEFAULT_SETTINGS: LembroSettings = {
 	folder: '8_System/Lembro',
 	budgetMinutes: 20,
-	newPerDay: 15,
-	newPerArea: { 'Desenvolvimento Pessoal': 10, Espiritual: 3, Carreira: 2 },
+	newPerArea: {},
 	retention: 0.9,
 	interleave: true,
 	hintWords: 3,
@@ -63,18 +62,11 @@ export class LembroSettingTab extends PluginSettingTab {
 			{
 				type: 'group',
 				heading: 'Cartões novos por dia',
-				items: [
-					{
-						name: 'Teto geral',
-						desc: 'Quantos cartões novos entram por dia, somando todas as áreas. O orçamento de minutos pode reduzir.',
-						control: { type: 'number', key: 'newPerDay', min: 0 },
-					},
-					...AREAS.map((area) => ({
-						name: area,
-						desc: `Cota própria de ${area}, dentro do teto geral. Vazio: sem cota, só o teto geral vale.`,
-						control: { type: 'text' as const, key: `${COTA}${area}`, placeholder: 'sem cota' },
-					})),
-				],
+				items: AREAS.map((area) => ({
+					name: area,
+					desc: `Quantos cartões novos de ${area} entram por dia (padrão ${DEFAULT_AREA_CAP}). 0 pausa os novos da área. Se as revisões vencidas encherem o orçamento, a cota encolhe no dia.`,
+					control: { type: 'number' as const, key: `${COTA}${area}`, min: 0 },
+				})),
 			},
 			{
 				type: 'group',
@@ -167,8 +159,7 @@ export class LembroSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
 		if (key.startsWith(COTA)) {
-			const v = s.newPerArea[key.slice(COTA.length)];
-			return v === undefined ? '' : String(v);
+			return s.newPerArea[key.slice(COTA.length)] ?? DEFAULT_AREA_CAP;
 		}
 		if (key === 'retention') return Math.round(s.retention * 100);
 		if (key === 'areaMap')
@@ -181,16 +172,11 @@ export class LembroSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
 		if (key.startsWith(COTA)) {
-			const area = key.slice(COTA.length);
-			const text = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
-			const next = { ...s.newPerArea };
-			if (/^\d+$/.test(text)) next[area] = Number(text);
-			else if (!text) delete next[area];
-			else return; // half-typed: keep the last valid value
-			s.newPerArea = next;
+			const n = Number(value);
+			if (!Number.isFinite(n) || n < 0) return; // half-typed: keep the last valid value
+			s.newPerArea = { ...s.newPerArea, [key.slice(COTA.length)]: Math.floor(n) };
 		} else if (key === 'folder') s.folder = String(value).trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
 		else if (key === 'budgetMinutes') s.budgetMinutes = Math.max(1, Number(value) || DEFAULT_SETTINGS.budgetMinutes);
-		else if (key === 'newPerDay') s.newPerDay = Math.max(0, Number(value) || 0);
 		else if (key === 'retention') {
 			s.retention = Number(value) / 100;
 			this.plugin.refreshScheduler();

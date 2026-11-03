@@ -147,10 +147,23 @@ describe('cota por área', () => {
 		expect(buildSession(items, opts({ newLeftByArea: left, newAllowed: 2 }))).toHaveLength(2);
 		expect(buildSession(items, opts({ newLeftByArea: new Map([['Espiritual', 0]]) })).some((i) => i.area === 'Espiritual')).toBe(false);
 	});
-	it('quotaStatus mostra usados, teto e livres, com o teto cortado pelo orçamento', () => {
-		const q = quotaStatus({ dueMinutes: 0, budgetMinutes: 20, cap: 15, perArea: { Espiritual: 3, Carreira: 2 }, usedTotal: 6, usedByArea: new Map([['Espiritual', 3]]) });
-		expect(q.geral).toMatchObject({ usados: 6, teto: 15, livres: 9 });
-		expect(q.areas).toEqual([{ area: 'Espiritual', usados: 3, teto: 3, livres: 0 }, { area: 'Carreira', usados: 0, teto: 2, livres: 2 }]);
-		expect(quotaStatus({ dueMinutes: 18, budgetMinutes: 20, cap: 15, perArea: {}, usedTotal: 6, usedByArea: new Map() }).geral).toMatchObject({ teto: 7, livres: 1, cap: 15 });
+	it('quotaStatus dá 5 por padrão a cada área, encolhe com o orçamento e soma o total', () => {
+		const q = quotaStatus({ dueMinutes: 0, budgetMinutes: 20, areas: ['Espiritual', 'Carreira', 'Lazer'], perArea: { Espiritual: 3, Lazer: 0 }, usedByArea: new Map([['Espiritual', 3], ['Carreira', 1]]) });
+		expect(q.areas).toEqual([
+			{ area: 'Espiritual', cota: 3, teto: 3, usados: 3, livres: 0 },
+			{ area: 'Carreira', cota: 5, teto: 5, usados: 1, livres: 4 },
+			{ area: 'Lazer', cota: 0, teto: 0, usados: 0, livres: 0 },
+		]);
+		expect(q.total).toEqual({ usados: 4, teto: 8, livres: 4 });
+		expect(q.reduced).toBe(false);
+		const r = quotaStatus({ dueMinutes: 18, budgetMinutes: 20, areas: ['Carreira'], perArea: {}, usedByArea: new Map() });
+		expect(r.areas[0]).toMatchObject({ cota: 5, teto: 2 });
+		expect(r.reduced).toBe(true);
 	});
+	it('cartões sem área dividem a cota de Sem área', () => {
+		const sem = (id: string): QueueItem => ({ key: id, reverso: false, card: card(id), area: null, suspended: false });
+		const keys = buildSession([sem('a'), sem('b'), sem('c')], opts({ newLeftByArea: new Map([['Sem área', 2]]) }));
+		expect(keys).toHaveLength(2);
+	});
+
 });

@@ -6,7 +6,7 @@ import { retentionBy, reviewsPerDay } from '../srs/stats';
 import { cardSnippet } from './search';
 import { AREAS } from '../cards/types';
 import type LembroPlugin from '../main';
-import { estimateMinutes, QueueItem } from '../srs/queue';
+import { estimateMinutes, NO_AREA, QueueItem } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PAINEL = 'lembro-painel';
@@ -84,32 +84,38 @@ export class PainelView extends ItemView {
 		this.drawResults(results);
 	}
 
-	/** Meters of today's new cards: the general cap and each area's own. */
+	/** Meters of today's new cards: one per area that has cards, each with its own cota. */
 	private drawQuota(wrap: HTMLElement): void {
-		const q = this.plugin.quota();
+		const p = this.plugin;
+		const q = p.quota();
+		const withCards = new Set(p.items().map((it) => it.area ?? NO_AREA));
+		const shown = q.areas.filter((a) => withCards.has(a.area) || a.usados > 0);
+		if (!shown.length) return;
 		const box = wrap.createDiv({ cls: 'lembro-quota' });
 		const head = box.createDiv({ cls: 'lembro-quota-head' });
 		head.createSpan({ cls: 'lembro-quota-title', text: 'Cartões novos hoje' });
-		head.createSpan({ cls: 'lembro-muted', text: 'cada área tem a sua cota, dentro do teto geral' });
+		const tot = shown.reduce((s, a) => ({ usados: s.usados + a.usados, teto: s.teto + a.teto }), { usados: 0, teto: 0 });
+		head.createSpan({ cls: 'lembro-muted', text: `${tot.usados} de ${tot.teto} · cada área tem a sua cota` });
 		const bars = box.createDiv({ cls: 'lembro-hbars' });
-		const row = (name: string, usados: number, teto: number, geral: boolean) => {
-			const full = teto > 0 && usados >= teto;
-			const r = bars.createDiv({ cls: 'lembro-hb' + (full ? ' is-full' : '') + (teto === 0 ? ' is-none' : '') + (geral ? ' is-geral' : '') });
-			r.createSpan({ cls: 'lembro-hb-name', text: name });
+		for (const a of shown) {
+			const full = a.teto > 0 && a.usados >= a.teto;
+			const r = bars.createDiv({ cls: 'lembro-hb' + (full ? ' is-full' : '') + (a.teto === 0 ? ' is-none' : '') });
+			r.createSpan({ cls: 'lembro-hb-name', text: a.area });
 			const track = r.createDiv({ cls: 'lembro-hb-track lembro-quota-track' });
-			track.createEl('i').style.width = `${teto ? Math.min(100, (usados / teto) * 100) : 0}%`;
+			track.createEl('i').style.width = `${a.teto ? Math.min(100, (a.usados / a.teto) * 100) : 0}%`;
 			const val = r.createSpan({ cls: 'lembro-hb-val lembro-quota-val' });
-			val.setText(`${usados} de ${teto}`);
-			if (full) {
-				const ok = val.createSpan({ cls: 'lembro-quota-ok' });
-				setIcon(ok, 'check');
-			}
-			setTooltip(r, full ? 'Cota de hoje completa: novos voltam amanhã' : `${Math.max(0, teto - usados)} ${teto - usados === 1 ? 'vaga' : 'vagas'} para cartões novos hoje`);
-		};
-		row('Geral', q.geral.usados, q.geral.teto, true);
-		for (const a of q.areas) row(a.area, a.usados, a.teto, false);
-		if (q.geral.teto < q.geral.cap)
-			box.createDiv({ cls: 'lembro-muted lembro-quota-note', text: `As revisões vencidas ocupam o orçamento: o teto geral caiu de ${q.geral.cap} para ${q.geral.teto} hoje.` });
+			val.setText(`${a.usados} de ${a.teto}`);
+			if (full) setIcon(val.createSpan({ cls: 'lembro-quota-ok' }), 'check');
+			setTooltip(
+				r,
+				a.teto === 0 && a.cota === 0
+					? 'Cota 0: os novos desta área estão pausados'
+					: full
+						? 'Cota de hoje completa: novos voltam amanhã'
+						: `${a.livres} ${a.livres === 1 ? 'vaga' : 'vagas'} para cartões novos hoje (cota ${a.cota})`,
+			);
+		}
+		if (q.reduced) box.createDiv({ cls: 'lembro-muted lembro-quota-note', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas encolheram hoje.' });
 	}
 
 	/** One row of the Área > Assunto tree: clicking opens its subjects, the play button reviews it. */

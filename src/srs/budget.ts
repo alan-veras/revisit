@@ -69,33 +69,47 @@ export interface QuotaLine {
 	livres: number;
 }
 
-export interface QuotaStatus {
-	/** the general cap; `teto` already cut by the time budget, `cap` is the setting */
-	geral: QuotaLine & { cap: number };
-	areas: QuotaLine[];
-}
+/** New cards per day of an area with no number of its own. */
+export const DEFAULT_AREA_CAP = 5;
 
-/** One answer for the session, the panel and the CLI: how many new cards are left today, in general and per area. */
-export function quotaStatus(o: { dueMinutes: number; budgetMinutes: number; cap: number; perArea: Record<string, number>; usedTotal: number; usedByArea: Map<string, number> }): QuotaStatus {
-	const teto = newAllowedToday(o.dueMinutes, o.budgetMinutes, o.cap);
-	const geral = { area: 'Geral', usados: o.usedTotal, teto, cap: o.cap, livres: Math.max(0, teto - o.usedTotal) };
-	const areas = Object.entries(o.perArea).map(([area, t]) => {
-		const usados = o.usedByArea.get(area) ?? 0;
-		return { area, usados, teto: t, livres: Math.max(0, t - usados) };
-	});
-	return { geral, areas };
+export interface QuotaStatus {
+	/** the sum of the areas, for display; there is no general cap */
+	total: { usados: number; teto: number; livres: number };
+	/** each area: `cota` is the setting, `teto` the cota after the time budget */
+	areas: (QuotaLine & { cota: number })[];
+	/** due reviews fill the budget, so every cota shrank today */
+	reduced: boolean;
 }
 
 /**
- * How many new cards fit today: the cap while the reviews already due use up to
- * 80% of the budget, nothing once they pass it, and a straight line between.
+ * Share of the new-card cap that fits today: all of it while the reviews already
+ * due use up to 80% of the budget, none once they pass it, a straight line between.
  */
-export function newAllowedToday(dueMinutes: number, budgetMinutes: number, cap: number): number {
+export function budgetFactor(dueMinutes: number, budgetMinutes: number): number {
 	if (budgetMinutes <= 0) return 0;
 	const used = dueMinutes / budgetMinutes;
-	if (used <= 0.8) return cap;
+	if (used <= 0.8) return 1;
 	if (used >= 1) return 0;
-	return Math.floor(cap * ((1 - used) / 0.2));
+	return (1 - used) / 0.2;
+}
+
+/** How many new cards of a cap fit today, after the time budget. */
+export function newAllowedToday(dueMinutes: number, budgetMinutes: number, cap: number): number {
+	const f = budgetFactor(dueMinutes, budgetMinutes);
+	return f === 1 ? cap : Math.floor(cap * f);
+}
+
+/** One answer for the session, the panel and the CLI: the new cards left today in each area. */
+export function quotaStatus(o: { dueMinutes: number; budgetMinutes: number; areas: readonly string[]; perArea: Record<string, number>; usedByArea: Map<string, number> }): QuotaStatus {
+	const f = budgetFactor(o.dueMinutes, o.budgetMinutes);
+	const areas = o.areas.map((area) => {
+		const cota = o.perArea[area] ?? DEFAULT_AREA_CAP;
+		const teto = f === 1 ? cota : Math.floor(cota * f);
+		const usados = o.usedByArea.get(area) ?? 0;
+		return { area, cota, teto, usados, livres: Math.max(0, teto - usados) };
+	});
+	const sum = (k: 'usados' | 'teto' | 'livres') => areas.reduce((s, a) => s + a[k], 0);
+	return { total: { usados: sum('usados'), teto: sum('teto'), livres: sum('livres') }, areas, reduced: f < 1 };
 }
 
 /**

@@ -9,8 +9,8 @@ import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureMod
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { DEFAULT_SETTINGS, LembroSettings, LembroSettingTab } from './settings';
-import { newToday, newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
-import { buildSession, dueReviews, estimateMinutes, QueueItem } from './srs/queue';
+import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
+import { buildSession, dueReviews, estimateMinutes, NO_AREA, QueueItem } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
 import { Store } from './store/Store';
 import { PainelView, VIEW_TYPE_PAINEL } from './view/PainelView';
@@ -95,6 +95,8 @@ export default class LembroPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<LembroSettings> | null);
+		// the general cap is gone: each area has its own cota
+		delete (this.settings as Partial<LembroSettings> & { newPerDay?: number }).newPerDay;
 	}
 
 	async saveSettings(): Promise<void> {
@@ -175,7 +177,7 @@ export default class LembroPlugin extends Plugin {
 			now,
 			area,
 			budgetMinutes: budget,
-			newAllowed: q.geral.livres,
+			newAllowed: q.total.livres,
 			newLeftByArea: new Map(q.areas.map((a) => [a.area, a.livres])),
 			secs,
 			interleave: this.settings.interleave,
@@ -186,16 +188,15 @@ export default class LembroPlugin extends Plugin {
 		});
 	}
 
-	/** New cards left today, in general and per area (the cap of each area comes from the settings). */
+	/** New cards left today in each area (its cota comes from the settings, 5 by default). */
 	quota(now = new Date(), items = this.items()): QuotaStatus {
 		const areaById = new Map<string, string>();
-		for (const it of items) if (it.area) areaById.set(it.key, it.area);
+		for (const it of items) areaById.set(it.key, it.area ?? NO_AREA);
 		return quotaStatus({
 			dueMinutes: estimateMinutes(dueReviews(items, now), this.secs()),
 			budgetMinutes: this.settings.budgetMinutes,
-			cap: this.settings.newPerDay,
+			areas: [...AREAS, NO_AREA],
 			perArea: this.settings.newPerArea,
-			usedTotal: newToday(this.store.log, now),
 			usedByArea: newTodayByArea(this.store.log, now, (id) => areaById.get(id) ?? null),
 		});
 	}
