@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, appendCards, ensureIds, groupBy, normalizeAssunto, parseCardFile, removeCard, renameSource, replaceCard, serializeCard } from '../src/cards/format';
+import { appendCard, appendCards, ensureIds, groupBy, normalizeAssunto, parseCardFile, removeCard, renameSource, renameSourceFolder, replaceCard, serializeCard } from '../src/cards/format';
 
 const FILE = `Frente: Como desfazer o último rollout de um deployment?
 Verso:
@@ -147,6 +147,15 @@ describe('normalizeAssunto', () => {
 		expect(out).toContain('[[3_Outputs/Y/Nova|Nota]] ^labcde');
 		expect(out).toContain('[[Outra]]');
 		expect(renameSource('Fonte: [[a.pdf#page=3|a, p. 3]]', 'a.pdf', 'b/a.pdf')).toBe('Fonte: [[b/a.pdf#page=3|a, p. 3]]');
+	});
+
+	it('renames links de uma pasta inteira', () => {
+		const t = 'Fonte: [[Pasta Antiga/Nota|Nota]]\nFonte: [[Pasta Antiga]]\nFonte: [[Outro Lugar/Nota]]';
+		const out = renameSourceFolder(t, 'Pasta Antiga', 'Novo Lugar');
+		expect(out).toContain('[[Novo Lugar/Nota|Nota]]');
+		expect(out).toContain('[[Novo Lugar]]');
+		expect(out).toContain('[[Outro Lugar/Nota]]');
+		expect(renameSourceFolder('Fonte: [[P/A.pdf#page=2|p]]', 'P', 'Q')).toBe('Fonte: [[Q/A.pdf#page=2|p]]');
 	});
 });
 

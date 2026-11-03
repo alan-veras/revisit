@@ -265,6 +265,22 @@ export function renameSource(text: string, from: string, to: string): string {
 		.join('\n');
 }
 
+/** Same for a renamed folder: every target inside `fromFolder` moves to `toFolder`. */
+export function renameSourceFolder(text: string, fromFolder: string, toFolder: string): string {
+	const a = fromFolder.replace(/\/+$/, '').replace(/\.md$/, '');
+	const b = toFolder.replace(/\/+$/, '').replace(/\.md$/, '');
+	return text
+		.split('\n')
+		.map((line) => {
+			if (!line.startsWith('Fonte:')) return line;
+			return line.replace(/\[\[([^\]|#]+)([^\]]*)\]\]/g, (m, target: string, rest: string) => {
+				const t = target.replace(/\.md$/, '');
+				return t === a || t.startsWith(a + '/') ? `[[${b}${t.slice(a.length)}${rest}]]` : m;
+			});
+		})
+		.join('\n');
+}
+
 /** Assuntos as shown on screen: only the last level (`Sustento > Perseguição` reads `Perseguição`). */
 export function assuntosLabel(assuntos: string[]): string {
 	return assuntos.map((a) => a.split(' > ').pop() ?? a).join('; ');

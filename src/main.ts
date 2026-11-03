@@ -1,4 +1,4 @@
-import { getAllTags, Notice, Plugin, SuggestModal, TFile, WorkspaceLeaf } from 'obsidian';
+import { getAllTags, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
 import { clozes } from './cards/cloze';
 import { daysLabel, dueNotes, Leitura, read, Releitura } from './notes/reread';
@@ -7,6 +7,7 @@ import { AREAS, Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
 import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
+import { renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { DEFAULT_SETTINGS, LembroSettings, LembroSettingTab } from './settings';
 import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
@@ -90,6 +91,15 @@ export default class LembroPlugin extends Plugin {
 					if (f instanceof TFile && f.path.startsWith(this.settings.folder + '/') && f.extension === 'md') void this.reload();
 				}),
 			);
+			// a renamed source note or folder keeps the `Fonte:` of every card alive
+			this.registerEvent(
+				this.app.vault.on('rename', (file, oldPath) => {
+					const folder = this.settings.folder;
+					if (oldPath === folder || oldPath.startsWith(folder + '/')) return;
+					if (file instanceof TFolder) void this.rewriteSources(oldPath, file.path, true);
+					else if (file instanceof TFile) void this.rewriteSources(oldPath, file.path, false);
+				}),
+			);
 		});
 	}
 
@@ -124,6 +134,19 @@ export default class LembroPlugin extends Plugin {
 
 	secs() {
 		return secsPerType(this.store.log);
+	}
+
+	/** Rewrites the `Fonte:` of every card file after a source note or folder moved. */
+	private async rewriteSources(oldPath: string, newPath: string, folder: boolean): Promise<void> {
+		const from = folder ? oldPath.replace(/\/+$/, '') : oldPath.replace(/\.md$/, '');
+		const to = folder ? newPath.replace(/\/+$/, '') : newPath.replace(/\.md$/, '');
+		for (const f of this.store.cardFiles()) {
+			const text = await this.app.vault.cachedRead(f);
+			if (!text.includes(from)) continue;
+			const next = folder ? renameSourceFolder(text, from, to) : renameSource(text, from, to);
+			if (next !== text) await this.app.vault.process(f, () => next);
+		}
+		await this.reload();
 	}
 
 	/** Área of a card: the one written in it, or the one of its source path. */
