@@ -1,12 +1,12 @@
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
-import { daysLabel, nextInterval } from '../notes/reread';
+import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
 import { assuntoTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
 import { retentionBy, reviewsPerDay } from '../srs/stats';
 import { cardSnippet } from './search';
 import { AREAS } from '../cards/types';
 import type LembroPlugin from '../main';
-import { estimateMinutes, QueueItem } from '../srs/queue';
+import { estimateMinutes, matchesFilter, QueueItem } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PAINEL = 'lembro-painel';
@@ -117,13 +117,22 @@ export class PainelView extends ItemView {
 			r.style.paddingLeft = `${6 + depth * 20}px`;
 			const caret = r.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
 			if (kids) setIcon(caret, 'chevron-right');
-			const title = r.createSpan({ cls: 'lembro-li-title', text: node.name });
+			r.createSpan({ cls: 'lembro-li-title', text: node.name });
 			const susp = suspendedOf(node.path);
-			setTooltip(title, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
 
 			const pills = r.createSpan({ cls: 'lembro-li-pills' });
 			if (revisar) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(revisar) }), `${revisar} para revisar hoje`);
 			if (novos) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(novos) }), `${novos} ${novos === 1 ? 'novo entra' : 'novos entram'} hoje`);
+
+			// nothing for today: say when the next review falls, so the row is never mute
+			if (!s.length) {
+				const next = items
+					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === 'Sem área' ? null : node.area, node.assunto))
+					.reduce<Date | null>((m, it) => (it.fsrs && (!m || it.fsrs.due < m) ? it.fsrs.due : m), null);
+				if (next) setTooltip(r.createSpan({ cls: 'lembro-li-next', text: untilLabel(next, new Date()) }), `Próxima revisão: ${next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`);
+			}
+			const total = r.createSpan({ cls: 'lembro-li-total', text: String(node.cards) });
+			setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
 
 			const cota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
 			const meter = r.createSpan({ cls: 'lembro-li-cota' });
@@ -165,6 +174,8 @@ export class PainelView extends ItemView {
 		legend.createSpan({ text: 'novos' });
 		legend.createSpan({ cls: 'lembro-li-bar lembro-li-bar-legend' }).createEl('i');
 		legend.createSpan({ text: 'cota de novos da área' });
+		legend.createSpan({ cls: 'lembro-li-total lembro-li-legend-total', text: '86' });
+		legend.createSpan({ text: 'total de cartões' });
 
 		const empty = AREAS.filter((a) => !tree.some((t) => t.area === a));
 		if (empty.length) list.createDiv({ cls: 'lembro-deck-empty', text: `${empty.join(', ').replace(/, ([^,]*)$/, ' e $1')} ${empty.length === 1 ? 'não tem' : 'não têm'} cartões` });

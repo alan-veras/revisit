@@ -39,6 +39,15 @@ export function daysLabel(d: number): string {
 	return m < 12 ? (m === 1 ? '1 mês' : `${m} meses`) : '1 ano';
 }
 
+/** When a date falls, counted in calendar days from `now`: hoje, amanhã, em 3 dias, em 2 meses. */
+export function untilLabel(due: Date, now: Date): string {
+	const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+	const d = Math.round(day(due) - day(now));
+	if (d <= 0) return 'hoje';
+	if (d === 1) return 'amanhã';
+	return `em ${daysLabel(d)}`;
+}
+
 /**
  * Notes to reread today: the due ones (oldest first), then never-read ones,
  * at most `newCap` of those per day.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysLabel, dueNotes, nextInterval, read } from '../src/notes/reread';
+import { daysLabel, dueNotes, nextInterval, read, untilLabel } from '../src/notes/reread';
 
 const NOW = new Date('2026-11-02T10:00:00');
 
@@ -26,5 +26,15 @@ describe('releitura de notas', () => {
 	it('escreve o intervalo', () => {
 		expect(daysLabel(1)).toBe('1 dia');
 		expect(daysLabel(60)).toBe('2 meses');
+	});
+});
+
+describe('untilLabel', () => {
+	const now = new Date('2026-11-02T22:40:00');
+	it('conta em dias de calendário', () => {
+		expect(untilLabel(new Date('2026-11-03T07:00:00'), now)).toBe('amanhã');
+		expect(untilLabel(new Date('2026-11-02T23:00:00'), now)).toBe('hoje');
+		expect(untilLabel(new Date('2026-11-09T10:00:00'), now)).toBe('em 7 dias');
+		expect(untilLabel(new Date('2027-01-05T10:00:00'), now)).toBe('em 2 meses');
 	});
 });
