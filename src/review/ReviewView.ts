@@ -121,6 +121,16 @@ export class ReviewView extends ItemView {
 		return item.fsrs ?? freshCard(new Date());
 	}
 
+	private previewCache: { key: string; fsrs: FsrsCard | undefined; preview: Record<Nota, { card: FsrsCard; label: string }> } | null = null;
+
+	/** Intervals shown on the grade buttons, frozen while the card is the same: the fuzz does not reshuffle on every redraw. */
+	private previewOf(item: QueueItem): Record<Nota, { card: FsrsCard; label: string }> {
+		if (this.previewCache && this.previewCache.key === item.key && this.previewCache.fsrs === item.fsrs) return this.previewCache.preview;
+		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date(), isImportant(item.card));
+		this.previewCache = { key: item.key, fsrs: item.fsrs, preview };
+		return preview;
+	}
+
 	private draw(): void {
 		this.render.unload();
 		this.render = new Component();
@@ -210,7 +220,7 @@ export class ReviewView extends ItemView {
 		};
 
 		const grades = root.createDiv({ cls: 'lembro-grades' + (this.revealed ? ' is-on' : '') });
-		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date(), isImportant(item.card));
+		const preview = this.previewOf(item);
 		for (const { nota, nome } of NOTAS) {
 			const b = grades.createEl('button', { cls: `lembro-g${nota}` });
 			b.createEl('b', { text: nome });

@@ -167,8 +167,12 @@ export default class LembroPlugin extends Plugin {
 		return file ? file.path : link;
 	}
 
-	/** One item per card, plus one for its reverse (key `id-r`). Suspending the card suspends both. */
+	private itemsCache: { version: number; items: QueueItem[] } | null = null;
+
+	/** One item per card, plus one for its reverse (key `id-r`). Suspending the card suspends both. Memoized until the store changes. */
 	items(): QueueItem[] {
+		const version = this.store.version;
+		if (this.itemsCache && this.itemsCache.version === version) return this.itemsCache.items;
 		const out: QueueItem[] = [];
 		for (const card of this.store.cards) {
 			if (!card.id) continue;
@@ -184,7 +188,13 @@ export default class LembroPlugin extends Plugin {
 				out.push({ key, reverso, ...(cloze !== undefined ? { cloze } : {}), card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
 			}
 		}
+		this.itemsCache = { version, items: out };
 		return out;
+	}
+
+	/** The card and its siblings (reverse, clozes) are suspended. */
+	isSuspended(card: Card): boolean {
+		return !!card.id && this.store.state[card.id]?.st === 'suspenso';
 	}
 
 	/** Keys graded today, outside extra sessions. */
@@ -237,7 +247,18 @@ export default class LembroPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 	}
 
+	private statusTimer: number | null = null;
+
+	/** Debounced: a grade or a settings change touches it, but the recount waits for a quiet moment. */
 	updateStatus(): void {
+		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
+		this.statusTimer = window.setTimeout(() => {
+			this.statusTimer = null;
+			this.updateStatusNow();
+		}, 200);
+	}
+
+	private updateStatusNow(): void {
 		this.redrawNoteCards();
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)) if (leaf.view instanceof PainelView) leaf.view.draw();
 		if (!this.statusEl) return;
@@ -515,7 +536,9 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		// views are detached by Obsidian
+		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
+		// no ghost leaves of the view types this plugin registered
+		for (const t of [VIEW_TYPE_REVIEW, VIEW_TYPE_PAINEL, VIEW_TYPE_NOTE]) this.app.workspace.detachLeavesOfType(t);
 	}
 }
 
