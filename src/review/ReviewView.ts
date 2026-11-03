@@ -162,7 +162,7 @@ export class ReviewView extends ItemView {
 
 		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
 		const ftag = front.createDiv({ cls: 'lembro-tag', text: tag });
-		if (isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'lembro-new-badge', text: 'Novo' }));
+		if (this.plugin.settings.showNewBadge && isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'lembro-new-badge', text: 'Novo' }));
 		const isQuestao = item.card.tipo === 'Questão' && !item.reverso;
 		const frente = isQuestao ? splitAlternatives(ask) : ask;
 		const q = front.createDiv({ cls: 'lembro-q' + (isQuestao ? ' is-questao' : '') });
@@ -178,7 +178,7 @@ export class ReviewView extends ItemView {
 		if (this.canHint(item)) {
 			const dica = front.createDiv({ cls: 'lembro-dica' });
 			if (this.hint) dica.createDiv({ cls: 'lembro-dica-text', text: hintWords(item.card.verso, this.hint) });
-			const btn = dica.createEl('button', { text: 'Dica', attr: { 'aria-label': 'Mostra mais 3 palavras do texto' } });
+			const btn = dica.createEl('button', { text: 'Dica', attr: { 'aria-label': `Mostra mais ${this.plugin.settings.hintWords} palavras do texto` } });
 			btn.onclick = (e) => {
 				e.stopPropagation();
 				this.moreHint();
@@ -267,7 +267,7 @@ export class ReviewView extends ItemView {
 	private moreHint(): void {
 		const item = this.current();
 		if (this.ended || !item || this.flipped || !this.canHint(item)) return;
-		this.hint += 3;
+		this.hint += this.plugin.settings.hintWords;
 		this.draw();
 	}
 
@@ -314,7 +314,8 @@ export class ReviewView extends ItemView {
 		// only a missed card (Errei) comes back a few cards ahead; Difícil/Bom wait for the next session
 		let requeued = -1;
 		if (nota === 1) {
-			requeued = this.extra ? Math.min(this.queue.length, this.index + 4) : requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs());
+			const gap = this.plugin.settings.requeueGap;
+			requeued = this.extra ? Math.min(this.queue.length, this.index + 1 + gap) : requeueIndex(this.queue, this.index, next.due, now, this.plugin.secs(), gap);
 			if (requeued >= 0) this.queue.splice(requeued, 0, { ...item });
 		}
 		this.undo.push({ index: this.index, id, before, requeued });
