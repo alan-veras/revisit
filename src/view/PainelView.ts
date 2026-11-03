@@ -6,7 +6,7 @@ import { retentionBy, reviewsPerDay } from '../srs/stats';
 import { cardSnippet } from './search';
 import { AREAS } from '../cards/types';
 import type LembroPlugin from '../main';
-import { estimateMinutes, NO_AREA, QueueItem } from '../srs/queue';
+import { estimateMinutes, QueueItem } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PAINEL = 'lembro-painel';
@@ -64,14 +64,8 @@ export class PainelView extends ItemView {
 		const go = hero.createEl('button', { text: 'Revisar', cls: 'mod-cta lembro-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.review(null);
-		this.drawQuota(wrap);
 
-		const areas = wrap.createDiv({ cls: 'lembro-areas' });
-		const tree = assuntoTree(p.items().filter((it) => !it.reverso && !it.cloze));
-		for (const a of AREAS) {
-			const node = tree.find((t) => t.area === a) ?? { path: a, name: a, area: a, assunto: null, cards: 0, children: [] };
-			this.drawNode(areas, node, 0);
-		}
+		this.drawDecks(wrap);
 
 		const search = wrap.createDiv({ cls: 'lembro-search' });
 		const input = search.createEl('input', { type: 'search', attr: { placeholder: 'Buscar cartões' } });
@@ -84,79 +78,97 @@ export class PainelView extends ItemView {
 		this.drawResults(results);
 	}
 
-	/** Meters of today's new cards: one per area that has cards, each with its own cota. */
-	private drawQuota(wrap: HTMLElement): void {
+	/** Started once: areas with something for today open on the first draw. */
+	private seeded = false;
+
+	/** The decks as a table, like Anki: Revisar, Novos and Total per area and assunto. */
+	private drawDecks(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const q = p.quota();
-		const withCards = new Set(p.items().map((it) => it.area ?? NO_AREA));
-		const shown = q.areas.filter((a) => withCards.has(a.area) || a.usados > 0);
-		if (!shown.length) return;
-		const box = wrap.createDiv({ cls: 'lembro-quota' });
-		const head = box.createDiv({ cls: 'lembro-quota-head' });
-		head.createSpan({ cls: 'lembro-quota-title', text: 'Cartões novos hoje' });
-		const tot = shown.reduce((s, a) => ({ usados: s.usados + a.usados, teto: s.teto + a.teto }), { usados: 0, teto: 0 });
-		head.createSpan({ cls: 'lembro-muted', text: `${tot.usados} de ${tot.teto} · cada área tem a sua cota` });
-		const bars = box.createDiv({ cls: 'lembro-hbars' });
-		for (const a of shown) {
-			const full = a.teto > 0 && a.usados >= a.teto;
-			const r = bars.createDiv({ cls: 'lembro-hb' + (full ? ' is-full' : '') + (a.teto === 0 ? ' is-none' : '') });
-			r.createSpan({ cls: 'lembro-hb-name', text: a.area });
-			const track = r.createDiv({ cls: 'lembro-hb-track lembro-quota-track' });
-			track.createEl('i').style.width = `${a.teto ? Math.min(100, (a.usados / a.teto) * 100) : 0}%`;
-			const val = r.createSpan({ cls: 'lembro-hb-val lembro-quota-val' });
-			val.setText(`${a.usados} de ${a.teto}`);
-			if (full) setIcon(val.createSpan({ cls: 'lembro-quota-ok' }), 'check');
-			setTooltip(
-				r,
-				a.teto === 0 && a.cota === 0
-					? 'Cota 0: os novos desta área estão pausados'
-					: full
-						? 'Cota de hoje completa: novos voltam amanhã'
-						: `${a.livres} ${a.livres === 1 ? 'vaga' : 'vagas'} para cartões novos hoje (cota ${a.cota})`,
-			);
-		}
-		if (q.reduced) box.createDiv({ cls: 'lembro-muted lembro-quota-note', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas encolheram hoje.' });
-	}
+		const items = p.items().filter((it) => !it.reverso && !it.cloze);
+		const tree = assuntoTree(items.filter((it) => !it.suspended));
+		const suspended = assuntoTree(items.filter((it) => it.suspended));
+		const suspendedOf = (path: string) => {
+			const find = (ns: TreeNode[]): number => {
+				for (const n of ns) {
+					if (n.path === path) return n.cards;
+					const r = find(n.children);
+					if (r) return r;
+				}
+				return 0;
+			};
+			return find(suspended);
+		};
 
-	/** One row of the Área > Assunto tree: clicking opens its subjects, the play button reviews it. */
-	private drawNode(parent: HTMLElement, node: TreeNode, depth: number): void {
-		const p = this.plugin;
-		const n = p.session(node.area, undefined, false, node.assunto).length;
-		const kids = node.children.length > 0;
-		const open = this.expanded.has(node.path);
-		const row = parent.createDiv({ cls: 'lembro-area' + (n || node.cards ? '' : ' is-zero') + (depth ? ' is-sub' : '') });
-		row.style.paddingLeft = `${4 + depth * 20}px`;
-		const caret = row.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
-		if (kids) setIcon(caret, 'chevron-right');
-		row.createSpan({ cls: 'lembro-area-name', text: node.name });
-		// an area with its own cap shows the slots left for new cards today
-		const novos = p.session(node.area, undefined, false, node.assunto).filter((it) => isNew(it.fsrs)).length;
-		// an area with its own cap: the new cards that enter today, or a full cap; nothing when no new card waits
-		const cota = depth === 0 ? p.quota().areas.find((a) => a.area === node.area) : undefined;
-		if (cota && (novos || !cota.livres)) {
-			const pill = row.createSpan({ cls: 'lembro-pill' + (novos ? '' : ' is-full'), text: novos ? `+${novos} ${novos === 1 ? 'novo' : 'novos'}` : 'cota cheia' });
-			setTooltip(pill, `Novos hoje em ${node.area}: ${cota.usados} de ${cota.teto}`);
+		// open the areas with something for today, once the cards are loaded
+		if (!this.seeded && tree.length) {
+			this.seeded = true;
+			for (const t of tree) if (p.session(t.area).length) this.expanded.add(t.path);
 		}
-		const count = row.createSpan({ cls: 'lembro-area-n', text: n ? String(n) : '—' });
-		setTooltip(count, `${n} para hoje${novos ? ` · ${novos} ${novos === 1 ? 'novo' : 'novos'}` : ''} · ${node.cards} ${node.cards === 1 ? 'cartão' : 'cartões'} no total`);
-		const play = row.createSpan({ cls: 'lembro-area-go' + (n ? '' : ' is-off') });
-		if (n) {
-			setIcon(play, 'play');
-			setTooltip(play, `Revisar ${node.assunto ?? node.area}`);
-			play.onclick = (e) => {
-				e.stopPropagation();
-				void p.review(node.area, undefined, false, node.assunto);
-			};
-		}
-		if (kids) {
-			row.addClass('is-branch');
-			row.onclick = () => {
-				if (open) this.expanded.delete(node.path);
-				else this.expanded.add(node.path);
-				this.draw();
-			};
-		} else if (n) row.onclick = () => void p.review(node.area, undefined, false, node.assunto);
-		if (open) for (const c of node.children) this.drawNode(parent, c, depth + 1);
+
+		const table = wrap.createDiv({ cls: 'lembro-decks' });
+		const head = table.createDiv({ cls: 'lembro-deck lembro-deck-head' });
+		head.createSpan({ cls: 'lembro-deck-name', text: 'Deck' });
+		for (const [t, tip] of [
+			['Revisar', 'Cartões que vencem hoje e cabem no orçamento'],
+			['Novos', 'Cartões novos que entram hoje; na área, quantos ainda cabem na cota'],
+			['Total', 'Cartões ativos (os suspensos ficam de fora)'],
+		] as const)
+			setTooltip(head.createSpan({ cls: 'lembro-deck-n', text: t }), tip);
+		head.createSpan({ cls: 'lembro-deck-go' });
+
+		const row = (node: TreeNode, depth: number) => {
+			const s = p.session(node.area, undefined, false, node.assunto);
+			const novos = s.filter((it) => isNew(it.fsrs)).length;
+			const revisar = s.length - novos;
+			const kids = node.children.length > 0;
+			const open = this.expanded.has(node.path);
+			const r = table.createDiv({ cls: `lembro-deck is-d${Math.min(depth, 3)}` + (s.length ? '' : ' is-quiet') });
+			const name = r.createSpan({ cls: 'lembro-deck-name' });
+			name.style.paddingLeft = `${depth * 18}px`;
+			const caret = name.createSpan({ cls: 'lembro-caret' + (open ? ' is-open' : '') });
+			if (kids) setIcon(caret, 'chevron-right');
+			name.createSpan({ cls: 'lembro-deck-title', text: node.name });
+
+			const cell = (cls: string, n: number) => r.createSpan({ cls: `lembro-deck-n ${n ? cls : 'is-zero'}`, text: n ? String(n) : '·' });
+			cell('is-due', revisar);
+			const cota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
+			if (cota) {
+				const c = r.createSpan({ cls: 'lembro-deck-n lembro-deck-cota' });
+				const full = cota.teto > 0 && cota.livres === 0;
+				const paused = cota.cota === 0;
+				c.createSpan({ cls: novos ? 'is-new' : 'is-zero', text: paused ? 'pausado' : full ? 'cheia' : novos ? String(novos) : '·' });
+				const bar = c.createSpan({ cls: 'lembro-deck-bar' + (full ? ' is-full' : '') });
+				bar.createEl('i').style.width = `${cota.teto ? Math.min(100, (cota.usados / cota.teto) * 100) : 0}%`;
+				setTooltip(c, paused ? 'Cota 0: novos desta área pausados' : `Novos hoje em ${node.area}: ${cota.usados} de ${cota.teto} usados${novos ? ` · ${novos} ${novos === 1 ? 'entra' : 'entram'} agora` : ''}${q.reduced ? ' · cota encolhida pelo orçamento' : ''}`);
+			} else cell('is-new', novos);
+			const total = r.createSpan({ cls: 'lembro-deck-n lembro-deck-total', text: String(node.cards) });
+			const susp = suspendedOf(node.path);
+			if (susp) setTooltip(total, `${node.cards} ativos · ${susp} suspensos`);
+
+			const go = r.createSpan({ cls: 'lembro-deck-go' });
+			if (s.length) {
+				setIcon(go, 'play');
+				setTooltip(go, `Revisar ${node.assunto ?? node.area} (${s.length})`);
+				go.onclick = (e) => {
+					e.stopPropagation();
+					void p.review(node.area, undefined, false, node.assunto);
+				};
+			}
+			if (kids)
+				r.onclick = () => {
+					if (open) this.expanded.delete(node.path);
+					else this.expanded.add(node.path);
+					this.draw();
+				};
+			else if (s.length) r.onclick = () => void p.review(node.area, undefined, false, node.assunto);
+			if (open) for (const c of node.children) row(c, depth + 1);
+		};
+		for (const t of tree) row(t, 0);
+
+		const empty = AREAS.filter((a) => !tree.some((t) => t.area === a));
+		if (empty.length) table.createDiv({ cls: 'lembro-deck-empty', text: `${empty.join(', ').replace(/, ([^,]*)$/, ' e $1')} ${empty.length === 1 ? 'não tem' : 'não têm'} cartões` });
+		if (q.reduced) table.createDiv({ cls: 'lembro-deck-empty', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas de novos encolheram hoje.' });
 	}
 
 	/** Whole notes to reread: today's, the one being read, and the next ones. */

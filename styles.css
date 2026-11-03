@@ -163,22 +163,31 @@
 .lembro-area-go:not(.is-off):hover { background: var(--background-modifier-hover); color: var(--interactive-accent); cursor: pointer; }
 .lembro-area-go svg { width: 14px; height: 14px; }
 
-/* cota de novos por área */
-.lembro-quota { margin: 0 0 22px; padding: 14px 16px 10px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background: var(--background-secondary); }
-.lembro-quota-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.lembro-quota-title { font-weight: 600; }
-.lembro-quota-head .lembro-muted { font-size: var(--font-ui-smaller); }
-.lembro-quota .lembro-hb { grid-template-columns: 170px 1fr 70px; }
-.lembro-quota-track { background: var(--background-modifier-border); border-radius: 6px; overflow: hidden; height: 10px; }
-.lembro-quota-track i { border-radius: 6px; transition: width .3s; }
-.lembro-hb.is-geral .lembro-hb-name { font-weight: 600; }
-.lembro-hb.is-full .lembro-quota-track i { background: var(--color-green); }
-.lembro-hb.is-full .lembro-hb-val { color: var(--color-green); }
-.lembro-quota-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
-.lembro-quota-ok { display: inline-flex; }
-.lembro-quota-ok svg { width: 13px; height: 13px; }
-.lembro-quota-note { font-size: var(--font-ui-smaller); margin-top: 6px; }
-.lembro-pill { font-size: var(--font-ui-smaller); padding: 1px 8px; border-radius: 999px; background: hsla(var(--interactive-accent-hsl), 0.15); color: var(--interactive-accent); white-space: nowrap; }
-.lembro-pill.is-full { background: var(--background-modifier-border); color: var(--text-faint); }
-.lembro-new-badge { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: var(--interactive-accent); color: var(--text-on-accent); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: .02em; }
-@media (max-width: 480px) { .lembro-quota .lembro-hb { grid-template-columns: 110px 1fr 60px; } }
+/* decks: tabela estilo Anki */
+.lembro-decks { margin-top: 4px; font-size: var(--font-ui-medium); }
+.lembro-deck { display: grid; grid-template-columns: 1fr 64px 76px 56px 26px; align-items: center; gap: 4px; padding: 6px 6px; border-radius: 6px; cursor: pointer; }
+.lembro-deck:not(.lembro-deck-head):hover { background: var(--background-modifier-hover); }
+.lembro-deck-head { cursor: default; color: var(--text-muted); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--background-modifier-border); border-radius: 0; padding-bottom: 8px; margin-bottom: 4px; }
+.lembro-deck-name { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.lembro-deck-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembro-deck.is-d0 { font-weight: 600; margin-top: 6px; }
+.lembro-deck.is-d1 { font-size: 0.95em; }
+.lembro-deck.is-d2, .lembro-deck.is-d3 { font-size: 0.92em; color: var(--text-muted); }
+.lembro-deck.is-quiet .lembro-deck-title { color: var(--text-muted); }
+.lembro-deck-n { text-align: right; font-variant-numeric: tabular-nums; }
+.lembro-deck-n.is-zero, .lembro-deck-n .is-zero { color: var(--text-faint); font-weight: 400; }
+.lembro-deck-n.is-due { color: var(--interactive-accent); font-weight: 600; }
+.lembro-deck-n.is-new, .lembro-deck-n .is-new { color: var(--color-green); font-weight: 600; }
+.lembro-deck-total { color: var(--text-muted); font-weight: 400; }
+.lembro-deck-cota { position: relative; padding-bottom: 5px; }
+.lembro-deck-of { color: var(--text-faint); font-weight: 400; font-size: 0.85em; }
+.lembro-deck-bar { position: absolute; right: 0; bottom: 0; width: 44px; height: 3px; border-radius: 2px; background: var(--background-modifier-border); overflow: hidden; }
+.lembro-deck-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--color-green); opacity: .55; }
+.lembro-deck-bar.is-full i { opacity: 1; }
+.lembro-deck-go { display: inline-flex; justify-content: center; color: var(--text-faint); opacity: 0; transition: opacity .15s; }
+.lembro-deck:hover .lembro-deck-go { opacity: 1; }
+.lembro-deck-go svg { width: 14px; height: 14px; }
+.lembro-deck-go:hover { color: var(--interactive-accent); }
+.lembro-deck .lembro-caret { flex: none; }
+.lembro-deck-empty { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 10px 6px 0; }
+@media (max-width: 480px) { .lembro-deck { grid-template-columns: 1fr 48px 60px 40px 20px; } }
