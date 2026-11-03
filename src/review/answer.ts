@@ -1,10 +1,12 @@
-/** Typed answers: compared without accents, case or extra spaces. */
+/** Typed answers: compared without accents, case, punctuation or extra spaces. */
 export function normalizeAnswer(text: string): string {
 	return text
 		.normalize('NFD')
 		.replace(/[̀-ͯ]/g, '')
 		.toLowerCase()
 		.replace(/[*_`=]/g, '')
+		.replace(/[.,;:!?¡¿"'“”‘’()[\]{}<>«»…]/g, '')
+		.replace(/[-–/\\]/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
 }

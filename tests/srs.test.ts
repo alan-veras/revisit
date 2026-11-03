@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
-import { DEFAULT_SECS, newAllowedToday, newToday, newTodayByArea, parseAreaQuota, quotaStatus, RevlogEntry, secsPerType } from '../src/srs/budget';
+import { DEFAULT_SECS, newAllowedToday, newTodayByArea, quotaStatus, RevlogEntry, secsPerType } from '../src/srs/budget';
 import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex, sessionRequeue } from '../src/srs/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/srs/scheduler';
 
@@ -145,10 +145,6 @@ describe('budget', () => {
 		const log = [8, 9, 30, 12, 11].map((s) => entry({ segundos: s }));
 		expect(secsPerType(log).Pergunta).toBe(11);
 	});
-	it('counts new cards introduced today', () => {
-		const log = [entry({ id: 'a', novo: true }), entry({ id: 'a', novo: true }), entry({ id: 'b', novo: true, t: '2026-11-01T10:00:00' }), entry({ id: 'c' })];
-		expect(newToday(log, NOW)).toBe(1);
-	});
 	it('reduces new cards as due reviews fill the budget', () => {
 		expect(newAllowedToday(10, 20, 15)).toBe(15);
 		expect(newAllowedToday(18, 20, 15)).toBe(7);
@@ -165,9 +161,6 @@ describe('cota por área', () => {
 		const m = newTodayByArea(log, NOW, area);
 		expect(m.get('Espiritual')).toBe(2);
 		expect(m.get('Desenvolvimento Pessoal')).toBe(1);
-	});
-	it('parseAreaQuota lê Área: n e aceita 0', () => {
-		expect(parseAreaQuota('Espiritual: 3\nDesenvolvimento Pessoal: 10\nlixo\nCarreira: 0\nLazer: x')).toEqual({ Espiritual: 3, 'Desenvolvimento Pessoal': 10, Carreira: 0 });
 	});
 	it('a área para na cota dela enquanto as outras seguem; o geral ainda corta', () => {
 		const items = [...['e1', 'e2', 'e3', 'e4', 'e5'].map((id) => novo(id, 'Espiritual')), ...['d1', 'd2', 'd3', 'd4'].map((id) => novo(id, 'Desenvolvimento Pessoal')), novo('l1', 'Lazer')];

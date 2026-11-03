@@ -19,6 +19,11 @@ describe('answer', () => {
 	it('normalizes accents and case', () => {
 		expect(normalizeAnswer('  Fé  é ')).toBe('fe e');
 	});
+	it('ignores punctuation and reads the hyphen as space', () => {
+		expect(normalizeAnswer('Certeza.')).toBe('certeza');
+		expect(normalizeAnswer('bem-feito')).toBe('bem feito');
+		expect(checkCloze('certeza daquilo que esperamos', 'Certeza daquilo que esperamos!')).toBe(true);
+	});
 	it('checks a cloze against the back or its first line', () => {
 		expect(checkCloze('certeza', 'Certeza\nHebreus 11:1')).toBe(true);
 		expect(checkCloze('fe', 'Fé')).toBe(true);

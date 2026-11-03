@@ -12,8 +12,6 @@ export function cardStats(log: RevlogEntry[]): Map<string, { ok: number; bad: nu
 	return out;
 }
 
-export const HARD_ERRORS = 6;
-
 /**
  * Retention: share of answers that were not "Errei", over reviews of cards that
  * had been seen at least 7 days before (mature), grouped by `group(id)`.

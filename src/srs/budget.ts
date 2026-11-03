@@ -32,14 +32,6 @@ export function secsPerType(log: RevlogEntry[]): Record<Tipo, number> {
 	return out;
 }
 
-/** New cards already introduced today (local day). */
-export function newToday(log: RevlogEntry[], now: Date): number {
-	const day = now.toDateString();
-	const seen = new Set<string>();
-	for (const e of log) if (e.novo && !e.extra && new Date(e.t).toDateString() === day) seen.add(e.id);
-	return seen.size;
-}
-
 /** New cards introduced today, by area (ids without a known area are left out). */
 export function newTodayByArea(log: RevlogEntry[], now: Date, areaOf: (id: string) => string | null): Map<string, number> {
 	const day = now.toDateString();
@@ -50,16 +42,6 @@ export function newTodayByArea(log: RevlogEntry[], now: Date, areaOf: (id: strin
 		seen.add(e.id);
 		const area = areaOf(e.id);
 		if (area) out.set(area, (out.get(area) ?? 0) + 1);
-	}
-	return out;
-}
-
-/** `Área: n` per line; lines without a number are ignored, 0 is allowed. */
-export function parseAreaQuota(text: string): Record<string, number> {
-	const out: Record<string, number> = {};
-	for (const line of text.split('\n')) {
-		const m = /^(.+?):\s*(\d+)\s*$/.exec(line.trim());
-		if (m) out[(m[1] as string).trim()] = Number(m[2]);
 	}
 	return out;
 }

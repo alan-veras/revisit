@@ -1,6 +1,7 @@
 import { State } from 'ts-fsrs';
 import { CliFlags, normalizePath, TFile } from 'obsidian';
 import { areaOf, linkPath } from '../cards/area';
+import { clozes } from '../cards/cloze';
 import { groupBy, normalizeAssunto } from '../cards/format';
 import { mirrorPath } from '../cards/mirror';
 import { AREAS, Card, isTipo } from '../cards/types';
@@ -105,6 +106,7 @@ const COMMANDS: Record<string, Command> = {
 					const id = it.card.id as string;
 					return {
 						id,
+						lado: it.reverso ? 'reverso' : it.cloze !== undefined ? `lacuna ${it.cloze + 1}` : 'frente',
 						frente: short(it.card.frente),
 						tipo: it.card.tipo,
 						area: it.area,
@@ -129,17 +131,20 @@ const COMMANDS: Record<string, Command> = {
 	},
 	novo: {
 		desc: 'Cria um cartão no arquivo-espelho da fonte',
-		flags: { frente: 'Frente (\\n quebra linha)', verso: 'Verso', fonte: 'Link [[...]] da origem', assunto: 'Assunto; outro', tipo: 'Pergunta, Lacuna, Referência, Questão', area: 'Dedicação, se a fonte não disser', reverso: 'Revisar também do verso para a frente', dry: 'Só mostra, não grava' },
+		flags: { frente: 'Frente (\\n quebra linha)', verso: 'Verso (vazio vale quando a frente tem ==lacuna==)', fonte: 'Link [[...]] da origem', assunto: 'Assunto; outro', tipo: 'Pergunta, Lacuna, Referência, Questão', area: 'Dedicação, se a fonte não disser', reverso: 'Revisar também do verso para a frente', dry: 'Só mostra, não grava' },
 		run: async (p, plugin) => {
 			const tipo = tipoOf(p.tipo ?? 'Pergunta');
 			const fonte = p.fonte ?? '';
 			const { path, derived } = placeFor(plugin, fonte);
 			const a = area(p);
+			const frente = unescape(need(p, 'frente'));
+			const verso = p.verso && p.verso !== 'true' ? unescape(p.verso) : '';
+			if (!verso && !clozes(frente).length) throw new CliError('parametro', 'falta verso= (ou marque a lacuna com ==assim== na frente)');
 			const card = {
 				id: null,
 				tipo,
-				frente: unescape(need(p, 'frente')),
-				verso: unescape(need(p, 'verso')),
+				frente,
+				verso,
 				...(a && a !== derived ? { area: a } : {}),
 				assuntos: assuntosOf(p),
 				...(flag(p, 'reverso') ? { reverso: true } : {}),
