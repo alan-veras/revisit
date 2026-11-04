@@ -30,18 +30,18 @@ export default class RevisitPlugin extends Plugin {
 		this.store = new Store(this.app, () => this.settings.folder);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
-		this.addCommand({ id: 'open-painel', name: 'Abrir painel', callback: () => void this.openPainel() });
+		this.addCommand({ id: 'open-painel', name: 'Open panel', callback: () => void this.openPainel() });
 		this.addSettingTab(new RevisitSettingTab(this.app, this));
 		registerCli(this);
 
-		this.addCommand({ id: 'capture', name: 'Adicionar à revisão', callback: () => void this.capture() });
-		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
-		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
-		this.addCommand({ id: 'review-extra', name: 'Sessão extra antes da prova', callback: () => this.pickArea(true) });
-		this.addCommand({ id: 'reread-toggle', name: 'Reler esta grade de tempos em tempos (liga ou desliga)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
-		this.addCommand({ id: 'reread-next', name: 'Reler a próxima grade', callback: () => void this.openNextReread() });
-		this.addCommand({ id: 'note-cards', name: 'Cartões desta grade', callback: () => void this.openNoteCards() });
-		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta grade', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
+		this.addCommand({ id: 'capture', name: 'Add to review', callback: () => void this.capture() });
+		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.review(null) });
+		this.addCommand({ id: 'review-area', name: 'Review an area', callback: () => this.pickArea() });
+		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickArea(true) });
+		this.addCommand({ id: 'reread-toggle', name: 'Reread this note from time to time (toggle)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
+		this.addCommand({ id: 'reread-next', name: 'Reread the next note', callback: () => void this.openNextReread() });
+		this.addCommand({ id: 'note-cards', name: 'Cards of this note', callback: () => void this.openNoteCards() });
+		this.addCommand({ id: 'review-note', name: 'Review the cards of this note', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
@@ -49,13 +49,13 @@ export default class RevisitPlugin extends Plugin {
 				if (file.extension === 'md')
 					menu.addItem((i) =>
 						i
-							.setTitle(this.isReread(file.path) ? 'Parar de reler esta grade' : 'Reler esta grade de tempos em tempos')
+							.setTitle(this.isReread(file.path) ? 'Stop rereading this note' : 'Reread this note from time to time')
 							.setIcon('book-open')
 							.onClick(() => void this.toggleReread(file)),
 					);
-				menu.addItem((i) => i.setTitle('Revisar os cartões desta grade').setIcon('layers').onClick(() => void this.reviewNote(file)));
+				menu.addItem((i) => i.setTitle('Review the cards of this note').setIcon('layers').onClick(() => void this.reviewNote(file)));
 				menu.addItem((i) =>
-					i.setTitle('Cartões desta grade').setIcon('layers').onClick(() => {
+					i.setTitle('Cards of this note').setIcon('layers').onClick(() => {
 						this.lastSource = file;
 						void this.openNoteCards();
 					}),
@@ -69,11 +69,11 @@ export default class RevisitPlugin extends Plugin {
 				this.redrawNoteCards();
 			}),
 		);
-		this.addRibbonIcon('layers', 'Lembro', () => void this.openPainel());
+		this.addRibbonIcon('layers', 'Revisit', () => void this.openPainel());
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				if (!editor.getSelection()) return;
-				menu.addItem((i) => i.setTitle('Adicionar à revisão').setIcon('layers').onClick(() => void this.capture()));
+				menu.addItem((i) => i.setTitle('Add to review').setIcon('layers').onClick(() => void this.capture()));
 			}),
 		);
 		this.statusEl = this.addStatusBarItem();
@@ -126,7 +126,7 @@ export default class RevisitPlugin extends Plugin {
 		this.reloading = this.store
 			.load()
 			.catch((e: unknown) => {
-				new Notice(`Lembro: erro ao ler os cartões (${e instanceof Error ? e.message : String(e)})`);
+				new Notice(`Revisit: error reading the cards (${e instanceof Error ? e.message : String(e)})`);
 			})
 			.finally(() => {
 				this.reloading = null;
@@ -152,7 +152,7 @@ export default class RevisitPlugin extends Plugin {
 		await this.reload();
 	}
 
-	/** Área of a card: the one written in it, or the one of its source path. */
+	/** Area of a card: the one written in it, or the one of its source path. */
 	areaOfCard(card: Card): string | null {
 		if (card.area) return card.area;
 		const target = this.resolveSource(card);
@@ -265,17 +265,17 @@ export default class RevisitPlugin extends Plugin {
 		const s = this.session(null);
 		const n = s.length;
 		const newCount = s.filter((it) => isNew(it.fsrs)).length;
-		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'fit'} hoje${newCount ? ` · ${newCount} ${newCount === 1 ? 'new' : 'novos'}` : ''}`);
+		this.statusEl.setText(`Revisit: ${n} ${n === 1 ? 'card' : 'cards'} today${newCount ? ` · ${newCount} new` : ''}`);
 	}
 
 	async review(area: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
 		await this.reload();
-		await this.startReview(this.session(area, minutes, extra, topic), topic ? `${area ?? 'Tudo'} > ${topic}` : (area ?? 'Tudo'), extra);
+		await this.startReview(this.session(area, minutes, extra, topic), topic ? `${area ?? 'All'} > ${topic}` : (area ?? 'All'), extra);
 	}
 
 	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
 		if (!queue.length) {
-			new Notice('Lembro: nada para revisar agora.');
+			new Notice('Revisit: nothing to review now.');
 			return;
 		}
 		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
@@ -318,7 +318,7 @@ export default class RevisitPlugin extends Plugin {
 
 	/** Every due or new card of one note, outside the daily caps. */
 	async reviewNote(file: TFile | null): Promise<void> {
-		if (!file) return void new Notice('Lembro: abra uma grade primeiro.');
+		if (!file) return void new Notice('Revisit: open a note first.');
 		await this.reload();
 		const now = new Date();
 		const items = this.items().filter((it) => this.resolveSource(it.card) === file.path);
@@ -346,7 +346,7 @@ export default class RevisitPlugin extends Plugin {
 		const path = file?.path ?? null;
 		// a card whose source is a card file would mirror itself inside the mirror
 		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
-			new Notice('Lembro: a source não pode ser um arquivo de cartões do plugin; abra a grade de origem.');
+			new Notice('Revisit: the source cannot be a card file of the plugin; open the source note.');
 			return;
 		}
 		const type = initialType({ isPdf: !!ctx?.isPdf, path, selection });
@@ -369,7 +369,7 @@ export default class RevisitPlugin extends Plugin {
 			context: ctx?.context ?? '',
 			sourcePath: path ?? '',
 		};
-		new CaptureModal(this.app, draft, this.topics(), 'Novo cartão', (r) => this.saveNew(r, path, area), type === 'Questão').open();
+		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path, area), type === 'Questão').open();
 	}
 
 	private async saveNew(r: CaptureResult, sourcePath: string | null, derivedArea: string): Promise<void> {
@@ -389,7 +389,7 @@ export default class RevisitPlugin extends Plugin {
 		this.settings.lastTopic['__area'] = r.area;
 		await this.saveSettings();
 		this.updateStatus();
-		new Notice(`Lembro: cartão criado em ${r.area}${r.topics.length ? ' > ' + r.topics[0] : ''} (^${id})`);
+		new Notice(`Revisit: card created in ${r.area}${r.topics.length ? ' > ' + r.topics[0] : ''} (^${id})`);
 	}
 
 	// ---- reread de notas inteiras ----
@@ -431,13 +431,13 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	async toggleReread(file: TFile | null): Promise<void> {
-		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma grade primeiro.');
+		if (!file || file.extension !== 'md') return void new Notice('Revisit: open a note first.');
 		const key = this.rereadKey(file.path);
 		const on = !this.isReread(file.path);
 		this.store.state[key] = { ...(this.store.state[key] ?? {}), st: on ? 'active' : 'suspended' };
 		await this.store.saveState();
 		this.updateStatus();
-		new Notice(on ? `Lembro: ${file.basename} entra na reread` : `Lembro: ${file.basename} sai da reread`);
+		new Notice(on ? `Revisit: ${file.basename} enters rereading` : `Revisit: ${file.basename} leaves rereading`);
 	}
 
 	/** Note being reread now, shown in the Notas tab of the painel. */
@@ -448,7 +448,7 @@ export default class RevisitPlugin extends Plugin {
 		const next = this.dueRereads()[0];
 		if (!next) {
 			this.reading = null;
-			new Notice('Lembro: nenhuma grade para reler hoje.');
+			new Notice('Revisit: no note to reread today.');
 		} else {
 			await this.openReread(next);
 			return;
@@ -475,7 +475,7 @@ export default class RevisitPlugin extends Plugin {
 		const prev = this.store.state[key]?.reread;
 		this.store.state[key] = { st: 'active', reread: read(prev, l, new Date()) };
 		await this.store.saveState();
-		new Notice(`Lembro: volta a esta grade em ${daysLabel(this.store.state[key].reread?.days ?? 1)}`);
+		new Notice(`Revisit: back at this note in ${daysLabel(this.store.state[key].reread?.days ?? 1)}`);
 		await this.openNextReread();
 	}
 
@@ -493,8 +493,8 @@ export default class RevisitPlugin extends Plugin {
 		this.settings.lastReminder = now.toDateString();
 		await this.saveSettings();
 		const frag = createFragment();
-		frag.createSpan({ text: `Lembro: ${n} ${n === 1 ? 'cartão espera' : 'cartões esperam'} por você hoje. ` });
-		const btn = frag.createEl('button', { text: 'Revisar', cls: 'mod-cta' });
+		frag.createSpan({ text: `Revisit: ${n} ${n === 1 ? 'card waits' : 'cards wait'} for you today. ` });
+		const btn = frag.createEl('button', { text: 'Review', cls: 'mod-cta' });
 		const notice = new Notice(frag, 0);
 		btn.addEventListener('click', () => {
 			notice.hide();
@@ -508,7 +508,7 @@ export default class RevisitPlugin extends Plugin {
 		for (const k of Object.keys(this.store.state)) if (k === card.id || k.startsWith(card.id + '-')) delete this.store.state[k];
 		await this.store.saveState();
 		this.updateStatus();
-		new Notice('Lembro: cartão recomeçado, volta como new');
+		new Notice('Revisit: card reset, comes back as new');
 	}
 
 	editCard(card: Card, after?: () => void): void {
@@ -518,7 +518,7 @@ export default class RevisitPlugin extends Plugin {
 		})();
 		const area = card.area ?? derived ?? AREAS[0];
 		const draft = draftFromCard(card, area, card.file ?? '');
-		new CaptureModal(this.app, draft, this.topics(), 'Editar cartão', async (r) => {
+		new CaptureModal(this.app, draft, this.topics(), 'Edit card', async (r) => {
 			await this.store.updateCard(card, {
 				id: card.id,
 				type: r.type,
@@ -549,7 +549,7 @@ class AreaModal extends SuggestModal<string> {
 		private extra = false,
 	) {
 		super(plugin.app);
-		if (extra) this.setPlaceholder('Sessão extra: all os cartões da área, sem mudar a agenda');
+		if (extra) this.setPlaceholder('Extra session: every card of the area, without changing the schedule');
 	}
 	getSuggestions(q: string): string[] {
 		return AREAS.filter((a) => a.toLowerCase().includes(q.toLowerCase()));

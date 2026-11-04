@@ -2,9 +2,9 @@ import { topicsLabel } from '../cards/format';
 import { ItemView, TFile, WorkspaceLeaf } from 'obsidian';
 import type RevisitPlugin from '../main';
 
-export const VIEW_TYPE_NOTE = 'revisit-grade';
+export const VIEW_TYPE_NOTE = 'revisit-note';
 
-/** Side panel: the cards born from the open note, with Editar and a button to review them. */
+/** Side panel: the cards born from the open note, with Edit and a button to review them. */
 export class NoteCardsView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -16,7 +16,7 @@ export class NoteCardsView extends ItemView {
 		return VIEW_TYPE_NOTE;
 	}
 	getDisplayText(): string {
-		return 'Cartões desta grade';
+		return 'Cards of this note';
 	}
 	getIcon(): string {
 		return 'layers';
@@ -31,26 +31,26 @@ export class NoteCardsView extends ItemView {
 		root.addClass('revisit-note');
 		const file = this.plugin.lastSource;
 		if (!file) {
-			root.createEl('p', { cls: 'revisit-muted', text: 'Abra uma grade ou um PDF.' });
+			root.createEl('p', { cls: 'revisit-muted', text: 'Open a note or a PDF.' });
 			return;
 		}
 		const cards = this.plugin.cardsOf(file);
 		const head = root.createDiv({ cls: 'revisit-note-head' });
 		head.createEl('h4', { text: file.basename });
 		if (!cards.length) {
-			root.createEl('p', { cls: 'revisit-muted', text: 'Nenhum cartão nasceu desta grade ainda.' });
+			root.createEl('p', { cls: 'revisit-muted', text: 'No cards from this note yet.' });
 			return;
 		}
 		const reviewable = cards.filter((c) => !this.plugin.isSuspended(c));
-		if (reviewable.length) head.createEl('button', { text: `Revisar ${reviewable.length}`, cls: 'mod-cta' }).onclick = () => void this.plugin.reviewNote(file);
+		if (reviewable.length) head.createEl('button', { text: `Review ${reviewable.length}`, cls: 'mod-cta' }).onclick = () => void this.plugin.reviewNote(file);
 		for (const c of cards) {
 			const box = root.createDiv({ cls: 'revisit-note-card' });
 			box.createDiv({ cls: 'revisit-note-front', text: c.front.replace(/\s+/g, ' ').slice(0, 140) });
-			box.createDiv({ cls: 'revisit-muted revisit-small', text: [c.type, topicsLabel(c.topics), c.reverse ? 'dois sentidos' : ''].filter(Boolean).join(' · ') });
+			box.createDiv({ cls: 'revisit-muted revisit-small', text: [c.type, topicsLabel(c.topics), c.reverse ? 'both ways' : ''].filter(Boolean).join(' · ') });
 			const b = box.createDiv({ cls: 'revisit-note-btns' });
-			b.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(c, () => this.draw());
+			b.createEl('button', { text: 'Edit' }).onclick = () => this.plugin.editCard(c, () => this.draw());
 			const st = c.id ? this.plugin.store.state[c.id] : undefined;
-			if (st?.fsrs) b.createEl('button', { text: 'Recomeçar', attr: { title: 'Esquece a agenda: o cartão volta como new' } }).onclick = () => void this.plugin.resetCard(c);
+			if (st?.fsrs) b.createEl('button', { text: 'Reset', attr: { title: "Forgets the schedule: the card comes back as new" } }).onclick = () => void this.plugin.resetCard(c);
 		}
 	}
 }

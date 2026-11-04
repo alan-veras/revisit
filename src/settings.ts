@@ -13,13 +13,13 @@ export interface RevisitSettings {
 	/** target retention of cards tagged #importante */
 	retentionImportant: number;
 	interleave: boolean;
-	/** words of the text shown by each Dica on a Referência */
+	/** words of the back text shown by each hint on a Referência card */
 	hintWords: number;
-	/** the `Novo` badge on cards seen for the first time */
+	/** the `New` badge on cards seen for the first time */
 	showNewBadge: boolean;
-	/** a card graded Errei comes back after this many cards in the same session */
+	/** a card graded Again comes back after this many cards in the same session */
 	requeueGap: number;
-	/** extra `pasta: Área` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
+	/** extra `folder: area` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
 	areaMap: Record<string, string>;
 	lastTopic: Record<string, string>;
 	/** `HH:MM` of the daily reminder, empty when off */
@@ -64,99 +64,99 @@ export class RevisitSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: 'group',
-				heading: 'Cartões novos por dia',
+				heading: 'New cards per day',
 				items: AREAS.map((area) => ({
 					name: area,
-					desc: `Quantos cartões novos de ${area} entram por dia (padrão ${DEFAULT_AREA_CAP}). 0 pausa os novos da área. Se as revisões vencidas encherem o orçamento, a quota encolhe no dia.`,
+					desc: `How many new ${area} cards enter per day (default ${DEFAULT_AREA_CAP}). 0 pauses the new cards of the area. If due reviews fill the budget, the quota shrinks for the day.`,
 					control: { type: 'number' as const, key: `${QUOTA}${area}`, min: 0 },
 				})),
 			},
 			{
 				type: 'group',
-				heading: 'Revisão',
+				heading: 'Review',
 				items: [
 					{
-						name: 'Orçamento de revisão por dia, em minutos',
-						desc: 'A sessão para quando ele acaba, e os cartões novos diminuem sozinhos quando as revisões já ocupam o orçamento.',
+						name: 'Review budget per day, in minutes',
+						desc: 'The session stops when it runs out, and new cards shrink on their own while due reviews take up the budget.',
 						control: { type: 'number', key: 'budgetMinutes', min: 1 },
 					},
 					{
-						name: 'Retenção desejada, em %',
-						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais times. Acima de 95 o FSRS recomenda não passar.',
+						name: 'Desired retention, in %',
+						desc: 'Chance of remembering on the review day. Higher reviews more often. The FSRS advises against going above 95.',
 						control: { type: 'slider', key: 'retention', min: 70, max: 95, step: 1 },
 					},
 					{
-						name: 'Retenção dos cartões #importante, em %',
-						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais times. O cap é 95, cap que o FSRS recomenda.',
+						name: 'Retention of #importante cards, in %',
+						desc: 'Target for cards with a Tags: #importante line. Higher than the general one, they come back more often. The ceiling is 95, which the FSRS advises.',
 						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 95, step: 1 },
 					},
 					{
-						name: 'Intercalar topics',
-						desc: 'Mistura os topics na sessão. Desligado, revisa um topic de cada vez.',
+						name: 'Interleave topics',
+						desc: 'Mixes the topics inside the session. Off, it reviews one topic at a time.',
 						control: { type: 'toggle', key: 'interleave' },
 					},
 					{
-						name: 'Cartão errado volta depois de quantos cartões',
-						desc: 'Quando você marca Errei, o cartão reaparece na mesma sessão depois deste número de cartões.',
+						name: 'A wrong card comes back after how many cards',
+						desc: 'When you grade Again, the card reappears in the same session after this many cards.',
 						control: { type: 'slider', key: 'requeueGap', min: 1, max: 10, step: 1 },
 					},
 				],
 			},
 			{
 				type: 'group',
-				heading: 'Sessão',
+				heading: 'Session',
 				items: [
 					{
-						name: 'Palavras por dica',
-						desc: 'Nas Referências (versículos), cada clique em Dica ou tecla D mostra mais este número de palavras do texto.',
+						name: 'Words per hint',
+						desc: "On 'Referência' cards (Bible verses), each click on Hint or the D key shows this many more words of the text.",
 						control: { type: 'slider', key: 'hintWords', min: 1, max: 10, step: 1 },
 					},
 					{
-						name: 'Etiqueta Novo',
-						desc: 'Marca com Novo o cartão que você vê pela primeira vez.',
+						name: 'New badge',
+						desc: 'Marks with New the card you see for the first time.',
 						control: { type: 'toggle', key: 'showNewBadge' },
 					},
 				],
 			},
 			{
 				type: 'group',
-				heading: 'Reread de notas',
+				heading: 'Note rereading',
 				items: [
 					{
-						name: 'Tag das notas para reler',
-						desc: 'Notas com esta tag entram na reread, além das que você marca pelo comando. Vazio ignora a tag.',
+						name: 'Tag of the notes to reread',
+						desc: 'Notes with this tag are reread, besides the ones you mark by command. Empty ignores the tag.',
 						control: { type: 'text', key: 'rereadTag', placeholder: '#review/permanent' },
 					},
 					{
-						name: 'Notas novas para reler por dia',
-						desc: 'Quantas notas que você nunca releu entram por dia.',
+						name: 'New notes to reread per day',
+						desc: 'How many notes you have never reread enter per day.',
 						control: { type: 'number', key: 'newNotesPerDay', min: 0 },
 					},
 				],
 			},
 			{
 				type: 'group',
-				heading: 'Lembrete',
+				heading: 'Reminder',
 				items: [
 					{
-						name: 'Lembrete diário',
-						desc: 'Hora no formato 20:00. Se ainda houver cartões e você não revisou hoje, aparece um aviso com o botão Revisar. Vazio desliga.',
+						name: 'Daily reminder',
+						desc: 'Hour in the 20:00 format. If cards are still waiting and you have not reviewed today, a notice with a Review button shows up. Empty turns it off.',
 						control: { type: 'text', key: 'reminder', placeholder: '20:00' },
 					},
 				],
 			},
 			{
 				type: 'group',
-				heading: 'Arquivos',
+				heading: 'Files',
 				items: [
 					{
-						name: 'Pasta dos cartões',
-						desc: 'Onde ficam os arquivos de cartões, o status e o log de revisões.',
+						name: 'Cards folder',
+						desc: 'Where the card files, the state and the review log live.',
 						control: { type: 'text', key: 'folder', placeholder: DEFAULT_SETTINGS.folder },
 					},
 					{
-						name: 'Pastas com área',
-						desc: 'Uma por linha, no formato pasta: área. As pastas de outputs, de resources e da bíblia já são reconhecidas.',
+						name: 'Folders with an area',
+						desc: 'One per line, in the folder: area format. The outputs, resources and Bible folders are already recognized.',
 						control: { type: 'textarea', key: 'areaMap' },
 					},
 				],

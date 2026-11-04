@@ -51,13 +51,13 @@ describe('cardRow', () => {
 		expect(r.ok).toBe(12);
 		expect(r.bad).toBe(1);
 	});
-	it('cartão new fica sem próxima, fora do dueToday; side marca reverse e lacuna', () => {
+	it('cartão new fica sem próxima, fora do dueToday; side marks reverse and cloze', () => {
 		const newCard = cardRow(item({ id: 'n' }), STATS, NOW);
 		expect(newCard.status).toBe('new');
 		expect(newCard.due).toBeNull();
 		expect(newCard.dueToday).toBe(false);
 		expect(cardRow(item({ id: 'n', reverse: true }), STATS, NOW).side).toBe('reverse');
-		expect(cardRow(item({ id: 'n', cloze: 1 }), STATS, NOW).side).toBe('lacuna 2');
+		expect(cardRow(item({ id: 'n', cloze: 1 }), STATS, NOW).side).toBe('cloze 2');
 	});
 	it('due de amanhã não vence hoje', () => {
 		expect(cardRow(reviewed('a', new Date('2026-11-05T08:00:00')), STATS, NOW).dueToday).toBe(false);

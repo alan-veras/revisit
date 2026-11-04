@@ -23,18 +23,18 @@ describe('reread de notas', () => {
 		expect(dueNotes(notes, NOW, 2)).toEqual(['vencida', 'nova1']);
 		expect(dueNotes(notes, NOW, 1)).toEqual(['vencida']);
 	});
-	it('escreve o intervalo', () => {
-		expect(daysLabel(1)).toBe('1 dia');
-		expect(daysLabel(60)).toBe('2 meses');
+	it('writes the interval', () => {
+		expect(daysLabel(1)).toBe('1 day');
+		expect(daysLabel(60)).toBe('2 months');
 	});
 });
 
 describe('untilLabel', () => {
 	const now = new Date('2026-11-02T22:40:00');
-	it('conta em days de calendário', () => {
-		expect(untilLabel(new Date('2026-11-03T07:00:00'), now)).toBe('amanhã');
-		expect(untilLabel(new Date('2026-11-02T23:00:00'), now)).toBe('hoje');
-		expect(untilLabel(new Date('2026-11-09T10:00:00'), now)).toBe('em 7 days');
-		expect(untilLabel(new Date('2027-01-05T10:00:00'), now)).toBe('em 2 meses');
+	it('counts in calendar days', () => {
+		expect(untilLabel(new Date('2026-11-03T07:00:00'), now)).toBe('tomorrow');
+		expect(untilLabel(new Date('2026-11-02T23:00:00'), now)).toBe('today');
+		expect(untilLabel(new Date('2026-11-09T10:00:00'), now)).toBe('in 7 days');
+		expect(untilLabel(new Date('2027-01-05T10:00:00'), now)).toBe('in 2 months');
 	});
 });

@@ -57,11 +57,11 @@ describe('scheduler', () => {
 		const important = both.preview(f, later, true)[3].card.scheduled_days;
 		expect(important).toBeLessThan(normal);
 	});
-	it('formats intervals in Portuguese', () => {
+	it('formats intervals', () => {
 		expect(formatInterval(10 * 60000)).toBe('10 min');
-		expect(formatInterval(86400000)).toBe('amanhã');
+		expect(formatInterval(86400000)).toBe('tomorrow');
 		expect(formatInterval(5 * 86400000)).toBe('5 days');
-		expect(formatInterval(60 * 86400000)).toBe('2 meses');
+		expect(formatInterval(60 * 86400000)).toBe('2 months');
 	});
 });
 
@@ -185,9 +185,9 @@ describe('quota por área', () => {
 		expect(r.areas[0]).toMatchObject({ quota: 5, cap: 2 });
 		expect(r.reduced).toBe(true);
 	});
-	it('cartões sem área dividem a quota de Sem área', () => {
+	it('cards without an area share the No area quota', () => {
 		const sem = (id: string): QueueItem => ({ key: id, reverse: false, card: card(id), area: null, suspended: false });
-		const keys = buildSession([sem('a'), sem('b'), sem('c')], opts({ newLeftByArea: new Map([['Sem área', 2]]) }));
+		const keys = buildSession([sem('a'), sem('b'), sem('c')], opts({ newLeftByArea: new Map([['No area', 2]]) }));
 		expect(keys).toHaveLength(2);
 	});
 

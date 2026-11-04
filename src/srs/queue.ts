@@ -15,7 +15,7 @@ export interface QueueItem {
 }
 
 /** Area key of the cards whose source has no area: they share one quota. */
-export const NO_AREA = 'Sem área';
+export const NO_AREA = 'No area';
 
 export interface QueueOptions {
 	now: Date;

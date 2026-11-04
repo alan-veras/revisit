@@ -29,19 +29,19 @@ export function isNew(card: FsrsCard | undefined): boolean {
 	return !card || card.state === State.New;
 }
 
-/** "10 min", "3 h", "amanhã", "5 days", "2 meses", "1 ano". */
+/** "10 min", "3 h", "tomorrow", "5 days", "2 months", "1 year". */
 export function formatInterval(ms: number): string {
 	const min = Math.max(1, Math.round(ms / 60000));
 	if (min < 60) return `${min} min`;
 	const h = Math.round(min / 60);
 	if (h < 24) return `${h} h`;
 	const d = Math.round(h / 24);
-	if (d === 1) return 'amanhã';
+	if (d === 1) return 'tomorrow';
 	if (d < 31) return `${d} days`;
 	const m = Math.round(d / 30);
-	if (m < 12) return m === 1 ? '1 mês' : `${m} meses`;
+	if (m < 12) return m === 1 ? '1 month' : `${m} months`;
 	const y = Math.round(d / 365);
-	return y === 1 ? '1 ano' : `${y} anos`;
+	return y === 1 ? '1 year' : `${y} years`;
 }
 
 export class Scheduler {

@@ -61,8 +61,8 @@
 .revisit-back-btn { padding: 2px 10px; height: auto; font-size: var(--font-ui-smaller); }
 
 /* painel: one screen */
-.revisit-painel { padding: 36px 16px 40px; }
-.revisit-painel-wrap { max-width: 560px; margin: 0 auto; }
+.revisit-panel { padding: 36px 16px 40px; }
+.revisit-panel-wrap { max-width: 560px; margin: 0 auto; }
 .revisit-hero { text-align: center; padding-bottom: 26px; }
 .revisit-big { font-size: 44px; font-weight: 600; line-height: 1; }
 .revisit-hero .revisit-muted { margin-top: 6px; }

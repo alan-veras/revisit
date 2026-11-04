@@ -52,12 +52,12 @@ export function resolveOnSave(o: { type: CardType; front: string; back: string; 
 	const front = o.front.trim();
 	const back = o.back.trim();
 	if (!back && clozes(front).length) return { type: 'Lacuna', front, back: '' };
-	if (!back) return { error: 'O back está vazio.' };
+	if (!back) return { error: 'The back is empty.' };
 	if (front) return { type: o.type, front, back };
 	if (wordCount(back) <= CLOZE_MAX_WORDS && o.context.trim()) {
 		return { type: 'Lacuna', front: clozeFront(o.context, back), back };
 	}
-	return { error: 'Escreva a pergunta: lacuna só vale para trecho curto.' };
+	return { error: 'Write the question: a cloze only works for a short excerpt.' };
 }
 
 const ALT_RE = /\s*\(([A-Ea-e])\)\s*/g;

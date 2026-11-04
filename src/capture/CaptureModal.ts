@@ -55,52 +55,52 @@ export class CaptureModal extends Modal {
 		const chips = contentEl.createDiv({ cls: 'revisit-chips' });
 		CARD_TYPES.forEach((t, i) => {
 			const b = chips.createEl('button', { text: t, attr: { title: `Ctrl+${i + 1}` } });
-			b.onclick = () => this.setTipo(t);
+			b.onclick = () => this.setType(t);
 			this.chips.push(b);
 		});
-		this.markTipo();
+		this.markType();
 
-		const front = this.area(contentEl, 'Frente', this.draft.front, 'A pergunta', (v) => (this.draft.front = v));
-		const back = this.area(contentEl, 'Verso', this.draft.back, 'A resposta', (v) => (this.draft.back = v));
+		const front = this.box(contentEl, 'Front', this.draft.front, 'The question', (v) => (this.draft.front = v));
+		const back = this.box(contentEl, 'Back', this.draft.back, 'The answer', (v) => (this.draft.back = v));
 
 		const row = contentEl.createDiv({ cls: 'revisit-row' });
 		const areaBox = row.createDiv({ cls: 'revisit-field' });
-		areaBox.createEl('label', { text: 'Área' });
+		areaBox.createEl('label', { text: 'Area' });
 		const sel = areaBox.createEl('select');
 		for (const a of AREAS) sel.createEl('option', { text: a, value: a });
 		sel.value = this.draft.area || AREAS[0];
 		this.draft.area = sel.value;
 		sel.onchange = () => (this.draft.area = sel.value);
 
-		const asBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
-		asBox.createEl('label', { text: 'Assunto' });
+		const topicBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
+		topicBox.createEl('label', { text: 'Topic' });
 		const listId = `revisit-topics-${Date.now()}`;
-		const as = asBox.createEl('input', { type: 'text', value: this.draft.topic, attr: { list: listId, placeholder: 'Assunto > subassunto; outro' } });
-		const dl = asBox.createEl('datalist', { attr: { id: listId } });
+		const topicInput = topicBox.createEl('input', { type: 'text', value: this.draft.topic, attr: { list: listId, placeholder: 'Topic > subtopic; another' } });
+		const dl = topicBox.createEl('datalist', { attr: { id: listId } });
 		for (const a of this.topics) dl.createEl('option', { value: a });
-		as.oninput = () => (this.draft.topic = as.value);
+		topicInput.oninput = () => (this.draft.topic = topicInput.value);
 
-		const fonteBox = contentEl.createDiv({ cls: 'revisit-field' });
-		fonteBox.createEl('label', { text: 'Fonte' });
-		const source = fonteBox.createEl('input', { type: 'text', value: this.draft.source });
+		const sourceBox = contentEl.createDiv({ cls: 'revisit-field' });
+		sourceBox.createEl('label', { text: 'Source' });
+		const source = sourceBox.createEl('input', { type: 'text', value: this.draft.source });
 		source.oninput = () => (this.draft.source = source.value);
 
 		const rev = contentEl.createEl('label', { cls: 'revisit-check' });
 		const cb = rev.createEl('input', { type: 'checkbox' });
 		cb.checked = !!this.draft.reverse;
 		cb.onchange = () => (this.draft.reverse = cb.checked);
-		rev.appendText(' Revisar nos dois sentidos (o back também vira pergunta)');
+		rev.appendText(' Review both ways (the back becomes a question too)');
 
-		contentEl.createEl('label', { text: 'Prévia', cls: 'revisit-label' });
+		contentEl.createEl('label', { text: 'Preview', cls: 'revisit-label' });
 		this.preview = contentEl.createDiv({ cls: 'revisit-preview' });
 		void this.renderPreview();
 
 		const buttons = contentEl.createDiv({ cls: 'revisit-buttons' });
-		buttons.createEl('button', { text: 'Cancelar' }).onclick = () => this.close();
-		const save = buttons.createEl('button', { text: 'Salvar (Ctrl+Enter)', cls: 'mod-cta' });
+		buttons.createEl('button', { text: 'Cancel' }).onclick = () => this.close();
+		const save = buttons.createEl('button', { text: 'Save (Ctrl+Enter)', cls: 'mod-cta' });
 		save.onclick = () => void this.save();
 
-		contentEl.createDiv({ cls: 'revisit-tip', text: 'Uma coisa por cartão. A pergunta tem uma resposta certa.' });
+		contentEl.createDiv({ cls: 'revisit-tip', text: 'One thing per card. The question has one right answer.' });
 
 		this.scope.register(['Mod'], 'Enter', (e) => {
 			e.preventDefault();
@@ -110,14 +110,14 @@ export class CaptureModal extends Modal {
 		CARD_TYPES.forEach((t, i) =>
 			this.scope.register(['Mod'], String(i + 1), (e) => {
 				e.preventDefault();
-				this.setTipo(t);
+				this.setType(t);
 				return false;
 			}),
 		);
 		window.setTimeout(() => (this.focusBack ? back : front).focus(), 30);
 	}
 
-	private area(parent: HTMLElement, label: string, value: string, placeholder: string, set: (v: string) => void): HTMLTextAreaElement {
+	private box(parent: HTMLElement, label: string, value: string, placeholder: string, set: (v: string) => void): HTMLTextAreaElement {
 		const box = parent.createDiv({ cls: 'revisit-field' });
 		box.createEl('label', { text: label });
 		const ta = box.createEl('textarea', { attr: { rows: '3', placeholder } });
@@ -129,12 +129,12 @@ export class CaptureModal extends Modal {
 		return ta;
 	}
 
-	private setTipo(t: CardType): void {
+	private setType(t: CardType): void {
 		this.draft.type = t;
-		this.markTipo();
+		this.markType();
 	}
 
-	private markTipo(): void {
+	private markType(): void {
 		this.chips.forEach((b) => b.toggleClass('is-on', b.textContent === this.draft.type));
 	}
 
@@ -161,7 +161,7 @@ export class CaptureModal extends Modal {
 			await this.onSave({ ...r, area: this.draft.area, topics, source: this.draft.source.trim(), reverse: !!this.draft.reverse });
 			this.close();
 		} catch (e) {
-			new Notice(`Lembro: ${e instanceof Error ? e.message : String(e)}`);
+			new Notice(`Revisit: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 

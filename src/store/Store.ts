@@ -15,7 +15,7 @@ export interface CardState {
 	st: Estado;
 }
 
-/** Everything the Lembro keeps lives in one vault folder. */
+/** Everything Revisit keeps lives in one vault folder. */
 export class Store {
 	cards: Card[] = [];
 	state: Record<string, CardState> = {};
@@ -53,7 +53,7 @@ export class Store {
 				if (!(await this.app.vault.adapter.exists(path))) continue;
 				return parseStateText(await this.app.vault.adapter.read(path));
 			} catch (e) {
-				new Notice(`Lembro: ${path} está ilegível (${e instanceof Error ? e.message : String(e)}); tentando o backup.`);
+				new Notice(`Revisit: ${path} is unreadable (${e instanceof Error ? e.message : String(e)}); trying the backup.`);
 			}
 		}
 		return {};
@@ -67,7 +67,7 @@ export class Store {
 		if (await adapter.exists(this.logPath)) {
 			const parsed = parseLogLines(await adapter.read(this.logPath));
 			this.log = parsed.entries;
-			if (parsed.bad) new Notice(`Lembro: ${parsed.bad} linha(s) ilegível(is) ignoradas em revisoes.jsonl.`);
+			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in revisoes.jsonl.`);
 		}
 		const taken = new Set<string>();
 		const files = this.cardFiles();
@@ -135,10 +135,10 @@ export class Store {
 
 	private async withCardFile(card: Card, edit: (text: string, fresh: Card) => string): Promise<void> {
 		const file = card.file ? this.app.vault.getAbstractFileByPath(card.file) : null;
-		if (!(file instanceof TFile)) throw new Error('Arquivo do cartão não encontrado.');
+		if (!(file instanceof TFile)) throw new Error('Card file not found.');
 		await this.app.vault.process(file, (text) => {
 			const fresh = parseCardFile(text).find((c) => c.id === card.id);
-			if (!fresh) throw new Error('Cartão não encontrado no arquivo.');
+			if (!fresh) throw new Error('Card not found in the file.');
 			return edit(text, fresh);
 		});
 		await this.load();

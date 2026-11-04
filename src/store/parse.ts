@@ -4,7 +4,7 @@ import type { CardState } from './Store';
 /** Reads estado.json; anything but an object counts as corruption and throws, so the caller can fall back to the backup. */
 export function parseStateText(text: string): Record<string, CardState> {
 	const v: unknown = JSON.parse(text);
-	if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('o conteúdo não é um objeto');
+	if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('the content is not an object');
 	return v as Record<string, CardState>;
 }
 

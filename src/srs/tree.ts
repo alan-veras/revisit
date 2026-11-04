@@ -1,7 +1,8 @@
 import { AREAS } from '../cards/types';
+import { NO_AREA } from './queue';
 
 export interface TreeNode {
-	/** `Área` or `Área > Assunto > Sub`, unique */
+	/** `Area` or `Area > topic > sub`, unique */
 	path: string;
 	name: string;
 	area: string;
@@ -11,7 +12,7 @@ export interface TreeNode {
 	children: TreeNode[];
 }
 
-/** Área > Assunto > … with the number of cards under each level; empty levels are left out. */
+/** Area > topic > … with the number of cards under each level; empty levels are left out. */
 export function topicTree(items: { area: string | null; card: { topics: string[] } }[]): TreeNode[] {
 	const roots = new Map<string, TreeNode>();
 	const node = (parent: TreeNode | null, area: string, name: string, topic: string | null): TreeNode => {
@@ -26,7 +27,7 @@ export function topicTree(items: { area: string | null; card: { topics: string[]
 		return n;
 	};
 	for (const it of items) {
-		const area = it.area ?? 'Sem área';
+		const area = it.area ?? NO_AREA;
 		const root = node(null, area, area, null);
 		root.cards++;
 		const seen = new Set<TreeNode>();

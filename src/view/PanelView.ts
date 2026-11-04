@@ -8,19 +8,19 @@ import { cardStats, retentionBy, reviewsPerDay } from '../srs/stats';
 import { matchesCard } from './search';
 import { AREAS } from '../cards/types';
 import type RevisitPlugin from '../main';
-import { estimateMinutes, matchesFilter, QueueItem } from '../srs/queue';
+import { estimateMinutes, matchesFilter, NO_AREA, QueueItem } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
-export const VIEW_TYPE_PANEL = 'revisit-painel';
+export const VIEW_TYPE_PANEL = 'revisit-panel';
 
 const STATUSES: (readonly [CardStatus | 'all', string])[] = [
-	['all', 'Todos os estados'],
-	['new', 'Novo'],
-	['learning', 'Aprendendo'],
-	['review', 'Revisão'],
-	['suspended', 'Suspenso'],
+	['all', 'All states'],
+	['new', 'New'],
+	['learning', 'Learning'],
+	['review', 'Review'],
+	['suspended', 'Suspended'],
 ];
-const STATUS_LABEL: Record<CardStatus, string> = { new: 'new', learning: 'learning', review: 'revisão', suspended: 'suspended' };
+const STATUS_LABEL: Record<CardStatus, string> = { new: 'new', learning: 'learning', review: 'review', suspended: 'suspended' };
 
 /** One screen: what fits today, the browser, the notes and the progress. */
 export class PanelView extends ItemView {
@@ -29,9 +29,9 @@ export class PanelView extends ItemView {
 	private status: CardStatus | 'all' = 'all';
 	private areaF: string | null = null;
 	private limit = 100;
-	/** tree rows opened (Área or Área > Assunto paths) */
+	/** tree rows opened (area or area > topic paths) */
 	private expanded = new Set<string>();
-	private tab: 'hoje' | 'buscar' | 'notas' | 'progresso' = 'hoje';
+	private tab: 'today' | 'search' | 'notes' | 'progress' = 'today';
 	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
 	private day: number | null = null;
 
@@ -45,7 +45,7 @@ export class PanelView extends ItemView {
 		return VIEW_TYPE_PANEL;
 	}
 	getDisplayText(): string {
-		return 'Lembro';
+		return 'Revisit';
 	}
 	getIcon(): string {
 		return 'layers';
@@ -59,25 +59,25 @@ export class PanelView extends ItemView {
 		const p = this.plugin;
 		const root = this.contentEl;
 		root.empty();
-		root.addClass('revisit-painel');
-		const wrap = root.createDiv({ cls: 'revisit-painel-wrap' });
+		root.addClass('revisit-panel');
+		const wrap = root.createDiv({ cls: 'revisit-panel-wrap' });
 		const tabs = wrap.createDiv({ cls: 'revisit-tabs' });
-		for (const [id, name] of [['hoje', 'Hoje'], ['buscar', 'Buscar'], ['notas', 'Notas'], ['progresso', 'Progresso']] as const) {
+		for (const [id, name] of [['today', 'Today'], ['search', 'Search'], ['notes', 'Notes'], ['progress', 'Progress']] as const) {
 			const b = tabs.createEl('button', { text: name, cls: this.tab === id ? 'is-on' : '' });
 			b.onclick = () => {
 				this.tab = id;
 				this.draw();
 			};
 		}
-		if (this.tab === 'progresso') return this.drawProgresso(wrap);
-		if (this.tab === 'buscar') return this.drawBuscar(wrap);
-		if (this.tab === 'notas') return this.drawNotas(wrap);
+		if (this.tab === 'progress') return this.drawProgress(wrap);
+		if (this.tab === 'search') return this.drawSearch(wrap);
+		if (this.tab === 'notes') return this.drawNotes(wrap);
 
 		const today = p.session(null);
 		const hero = wrap.createDiv({ cls: 'revisit-hero' });
 		hero.createDiv({ cls: 'revisit-big', text: String(today.length) });
-		hero.createDiv({ cls: 'revisit-muted', text: today.length ? `${today.length === 1 ? 'cartão cabe' : 'cartões fit'} hoje · uns ${Math.max(1, estimateMinutes(today, p.secs()))} min` : 'nada para hoje' });
-		const go = hero.createEl('button', { text: 'Revisar', cls: 'mod-cta revisit-go' });
+		hero.createDiv({ cls: 'revisit-muted', text: today.length ? `${today.length === 1 ? 'card fits' : 'cards fit'} today · about ${Math.max(1, estimateMinutes(today, p.secs()))} min` : 'nothing for today' });
+		const go = hero.createEl('button', { text: 'Review', cls: 'mod-cta revisit-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.review(null);
 
@@ -129,18 +129,18 @@ export class PanelView extends ItemView {
 			// rollup: an open parent is only a title; the numbers live on the deepest visible row
 			const summary = !(kids && open);
 			const pills = r.createSpan({ cls: 'revisit-li-pills' });
-			if (summary && toReview) setTooltip(pills.createSpan({ cls: 'revisit-np is-due', text: String(toReview) }), `${toReview} para revisar hoje`);
-			if (summary && newCount) setTooltip(pills.createSpan({ cls: 'revisit-np is-new', text: String(newCount) }), `${newCount} ${newCount === 1 ? 'new entra' : 'novos entram'} hoje`);
+			if (summary && toReview) setTooltip(pills.createSpan({ cls: 'revisit-np is-due', text: String(toReview) }), `${toReview} to review today`);
+			if (summary && newCount) setTooltip(pills.createSpan({ cls: 'revisit-np is-new', text: String(newCount) }), `${newCount} ${newCount === 1 ? 'new enters' : 'new enter'} today`);
 
 			// nothing for today: say when the next review falls, so the row is never mute
 			if (summary && !s.length) {
 				const next = items
-					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === 'Sem área' ? null : node.area, node.topic))
+					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === NO_AREA ? null : node.area, node.topic))
 					.reduce<Date | null>((m, it) => (it.fsrs && (!m || it.fsrs.due < m) ? it.fsrs.due : m), null);
-				if (next) setTooltip(r.createSpan({ cls: 'revisit-li-next', text: untilLabel(next, new Date()) }), `Próxima revisão: ${next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`);
+				if (next) setTooltip(r.createSpan({ cls: 'revisit-li-next', text: untilLabel(next, new Date()) }), `Next review: ${next.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`);
 			}
 			const total = r.createSpan({ cls: 'revisit-li-total', text: summary ? String(node.cards) : '' });
-			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão active' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
+			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'active card' : 'active cards'}${susp ? ` · ${susp} suspended` : ''}`);
 
 			const quota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
 			const meter = r.createSpan({ cls: 'revisit-li-quota' });
@@ -150,15 +150,15 @@ export class PanelView extends ItemView {
 				if (full) meter.addClass('is-full');
 				const bar = meter.createSpan({ cls: 'revisit-li-bar' });
 				bar.createEl('i').style.width = `${quota.cap ? Math.min(100, (quota.used / quota.cap) * 100) : 0}%`;
-				meter.createSpan({ cls: 'revisit-li-quota-n', text: paused ? 'pausado' : `${quota.used}/${quota.cap}` });
+				meter.createSpan({ cls: 'revisit-li-quota-n', text: paused ? 'paused' : `${quota.used}/${quota.cap}` });
 				if (full) setIcon(meter.createSpan({ cls: 'revisit-li-ok' }), 'check');
-				setTooltip(meter, paused ? 'Cota 0: novos desta área pausados' : full ? `Cota de novos completa hoje (${quota.cap}): voltam amanhã` : `Novos hoje: ${quota.used} de ${quota.cap}${q.reduced ? ' · quota encolhida pelo orçamento' : ''}`);
+				setTooltip(meter, paused ? 'Quota 0: new cards of this area are paused' : full ? `New quota filled for today (${quota.cap}): back tomorrow` : `New today: ${quota.used} of ${quota.cap}${q.reduced ? ' · quota shrunk by the budget' : ''}`);
 			}
 
 			const go = r.createSpan({ cls: 'revisit-li-go' });
 			if (s.length) {
 				setIcon(go, 'play');
-				setTooltip(go, `Revisar ${node.topic ?? node.area} (${s.length})`);
+				setTooltip(go, `Review ${node.topic ?? node.area} (${s.length})`);
 				go.onclick = (e) => {
 					e.stopPropagation();
 					void p.review(node.area, undefined, false, node.topic);
@@ -175,11 +175,11 @@ export class PanelView extends ItemView {
 		};
 		for (const t of tree) row(t, 0);
 
-		if (q.reduced) list.createDiv({ cls: 'revisit-deck-empty', text: 'As revisões vencidas ocupam o orçamento de minutos: as cotas de novos encolheram hoje.' });
+		if (q.reduced) list.createDiv({ cls: 'revisit-deck-empty', text: 'Due reviews take up the minute budget: the new-card quotas shrank today.' });
 	}
 
 	/** Whole notes to reread: today's, the one being read, and the next ones. */
-	private drawNotas(wrap: HTMLElement): void {
+	private drawNotes(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const now = new Date();
 		const due = p.dueRereads(now);
@@ -189,26 +189,26 @@ export class PanelView extends ItemView {
 
 		const hero = wrap.createDiv({ cls: 'revisit-hero' });
 		hero.createDiv({ cls: 'revisit-big', text: String(due.length) });
-		hero.createDiv({ cls: 'revisit-muted', text: due.length ? `${due.length === 1 ? 'grade para reler' : 'notas para reler'} hoje` : 'nenhuma grade para reler hoje' });
-		const go = hero.createEl('button', { text: 'Ler a próxima', cls: 'mod-cta revisit-go' });
+		hero.createDiv({ cls: 'revisit-muted', text: due.length ? `${due.length === 1 ? 'note to reread' : 'notes to reread'} today` : 'no note to reread today' });
+		const go = hero.createEl('button', { text: 'Read next', cls: 'mod-cta revisit-go' });
 		go.disabled = !due.length;
 		go.onclick = () => void p.openNextReread();
 
 		if (p.reading) {
 			const path = p.reading;
 			const box = wrap.createDiv({ cls: 'revisit-reading' });
-			box.createDiv({ cls: 'revisit-muted', text: 'Lendo agora' });
+			box.createDiv({ cls: 'revisit-muted', text: 'Reading now' });
 			box.createEl('h3', { text: name(path) });
-			box.createDiv({ cls: 'revisit-muted', text: 'Terminou? Diga como foi a reread:' });
+			box.createDiv({ cls: 'revisit-muted', text: 'Done? Rate the reread:' });
 			const prev = all.find((n) => n.path === path)?.r;
 			const row = box.createDiv({ cls: 'revisit-reading-btns' });
-			for (const [l, name] of [['hard', 'Difícil'], ['good', 'Bom'], ['easy', 'Fácil']] as const) {
+			for (const [l, name] of [['hard', 'Hard'], ['good', 'Good'], ['easy', 'Easy']] as const) {
 				const b = row.createEl('button', { cls: l === 'good' ? 'mod-cta' : '' });
 				b.createEl('b', { text: name });
 				b.createEl('small', { text: daysLabel(nextInterval(prev, l)) });
 				b.onclick = () => void p.gradeReread(path, l);
 			}
-			const skip = box.createEl('button', { text: 'Agora não', cls: 'revisit-link' });
+			const skip = box.createEl('button', { text: 'Not now', cls: 'revisit-link' });
 			skip.onclick = () => {
 				p.reading = null;
 				this.draw();
@@ -216,13 +216,13 @@ export class PanelView extends ItemView {
 		}
 
 		if (due.length) {
-			wrap.createEl('h4', { text: 'Para hoje', cls: 'revisit-sub' });
+			wrap.createEl('h4', { text: 'For today', cls: 'revisit-sub' });
 			const list = wrap.createDiv({ cls: 'revisit-areas' });
 			for (const path of due) {
 				const r = all.find((n) => n.path === path)?.r;
 				const row = list.createDiv({ cls: 'revisit-area' });
 				row.createSpan({ text: name(path) });
-				row.createSpan({ cls: 'revisit-area-n', text: r ? `lastRead ${r.times}x` : 'nova' });
+				row.createSpan({ cls: 'revisit-area-n', text: r ? `read ${r.times}x` : 'new' });
 				setIcon(row.createSpan({ cls: 'revisit-area-go' }), 'chevron-right');
 				row.onclick = () => open(path);
 			}
@@ -233,36 +233,36 @@ export class PanelView extends ItemView {
 			.sort((a, b) => (a.r?.due ?? '').localeCompare(b.r?.due ?? ''))
 			.slice(0, 8);
 		if (later.length) {
-			wrap.createEl('h4', { text: 'Próximas', cls: 'revisit-sub' });
+			wrap.createEl('h4', { text: 'Upcoming', cls: 'revisit-sub' });
 			const list = wrap.createDiv({ cls: 'revisit-areas' });
 			for (const n of later) {
 				const row = list.createDiv({ cls: 'revisit-area' });
 				row.createSpan({ text: name(n.path) });
-				row.createSpan({ cls: 'revisit-area-n', text: new Date(n.r?.due ?? '').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) });
+				row.createSpan({ cls: 'revisit-area-n', text: new Date(n.r?.due ?? '').toLocaleDateString('en-US', { day: '2-digit', month: 'short' }) });
 				row.onclick = () => open(n.path);
 			}
 		}
 
 		wrap.createEl('p', {
 			cls: 'revisit-muted revisit-small',
-			text: `${all.length} ${all.length === 1 ? 'grade' : 'notas'} na reread. Para incluir uma grade, clique com o botão direito nela e escolha "Reler esta grade de tempos em tempos"${p.settings.rereadTag ? `, ou use a tag ${p.settings.rereadTag}` : ''}.`,
+			text: `${all.length} ${all.length === 1 ? 'note' : 'notes'} rereading. To add one, right-click it and choose "Reread this note from time to time"${p.settings.rereadTag ? `, or use the ${p.settings.rereadTag} tag` : ''}.`,
 		});
 	}
 
 	/** The browser: search, filters by state and area, and one dense row per card, like the Anki desktop table. */
-	private drawBuscar(wrap: HTMLElement): void {
+	private drawSearch(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const now = new Date();
 		const stats = cardStats(p.store.log);
 
 		const bar = wrap.createDiv({ cls: 'revisit-filters' });
-		const input = bar.createEl('input', { type: 'search', attr: { placeholder: 'Buscar cartões' } });
+		const input = bar.createEl('input', { type: 'search', attr: { placeholder: 'Search cards' } });
 		input.value = this.q;
 		input.oninput = () => {
 			this.q = input.value;
 			this.draw();
 		};
-		const est = bar.createEl('select', { attr: { 'aria-label': 'Estado' } });
+		const est = bar.createEl('select', { attr: { 'aria-label': 'State' } });
 		for (const [v, name] of STATUSES) {
 			const o = est.createEl('option', { text: name, value: v });
 			if (this.status === v) o.selected = true;
@@ -271,41 +271,41 @@ export class PanelView extends ItemView {
 			this.status = est.value as CardStatus | 'all';
 			this.draw();
 		};
-		const sel = bar.createEl('select', { attr: { 'aria-label': 'Área' } });
-		for (const a of ['Todas as áreas', ...AREAS, 'Sem área'] as const) {
+		const sel = bar.createEl('select', { attr: { 'aria-label': 'Area' } });
+		for (const a of ['All areas', ...AREAS, NO_AREA] as const) {
 			const o = sel.createEl('option', { text: a, value: a });
-			if ((this.areaF ?? 'Todas as áreas') === a) o.selected = true;
+			if ((this.areaF ?? 'All areas') === a) o.selected = true;
 		}
 		sel.onchange = () => {
-			this.areaF = sel.value === 'Todas as áreas' ? null : sel.value;
+			this.areaF = sel.value === 'All areas' ? null : sel.value;
 			this.draw();
 		};
 
 		const clean = this.q.trim() || this.status !== 'all' || this.areaF;
 		if (!clean) {
-			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Digite para buscar, ou filtre por status e área.' });
+			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Type to search, or filter by state and area.' });
 			return;
 		}
 		const rows = p
 			.items()
 			.map((it) => cardRow(it, stats, now))
-			.filter((r) => (this.status === 'all' || r.status === this.status) && (!this.areaF || (r.area ?? 'Sem área') === this.areaF))
+			.filter((r) => (this.status === 'all' || r.status === this.status) && (!this.areaF || (r.area ?? NO_AREA) === this.areaF))
 			.filter((r) => matchesCard(r.item.card, this.q))
 			.sort(rowOrder);
-		const hoje = rows.filter((r) => r.dueToday).length;
+		const dueNow = rows.filter((r) => r.dueToday).length;
 		wrap.createDiv({
 			cls: 'revisit-muted revisit-small revisit-count',
-			text: `${rows.length} ${rows.length === 1 ? 'cartão' : 'cartões'}${hoje ? ` · ${hoje} ${hoje === 1 ? 'vence' : 'vencem'} hoje` : ''}`,
+			text: `${rows.length} ${rows.length === 1 ? 'card' : 'cards'}${dueNow ? ` · ${dueNow} due today` : ''}`,
 		});
 		if (!rows.length) {
-			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Nenhum cartão com esses filtros.' });
+			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'No cards with these filters.' });
 			return;
 		}
 
 		const head = wrap.createDiv({ cls: 'revisit-thead' });
-		head.createSpan({ cls: 'revisit-th-c', text: 'Cartão' });
-		head.createSpan({ cls: 'revisit-th', text: 'Estado' });
-		head.createSpan({ cls: 'revisit-th', text: 'Volta' });
+		head.createSpan({ cls: 'revisit-th-c', text: 'Card' });
+		head.createSpan({ cls: 'revisit-th', text: 'State' });
+		head.createSpan({ cls: 'revisit-th', text: 'Due' });
 		head.createSpan({ cls: 'revisit-th is-n', text: '✓' });
 		head.createSpan({ cls: 'revisit-th is-n', text: '✗' });
 
@@ -314,24 +314,24 @@ export class PanelView extends ItemView {
 			const row = table.createDiv({ cls: `revisit-tr is-${r.status}` });
 			const c = row.createDiv({ cls: 'revisit-td-c' });
 			c.createDiv({ cls: 'revisit-td-f', text: r.front.replace(/\s+/g, ' ') });
-			c.createDiv({ cls: 'revisit-td-sub', text: [r.area ?? 'Sem área', topicsLabel(r.topics), r.side !== 'front' ? r.side : r.type].filter(Boolean).join(' · ') });
+			c.createDiv({ cls: 'revisit-td-sub', text: [r.area ?? NO_AREA, topicsLabel(r.topics), r.side !== 'front' ? r.side : r.type].filter(Boolean).join(' · ') });
 			row.createSpan({ cls: `revisit-st is-${r.status}`, text: STATUS_LABEL[r.status] });
 			row.createSpan({ cls: 'revisit-td-due', text: r.due ? untilLabel(r.due, now) : '—' });
 			row.createSpan({ cls: 'revisit-td-n is-ok', text: r.ok ? String(r.ok) : '' });
 			row.createSpan({ cls: 'revisit-td-n is-bad', text: r.bad ? String(r.bad) : '' });
 			const acts = row.createDiv({ cls: 'revisit-td-acts' });
-			acts.createEl('button', { text: 'Editar' }).onclick = (e) => {
+			acts.createEl('button', { text: 'Edit' }).onclick = (e) => {
 				e.stopPropagation();
 				p.editCard(r.item.card, () => this.draw());
 			};
-			const more = acts.createEl('button', { text: '⋯', attr: { 'aria-label': 'Mais ações' } });
+			const more = acts.createEl('button', { text: '⋯', attr: { 'aria-label': 'More actions' } });
 			more.onclick = (e) => {
 				e.stopPropagation();
 				this.cardMenu(e, r);
 			};
 		}
 		if (rows.length > this.limit) {
-			const more = wrap.createEl('button', { text: `Mostrar mais ${rows.length - this.limit}`, cls: 'revisit-link revisit-more' });
+			const more = wrap.createEl('button', { text: `Show more ${rows.length - this.limit}`, cls: 'revisit-link revisit-more' });
 			more.onclick = () => {
 				this.limit += 200;
 				this.draw();
@@ -343,17 +343,17 @@ export class PanelView extends ItemView {
 		const p = this.plugin;
 		const menu = new Menu();
 		menu.addItem((i) =>
-			i.setTitle('Revisar os cartões desta grade').setIcon('layers').onClick(() => {
+			i.setTitle('Review the cards of this note').setIcon('layers').onClick(() => {
 				const src = p.resolveSource(r.item.card);
 				const f = src ? p.app.vault.getAbstractFileByPath(src) : null;
 				if (f instanceof TFile) void p.reviewNote(f);
-				else new Notice('Lembro: a source deste cartão não está no vault.');
+				else new Notice('Revisit: the source of this card is not in the vault.');
 			}),
 		);
-		menu.addItem((i) => i.setTitle('Recomeçar: volta como new').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
+		menu.addItem((i) => i.setTitle('Reset: comes back as new').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
 		menu.addItem((i) =>
 			i
-				.setTitle(r.status === 'suspended' ? 'Reativar' : 'Suspender')
+				.setTitle(r.status === 'suspended' ? 'Unsuspend' : 'Suspend')
 				.setIcon(r.status === 'suspended' ? 'play' : 'pause')
 				.onClick(async () => {
 					p.store.state[r.id] = { ...(p.store.state[r.id] ?? {}), st: r.status === 'suspended' ? 'active' : 'suspended' };
@@ -365,7 +365,7 @@ export class PanelView extends ItemView {
 		menu.showAtMouseEvent(e);
 	}
 
-	private drawProgresso(wrap: HTMLElement): void {
+	private drawProgress(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const now = new Date();
 		const items = p.items();
@@ -383,9 +383,9 @@ export class PanelView extends ItemView {
 			if (small) n.createSpan({ cls: 'revisit-muted revisit-kpi-s', text: small });
 			k.createDiv({ cls: 'revisit-muted revisit-small', text: label });
 		};
-		kpi(all.total ? `${Math.round((all.ok / all.total) * 100)}%` : '—', `acerto nos maduros · meta ${meta}%`);
-		kpi(String(past.filter((x) => x > 0).length), 'days com sessão', ' / 30');
-		kpi(String(p.store.cards.length), 'cartões no total');
+		kpi(all.total ? `${Math.round((all.ok / all.total) * 100)}%` : '—', `mature accuracy · target ${meta}%`);
+		kpi(String(past.filter((x) => x > 0).length), 'days with a session', ' / 30');
+		kpi(String(p.store.cards.length), 'cards in total');
 
 		const by = { new: 0, learning: 0, review: 0, suspended: 0 };
 		for (const it of items) by[statusOf(it)]++;
@@ -393,7 +393,7 @@ export class PanelView extends ItemView {
 		for (const e of ['new', 'learning', 'review', 'suspended'] as const) {
 			const n = by[e];
 			const pill = strip.createSpan({ cls: `revisit-st is-${e}${n ? '' : ' is-zero'}`, text: `${STATUS_LABEL[e]} ${n}` });
-			setTooltip(pill, `${n} ${n === 1 ? 'cartão' : 'cartões'} ${STATUS_LABEL[e]}s`);
+			setTooltip(pill, `${n} ${n === 1 ? 'card' : 'cards'} ${STATUS_LABEL[e]}`);
 		}
 
 		const chart = (title: string, sub: string) => {
@@ -402,10 +402,10 @@ export class PanelView extends ItemView {
 			c.createDiv({ cls: 'revisit-muted revisit-small', text: sub });
 			return c;
 		};
-		const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+		const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 		const budget = p.settings.budgetMinutes;
 		const fut = forecast(items, p.secs(), now).map((m) => Math.ceil(m));
-		const lab7 = fut.map((_, i) => (i === 0 ? 'hoje' : i === 1 ? 'amanhã' : (DIAS[(now.getDay() + i) % 7] as string)));
+		const lab7 = fut.map((_, i) => (i === 0 ? 'today' : i === 1 ? 'tomorrow' : (DAYS[(now.getDay() + i) % 7] as string)));
 		// cards due on each of the next 7 days (overdue count today)
 		const start = new Date(now);
 		start.setHours(0, 0, 0, 0);
@@ -416,12 +416,12 @@ export class PanelView extends ItemView {
 			if (d < 7) byDay[d]?.push(it);
 		}
 		const pick = this.day ?? Math.max(0, byDay.findIndex((l) => l.length));
-		const next = chart('Próximos 7 days', 'Minutos previstos por dia; clique num dia para ver os cartões');
+		const next = chart('Next 7 days', 'Estimated minutes per day; click a day to see the cards');
 		cols(
 			next,
 			fut,
 			lab7,
-			fut.map((v, i) => `${lab7[i] ?? ''} · ${byDay[i]?.length ?? 0} cartões · ~${v} min${v > budget ? ' · passa do orçamento' : ''}`),
+			fut.map((v, i) => `${lab7[i] ?? ''} · ${byDay[i]?.length ?? 0} cards · ~${v} min${v > budget ? ' · over budget' : ''}`),
 			budget,
 			pick,
 			(i) => {
@@ -431,28 +431,28 @@ export class PanelView extends ItemView {
 		);
 		const list = next.createDiv({ cls: 'revisit-daylist' });
 		const cards = byDay[pick] ?? [];
-		list.createDiv({ cls: 'revisit-daylist-h', text: `${lab7[pick] ?? ''}: ${cards.length ? `${cards.length} ${cards.length === 1 ? 'cartão' : 'cartões'}` : 'nenhum cartão'}` });
+		list.createDiv({ cls: 'revisit-daylist-h', text: `${lab7[pick] ?? ''}: ${cards.length ? `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}` : 'no cards'}` });
 		for (const it of cards) {
 			const row = list.createDiv({ cls: 'revisit-result' });
 			const t = row.createDiv({ cls: 'revisit-result-t' });
 			t.createDiv({ cls: 'revisit-result-f', text: it.card.front.replace(/\s+/g, ' ') });
-			t.createDiv({ cls: 'revisit-muted revisit-small', text: [it.area ?? 'Sem área', topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
-			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(it.card, () => this.draw());
+			t.createDiv({ cls: 'revisit-muted revisit-small', text: [it.area ?? NO_AREA, topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
+			row.createEl('button', { text: 'Edit' }).onclick = () => p.editCard(it.card, () => this.draw());
 		}
 		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);
 		cols(
-			chart('Últimos 30 days', `${past.reduce((a, b) => a + b, 0)} revisões; days sem barra não tiveram sessão`),
+			chart('Last 30 days', `${past.reduce((a, b) => a + b, 0)} reviews; days without a bar had no session`),
 			past,
 			past.map((_, i) => (i % 7 === 1 || i === 29 ? String(day(i).getDate()) : '')),
-			past.map((v, i) => `${day(i).getDate()}/${day(i).getMonth() + 1} · ${v ? `${v} revisões` : 'sem sessão'}`),
+			past.map((v, i) => `${day(i).getDate()}/${day(i).getMonth() + 1} · ${v ? `${v} reviews` : 'no session'}`),
 		);
 
-		const hb = chart('Acerto por área', `Cartões vistos há 7 days ou mais; o traço é a meta de ${meta}%`).createDiv({ cls: 'revisit-hbars' });
+		const hb = chart('Accuracy by area', `Cards seen 7 or more days ago; the line is the target of ${meta}%`).createDiv({ cls: 'revisit-hbars' });
 		for (const a of AREAS) {
 			const r = ret.get(a);
 			const pct = r ? Math.round((r.ok / r.total) * 100) : null;
 			const row = hb.createDiv({ cls: 'revisit-hb' + (pct === null ? ' is-none' : '') });
-			setTooltip(row, pct === null ? `${a} · sem revisões maduras` : `${a} · ${pct}% em ${r?.total ?? 0} revisões`);
+			setTooltip(row, pct === null ? `${a} · no mature reviews` : `${a} · ${pct}% over ${r?.total ?? 0} reviews`);
 			row.createSpan({ cls: 'revisit-hb-name', text: a });
 			const track = row.createSpan({ cls: 'revisit-hb-track' });
 			if (pct !== null) track.createEl('i').style.width = `${pct}%`;
@@ -469,7 +469,7 @@ function cols(parent: HTMLElement, values: number[], labels: string[], tips: str
 	if (limit) {
 		const line = box.createDiv({ cls: 'revisit-limit' });
 		line.style.bottom = `${(limit / max) * 100}%`;
-		line.createSpan({ text: `orçamento ${limit} min` });
+		line.createSpan({ text: `budget ${limit} min` });
 	}
 	values.forEach((v, i) => {
 		const col = box.createDiv({ cls: 'revisit-col' + (onPick ? ' is-click' : '') + (picked === i ? ' is-picked' : '') });

@@ -4,7 +4,7 @@ import { QueueItem } from './queue';
 
 export type CardStatus = 'new' | 'learning' | 'review' | 'suspended';
 
-/** Estado shown for one card side: suspension wins, then the FSRS state. */
+/** Status shown for one card side: suspension wins, then the FSRS state. */
 export function statusOf(it: Pick<QueueItem, 'suspended' | 'fsrs'>): CardStatus {
 	if (it.suspended) return 'suspended';
 	if (!it.fsrs || it.fsrs.state === State.New) return 'new';
@@ -39,7 +39,7 @@ export function cardRow(it: QueueItem, stats: Map<string, { ok: number; bad: num
 	return {
 		key: it.key,
 		id: it.card.id as string,
-		side: it.reverse ? 'reverse' : it.cloze !== undefined ? `lacuna ${it.cloze + 1}` : 'front',
+		side: it.reverse ? 'reverse' : it.cloze !== undefined ? `cloze ${it.cloze + 1}` : 'front',
 		front: it.card.front,
 		type: it.card.type,
 		area: it.area,

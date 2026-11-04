@@ -34,18 +34,18 @@ export function read(prev: Reread | undefined, l: RereadGrade, now: Date): Rerea
 }
 
 export function daysLabel(d: number): string {
-	if (d < 30) return d === 1 ? '1 dia' : `${d} days`;
+	if (d < 30) return d === 1 ? '1 day' : `${d} days`;
 	const m = Math.round(d / 30);
-	return m < 12 ? (m === 1 ? '1 mês' : `${m} meses`) : '1 ano';
+	return m < 12 ? (m === 1 ? '1 month' : `${m} months`) : '1 year';
 }
 
-/** When a date falls, counted in calendar days from `now`: hoje, amanhã, em 3 days, em 2 meses. */
+/** When a date falls, counted in calendar days from `now`: today, tomorrow, in 3 days, in 2 months. */
 export function untilLabel(due: Date, now: Date): string {
 	const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
 	const d = Math.round(day(due) - day(now));
-	if (d <= 0) return 'hoje';
-	if (d === 1) return 'amanhã';
-	return `em ${daysLabel(d)}`;
+	if (d <= 0) return 'today';
+	if (d === 1) return 'tomorrow';
+	return `in ${daysLabel(d)}`;
 }
 
 /**
