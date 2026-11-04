@@ -1,4 +1,4 @@
-/* Lembro: session and capture window */
+/* Revisit: session and capture window */
 .revisit-review { display: flex; flex-direction: column; align-items: center; padding: 24px 16px 40px; }
 .revisit-head { width: 100%; max-width: 640px; display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--font-ui-small); margin-bottom: 10px; }
 .revisit-bar { height: 3px; width: 100%; max-width: 640px; background: var(--background-modifier-border); border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
