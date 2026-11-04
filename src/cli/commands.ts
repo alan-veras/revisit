@@ -1,4 +1,3 @@
-import { State } from 'ts-fsrs';
 import { CliFlags, normalizePath, TFile } from 'obsidian';
 import { areaOf, linkPath } from '../cards/area';
 import { clozes } from '../cards/cloze';
@@ -7,7 +6,8 @@ import { mirrorPath } from '../cards/mirror';
 import { AREAS, Card, isTipo } from '../cards/types';
 import type LembroPlugin from '../main';
 import { forecast } from '../srs/budget';
-import { estimateMinutes, matchesFilter, QueueItem } from '../srs/queue';
+import { estimateMinutes, matchesFilter } from '../srs/queue';
+import { cardRow } from '../srs/rows';
 import { cardStats } from '../srs/stats';
 import { CliError, flag, json, need, Params, parseLote, short, unescape } from './args';
 
@@ -23,12 +23,6 @@ interface Command {
 }
 
 const BOOL_FLAGS = ['dry', 'reativar', 'reverso'];
-
-function stateOf(it: QueueItem): string {
-	if (it.suspended) return 'suspenso';
-	if (!it.fsrs || it.fsrs.state === State.New) return 'novo';
-	return it.fsrs.state === State.Review ? 'revisao' : 'aprendendo';
-}
 
 function area(p: Params): string | null {
 	const a = p.area?.trim();
@@ -99,25 +93,22 @@ const COMMANDS: Record<string, Command> = {
 				.filter((it) => matchesFilter(it, a, p.assunto))
 				.filter((it) => !nota || (plugin.resolveSource(it.card) ?? '').toLowerCase().includes(nota))
 				.filter((it) => !busca || `${it.card.frente}\n${it.card.verso}`.toLowerCase().includes(busca))
-				.map((it) => ({ it, st: stateOf(it) }))
-				.filter(({ st }) => !p.estado || st === p.estado)
+				.map((it) => cardRow(it, stats, new Date()))
+				.filter((r) => !p.estado || r.estado === p.estado)
 				.slice(0, Number(p.limite) || 50)
-				.map(({ it, st }) => {
-					const id = it.card.id as string;
-					return {
-						id,
-						lado: it.reverso ? 'reverso' : it.cloze !== undefined ? `lacuna ${it.cloze + 1}` : 'frente',
-						frente: short(it.card.frente),
-						tipo: it.card.tipo,
-						area: it.area,
-						assunto: it.card.assuntos,
-						fonte: plugin.resolveSource(it.card),
-						estado: st,
-						proxima: it.fsrs && it.fsrs.state !== State.New ? it.fsrs.due.toISOString().slice(0, 10) : null,
-						acertos: stats.get(id)?.ok ?? 0,
-						erros: stats.get(id)?.bad ?? 0,
-					};
-				});
+				.map((r) => ({
+					id: r.id,
+					lado: r.lado,
+					frente: short(r.frente),
+					tipo: r.tipo,
+					area: r.area,
+					assunto: r.assuntos,
+					fonte: plugin.resolveSource(r.item.card),
+					estado: r.estado,
+					proxima: r.proxima ? r.proxima.toISOString().slice(0, 10) : null,
+					acertos: r.ok,
+					erros: r.bad,
+				}));
 			return json(rows);
 		},
 	},
