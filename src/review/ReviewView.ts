@@ -234,7 +234,7 @@ export class ReviewView extends ItemView {
 		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · D dica · P pula · R recomeça · E edita · I importante · S suspende · ← volta · → avança · Esc painel · Q encerra' });
+		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · E edita · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>

@@ -1,21 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { cardSnippet, findSnippet } from '../src/view/search';
+import { fold, matchesCard } from '../src/view/search';
 
 describe('search', () => {
-	it('finds without accents and keeps the original text', () => {
-		expect(findSnippet('Ora, a fé é a certeza', 'fe')).toEqual({ before: 'Ora, a ', hit: 'fé', after: ' é a certeza' });
-		expect(findSnippet('Ação', 'acao')?.hit).toBe('Ação');
-		expect(findSnippet('nada', 'fe')).toBe(null);
+	it('folds without accents and case', () => {
+		expect(fold('Ação É')).toBe('acao e');
 	});
-	it('cuts long text around the match', () => {
-		const s = findSnippet('palavra '.repeat(20) + 'alvo ' + 'resto '.repeat(20), 'alvo', 20);
-		expect(s?.before.startsWith('…')).toBe(true);
-		expect(s?.after.endsWith('…')).toBe(true);
-		expect(s?.hit).toBe('alvo');
+	it('finds the query in any field, without accents and case', () => {
+		const c = { frente: 'Hebreus 11:1', verso: 'Ora, a fé é a certeza', assuntos: ['Sustento > Perseguição'], fonte: '[[2_The Bible/NT/Hebrews/Heb 11|Heb 11]]' };
+		expect(matchesCard(c, 'fe')).toBe(true);
+		expect(matchesCard(c, 'PERSEGUICAO')).toBe(true);
+		expect(matchesCard(c, 'heb 11')).toBe(true);
+		expect(matchesCard(c, 'kubernetes')).toBe(false);
 	});
-	it('says which field matched', () => {
-		const c = { frente: 'Hebreus 11:1', verso: 'Ora, a fé é a certeza', assuntos: ['Hebreus'], fonte: '' };
-		expect(cardSnippet(c, 'fe')?.field).toBe('Verso');
-		expect(cardSnippet(c, 'hebreus')?.field).toBe('Frente');
+	it('empty query matches everything', () => {
+		expect(matchesCard({ frente: '', verso: '', assuntos: [], fonte: '' }, '  ')).toBe(true);
 	});
 });

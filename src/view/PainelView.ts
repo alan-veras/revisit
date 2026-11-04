@@ -1,10 +1,11 @@
 import { assuntosLabel } from '../cards/format';
-import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Menu, Notice, setIcon, setTooltip, TFile, WorkspaceLeaf } from 'obsidian';
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
 import { assuntoTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
-import { retentionBy, reviewsPerDay } from '../srs/stats';
-import { cardSnippet } from './search';
+import { cardRow, EstadoCartao, estadoOf, rowOrder } from '../srs/rows';
+import { cardStats, retentionBy, reviewsPerDay } from '../srs/stats';
+import { matchesCard } from './search';
 import { AREAS } from '../cards/types';
 import type LembroPlugin from '../main';
 import { estimateMinutes, matchesFilter, QueueItem } from '../srs/queue';
@@ -12,12 +13,25 @@ import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PAINEL = 'lembro-painel';
 
-/** One screen: what fits today, the areas, and a search over every card. */
+const ESTADOS: (readonly [EstadoCartao | 'todos', string])[] = [
+	['todos', 'Todos os estados'],
+	['novo', 'Novo'],
+	['aprendendo', 'Aprendendo'],
+	['revisao', 'Revisão'],
+	['suspenso', 'Suspenso'],
+];
+const ESTADO_LABEL: Record<EstadoCartao, string> = { novo: 'novo', aprendendo: 'aprendendo', revisao: 'revisão', suspenso: 'suspenso' };
+
+/** One screen: what fits today, the browser, the notes and the progress. */
 export class PainelView extends ItemView {
 	private q = '';
+	/** browser filters */
+	private estado: EstadoCartao | 'todos' = 'todos';
+	private areaF: string | null = null;
+	private limit = 100;
 	/** tree rows opened (Área or Área > Assunto paths) */
 	private expanded = new Set<string>();
-	private tab: 'hoje' | 'notas' | 'progresso' = 'hoje';
+	private tab: 'hoje' | 'buscar' | 'notas' | 'progresso' = 'hoje';
 	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
 	private day: number | null = null;
 
@@ -48,7 +62,7 @@ export class PainelView extends ItemView {
 		root.addClass('lembro-painel');
 		const wrap = root.createDiv({ cls: 'lembro-painel-wrap' });
 		const tabs = wrap.createDiv({ cls: 'lembro-ptabs' });
-		for (const [id, name] of [['hoje', 'Hoje'], ['notas', 'Notas'], ['progresso', 'Progresso']] as const) {
+		for (const [id, name] of [['hoje', 'Hoje'], ['buscar', 'Buscar'], ['notas', 'Notas'], ['progresso', 'Progresso']] as const) {
 			const b = tabs.createEl('button', { text: name, cls: this.tab === id ? 'is-on' : '' });
 			b.onclick = () => {
 				this.tab = id;
@@ -56,6 +70,7 @@ export class PainelView extends ItemView {
 			};
 		}
 		if (this.tab === 'progresso') return this.drawProgresso(wrap);
+		if (this.tab === 'buscar') return this.drawBuscar(wrap);
 		if (this.tab === 'notas') return this.drawNotas(wrap);
 
 		const today = p.session(null);
@@ -67,16 +82,6 @@ export class PainelView extends ItemView {
 		go.onclick = () => void p.review(null);
 
 		this.drawDecks(wrap);
-
-		const search = wrap.createDiv({ cls: 'lembro-search' });
-		const input = search.createEl('input', { type: 'search', attr: { placeholder: 'Buscar cartões' } });
-		input.value = this.q;
-		const results = wrap.createDiv({ cls: 'lembro-results' });
-		input.oninput = () => {
-			this.q = input.value;
-			this.drawResults(results);
-		};
-		this.drawResults(results);
 	}
 
 	/** Started once: areas with something for today open on the first draw. */
@@ -244,29 +249,120 @@ export class PainelView extends ItemView {
 		});
 	}
 
-	private drawResults(el: HTMLElement): void {
-		el.empty();
-		if (!this.q.trim()) return;
+	/** The browser: search, filters by state and area, and one dense row per card, like the Anki desktop table. */
+	private drawBuscar(wrap: HTMLElement): void {
 		const p = this.plugin;
-		const hits = p.store.cards.map((c) => ({ c, m: cardSnippet(c, this.q) })).filter((h) => h.m);
-		if (!hits.length) {
-			el.createDiv({ cls: 'lembro-muted lembro-empty', text: `Nenhum cartão com “${this.q.trim()}”.` });
+		const now = new Date();
+		const stats = cardStats(p.store.log);
+
+		const bar = wrap.createDiv({ cls: 'lembro-filters' });
+		const input = bar.createEl('input', { type: 'search', attr: { placeholder: 'Buscar cartões' } });
+		input.value = this.q;
+		input.oninput = () => {
+			this.q = input.value;
+			this.draw();
+		};
+		const est = bar.createEl('select', { attr: { 'aria-label': 'Estado' } });
+		for (const [v, nome] of ESTADOS) {
+			const o = est.createEl('option', { text: nome, value: v });
+			if (this.estado === v) o.selected = true;
+		}
+		est.onchange = () => {
+			this.estado = est.value as EstadoCartao | 'todos';
+			this.draw();
+		};
+		const sel = bar.createEl('select', { attr: { 'aria-label': 'Área' } });
+		for (const a of ['Todas as áreas', ...AREAS, 'Sem área'] as const) {
+			const o = sel.createEl('option', { text: a, value: a });
+			if ((this.areaF ?? 'Todas as áreas') === a) o.selected = true;
+		}
+		sel.onchange = () => {
+			this.areaF = sel.value === 'Todas as áreas' ? null : sel.value;
+			this.draw();
+		};
+
+		const clean = this.q.trim() || this.estado !== 'todos' || this.areaF;
+		if (!clean) {
+			wrap.createDiv({ cls: 'lembro-muted lembro-empty', text: 'Digite para buscar, ou filtre por estado e área.' });
 			return;
 		}
-		for (const { c, m } of hits.slice(0, 50)) {
-			const row = el.createDiv({ cls: 'lembro-result' });
-			const t = row.createDiv({ cls: 'lembro-result-t' });
-			t.createDiv({ cls: 'lembro-result-f', text: c.frente.replace(/\s+/g, ' ') });
-			if (m) {
-				const sn = t.createDiv({ cls: 'lembro-snippet' });
-				sn.createSpan({ cls: 'lembro-snippet-campo', text: `${m.field}: ` });
-				sn.appendText(m.before);
-				sn.createEl('mark', { text: m.hit });
-				sn.appendText(m.after);
-			}
-			t.createDiv({ cls: 'lembro-muted lembro-small', text: [p.areaOfCard(c) ?? 'Sem área', assuntosLabel(c.assuntos), c.tipo].filter(Boolean).join(' · ') });
-			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(c, () => this.draw());
+		const rows = p
+			.items()
+			.map((it) => cardRow(it, stats, now))
+			.filter((r) => (this.estado === 'todos' || r.estado === this.estado) && (!this.areaF || (r.area ?? 'Sem área') === this.areaF))
+			.filter((r) => matchesCard(r.item.card, this.q))
+			.sort(rowOrder);
+		const hoje = rows.filter((r) => r.venceHoje).length;
+		wrap.createDiv({
+			cls: 'lembro-muted lembro-small lembro-count',
+			text: `${rows.length} ${rows.length === 1 ? 'cartão' : 'cartões'}${hoje ? ` · ${hoje} ${hoje === 1 ? 'vence' : 'vencem'} hoje` : ''}`,
+		});
+		if (!rows.length) {
+			wrap.createDiv({ cls: 'lembro-muted lembro-empty', text: 'Nenhum cartão com esses filtros.' });
+			return;
 		}
+
+		const head = wrap.createDiv({ cls: 'lembro-thead' });
+		head.createSpan({ cls: 'lembro-th-c', text: 'Cartão' });
+		head.createSpan({ cls: 'lembro-th', text: 'Estado' });
+		head.createSpan({ cls: 'lembro-th', text: 'Volta' });
+		head.createSpan({ cls: 'lembro-th is-n', text: '✓' });
+		head.createSpan({ cls: 'lembro-th is-n', text: '✗' });
+
+		const table = wrap.createDiv({ cls: 'lembro-table' });
+		for (const r of rows.slice(0, this.limit)) {
+			const row = table.createDiv({ cls: `lembro-tr is-${r.estado}` });
+			const c = row.createDiv({ cls: 'lembro-td-c' });
+			c.createDiv({ cls: 'lembro-td-f', text: r.frente.replace(/\s+/g, ' ') });
+			c.createDiv({ cls: 'lembro-td-sub', text: [r.area ?? 'Sem área', assuntosLabel(r.assuntos), r.lado !== 'frente' ? r.lado : r.tipo].filter(Boolean).join(' · ') });
+			row.createSpan({ cls: `lembro-st is-${r.estado}`, text: ESTADO_LABEL[r.estado] });
+			row.createSpan({ cls: 'lembro-td-volta', text: r.proxima ? untilLabel(r.proxima, now) : '—' });
+			row.createSpan({ cls: 'lembro-td-n is-ok', text: r.ok ? String(r.ok) : '' });
+			row.createSpan({ cls: 'lembro-td-n is-bad', text: r.bad ? String(r.bad) : '' });
+			const acts = row.createDiv({ cls: 'lembro-td-acts' });
+			acts.createEl('button', { text: 'Editar' }).onclick = (e) => {
+				e.stopPropagation();
+				p.editCard(r.item.card, () => this.draw());
+			};
+			const more = acts.createEl('button', { text: '⋯', attr: { 'aria-label': 'Mais ações' } });
+			more.onclick = (e) => {
+				e.stopPropagation();
+				this.cardMenu(e, r);
+			};
+		}
+		if (rows.length > this.limit) {
+			const more = wrap.createEl('button', { text: `Mostrar mais ${rows.length - this.limit}`, cls: 'lembro-link lembro-more' });
+			more.onclick = () => {
+				this.limit += 200;
+				this.draw();
+			};
+		}
+	}
+
+	private cardMenu(e: MouseEvent, r: ReturnType<typeof cardRow>): void {
+		const p = this.plugin;
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i.setTitle('Revisar os cartões desta nota').setIcon('layers').onClick(() => {
+				const src = p.resolveSource(r.item.card);
+				const f = src ? p.app.vault.getAbstractFileByPath(src) : null;
+				if (f instanceof TFile) void p.reviewNote(f);
+				else new Notice('Lembro: a fonte deste cartão não está no vault.');
+			}),
+		);
+		menu.addItem((i) => i.setTitle('Recomeçar: volta como novo').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
+		menu.addItem((i) =>
+			i
+				.setTitle(r.estado === 'suspenso' ? 'Reativar' : 'Suspender')
+				.setIcon(r.estado === 'suspenso' ? 'play' : 'pause')
+				.onClick(async () => {
+					p.store.state[r.id] = { ...(p.store.state[r.id] ?? {}), st: r.estado === 'suspenso' ? 'ativo' : 'suspenso' };
+					await p.store.saveState();
+					p.updateStatus();
+					this.draw();
+				}),
+		);
+		menu.showAtMouseEvent(e);
 	}
 
 	private drawProgresso(wrap: HTMLElement): void {
@@ -290,6 +386,15 @@ export class PainelView extends ItemView {
 		kpi(all.total ? `${Math.round((all.ok / all.total) * 100)}%` : '—', `acerto nos maduros · meta ${meta}%`);
 		kpi(String(past.filter((x) => x > 0).length), 'dias com sessão', ' / 30');
 		kpi(String(p.store.cards.length), 'cartões no total');
+
+		const by = { novo: 0, aprendendo: 0, revisao: 0, suspenso: 0 };
+		for (const it of items) by[estadoOf(it)]++;
+		const strip = wrap.createDiv({ cls: 'lembro-estados' });
+		for (const e of ['novo', 'aprendendo', 'revisao', 'suspenso'] as const) {
+			const n = by[e];
+			const pill = strip.createSpan({ cls: `lembro-st is-${e}${n ? '' : ' is-zero'}`, text: `${ESTADO_LABEL[e]} ${n}` });
+			setTooltip(pill, `${n} ${n === 1 ? 'cartão' : 'cartões'} ${ESTADO_LABEL[e]}s`);
+		}
 
 		const chart = (title: string, sub: string) => {
 			const c = wrap.createDiv({ cls: 'lembro-chart' });
