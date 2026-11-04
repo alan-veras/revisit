@@ -101,7 +101,7 @@ export function quotaStatus(o: { dueMinutes: number; budgetMinutes: number; area
  * each card on the day it falls due. New and pending cards are left out.
  */
 export function forecast(
-	items: { card: { tipo: Tipo; pendente?: boolean }; fsrs?: { due: Date; state: State }; suspended: boolean }[],
+	items: { card: { tipo: Tipo; pending?: boolean }; fsrs?: { due: Date; state: State }; suspended: boolean }[],
 	secs: Record<Tipo, number>,
 	now: Date,
 	days = 7,
@@ -110,7 +110,7 @@ export function forecast(
 	const start = new Date(now);
 	start.setHours(0, 0, 0, 0);
 	for (const it of items) {
-		if (it.suspended || it.card.pendente || !it.fsrs || it.fsrs.state === State.New) continue;
+		if (it.suspended || it.card.pending || !it.fsrs || it.fsrs.state === State.New) continue;
 		const d = Math.max(0, Math.floor((it.fsrs.due.getTime() - start.getTime()) / 86400000));
 		if (d < days) out[d] = (out[d] ?? 0) + secs[it.card.tipo];
 	}

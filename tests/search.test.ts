@@ -15,7 +15,7 @@ describe('search', () => {
 	});
 	it('says which field matched', () => {
 		const c = { frente: 'Hebreus 11:1', verso: 'Ora, a fé é a certeza', assuntos: ['Hebreus'], fonte: '' };
-		expect(cardSnippet(c, 'fe')?.campo).toBe('Verso');
-		expect(cardSnippet(c, 'hebreus')?.campo).toBe('Frente');
+		expect(cardSnippet(c, 'fe')?.field).toBe('Verso');
+		expect(cardSnippet(c, 'hebreus')?.field).toBe('Frente');
 	});
 });

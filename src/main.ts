@@ -264,8 +264,8 @@ export default class LembroPlugin extends Plugin {
 		if (!this.statusEl) return;
 		const s = this.session(null);
 		const n = s.length;
-		const novos = s.filter((it) => isNew(it.fsrs)).length;
-		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje${novos ? ` · ${novos} ${novos === 1 ? 'novo' : 'novos'}` : ''}`);
+		const newCount = s.filter((it) => isNew(it.fsrs)).length;
+		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje${newCount ? ` · ${newCount} ${newCount === 1 ? 'novo' : 'novos'}` : ''}`);
 	}
 
 	async review(area: string | null, minutes?: number, extra = false, assunto: string | null = null): Promise<void> {

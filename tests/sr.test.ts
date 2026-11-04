@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { headingAbove, sectionOf } from '../src/cards/section';
 import { clozes, hideCloze } from '../src/cards/cloze';
-import { baseOf, buryGemeos, QueueItem } from '../src/srs/queue';
+import { baseOf, burySiblings, QueueItem } from '../src/srs/queue';
 
 describe('lacunas por destaque', () => {
 	it('acha e esconde cada destaque', () => {
@@ -12,8 +12,8 @@ describe('lacunas por destaque', () => {
 	it('irmãos da mesma lacuna não caem juntos', () => {
 		const it = (key: string) => ({ key, reverso: false, card: { id: 'labcde' }, area: null, suspended: false }) as unknown as QueueItem;
 		expect(baseOf('labcde-c2')).toBe('labcde');
-		expect(buryGemeos([it('labcde'), it('labcde-c2')], new Set()).map((i) => i.key)).toEqual(['labcde']);
-		expect(buryGemeos([it('labcde-c2')], new Set(['labcde'])).map((i) => i.key)).toEqual([]);
+		expect(burySiblings([it('labcde'), it('labcde-c2')], new Set()).map((i) => i.key)).toEqual(['labcde']);
+		expect(burySiblings([it('labcde-c2')], new Set(['labcde'])).map((i) => i.key)).toEqual([]);
 	});
 });
 

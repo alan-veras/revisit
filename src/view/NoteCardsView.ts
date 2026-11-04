@@ -41,8 +41,8 @@ export class NoteCardsView extends ItemView {
 			root.createEl('p', { cls: 'lembro-muted', text: 'Nenhum cartão nasceu desta nota ainda.' });
 			return;
 		}
-		const revisaveis = cards.filter((c) => !this.plugin.isSuspended(c));
-		if (revisaveis.length) head.createEl('button', { text: `Revisar ${revisaveis.length}`, cls: 'mod-cta' }).onclick = () => void this.plugin.reviewNote(file);
+		const reviewable = cards.filter((c) => !this.plugin.isSuspended(c));
+		if (reviewable.length) head.createEl('button', { text: `Revisar ${reviewable.length}`, cls: 'mod-cta' }).onclick = () => void this.plugin.reviewNote(file);
 		for (const c of cards) {
 			const box = root.createDiv({ cls: 'lembro-note-card' });
 			box.createDiv({ cls: 'lembro-note-front', text: c.frente.replace(/\s+/g, ' ').slice(0, 140) });

@@ -110,8 +110,8 @@ export class PainelView extends ItemView {
 		const list = wrap.createDiv({ cls: 'lembro-list' });
 		const row = (node: TreeNode, depth: number) => {
 			const s = p.session(node.area, undefined, false, node.assunto);
-			const novos = s.filter((it) => isNew(it.fsrs)).length;
-			const revisar = s.length - novos;
+			const newCount = s.filter((it) => isNew(it.fsrs)).length;
+			const toReview = s.length - newCount;
 			const kids = node.children.length > 0;
 			const open = this.expanded.has(node.path);
 			const r = list.createDiv({ cls: `lembro-li is-d${Math.min(depth, 3)}` + (s.length ? '' : ' is-quiet') });
@@ -124,8 +124,8 @@ export class PainelView extends ItemView {
 			// rollup: an open parent is only a title; the numbers live on the deepest visible row
 			const summary = !(kids && open);
 			const pills = r.createSpan({ cls: 'lembro-li-pills' });
-			if (summary && revisar) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(revisar) }), `${revisar} para revisar hoje`);
-			if (summary && novos) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(novos) }), `${novos} ${novos === 1 ? 'novo entra' : 'novos entram'} hoje`);
+			if (summary && toReview) setTooltip(pills.createSpan({ cls: 'lembro-np is-due', text: String(toReview) }), `${toReview} para revisar hoje`);
+			if (summary && newCount) setTooltip(pills.createSpan({ cls: 'lembro-np is-new', text: String(newCount) }), `${newCount} ${newCount === 1 ? 'novo entra' : 'novos entram'} hoje`);
 
 			// nothing for today: say when the next review falls, so the row is never mute
 			if (summary && !s.length) {
@@ -259,7 +259,7 @@ export class PainelView extends ItemView {
 			t.createDiv({ cls: 'lembro-result-f', text: c.frente.replace(/\s+/g, ' ') });
 			if (m) {
 				const sn = t.createDiv({ cls: 'lembro-snippet' });
-				sn.createSpan({ cls: 'lembro-snippet-campo', text: `${m.campo}: ` });
+				sn.createSpan({ cls: 'lembro-snippet-campo', text: `${m.field}: ` });
 				sn.appendText(m.before);
 				sn.createEl('mark', { text: m.hit });
 				sn.appendText(m.after);

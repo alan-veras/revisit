@@ -8,7 +8,7 @@ export function fold(text: string): string {
 
 export interface Snippet {
 	/** which field matched */
-	campo: 'Frente' | 'Verso' | 'Assunto' | 'Fonte';
+	field: 'Frente' | 'Verso' | 'Assunto' | 'Fonte';
 	before: string;
 	hit: string;
 	after: string;
@@ -18,7 +18,7 @@ export interface Snippet {
  * Where `q` shows up in `text`, ignoring accents and case: the original words
  * around it (about `ctx` characters each side), so the match can be highlighted.
  */
-export function findSnippet(text: string, q: string, ctx = 40): Omit<Snippet, 'campo'> | null {
+export function findSnippet(text: string, q: string, ctx = 40): Omit<Snippet, 'field'> | null {
 	const needle = fold(q.trim());
 	if (!needle) return null;
 	const flat = text.replace(/\s+/g, ' ');
@@ -44,15 +44,15 @@ export function findSnippet(text: string, q: string, ctx = 40): Omit<Snippet, 'c
 
 /** The first field of a card that matches, in reading order. */
 export function cardSnippet(c: { frente: string; verso: string; assuntos: string[]; fonte: string }, q: string): Snippet | null {
-	const fields: [Snippet['campo'], string][] = [
+	const fields: [Snippet['field'], string][] = [
 		['Frente', c.frente],
 		['Verso', c.verso],
 		['Assunto', c.assuntos.join('; ')],
 		['Fonte', c.fonte],
 	];
-	for (const [campo, text] of fields) {
+	for (const [field, text] of fields) {
 		const m = findSnippet(text, q);
-		if (m) return { campo, ...m };
+		if (m) return { field, ...m };
 	}
 	return null;
 }

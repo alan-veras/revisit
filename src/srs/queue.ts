@@ -84,7 +84,7 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	if (o.extra) {
 		const r = (it: QueueItem) => (it.fsrs ? o.retrievability(it.fsrs, o.now) : 0);
 		const all = [...pool].sort((a, b) => r(a) - r(b));
-		return buryGemeos(o.interleave ? interleave(all) : all, new Set());
+		return burySiblings(o.interleave ? interleave(all) : all, new Set());
 	}
 	const reviews = dueReviews(pool, o.now).sort(
 		(a, b) => o.retrievability(a.fsrs as FsrsCard, o.now) - o.retrievability(b.fsrs as FsrsCard, o.now),
@@ -109,7 +109,7 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	}
 	// at the budget cut, important cards go first inside each block (reviews, then new)
 	const important = (l: QueueItem[]) => [...l].sort((a, b) => Number(isImportant(b.card)) - Number(isImportant(a.card)));
-	const ordered = buryGemeos(o.interleave ? interleave(reviews).concat(interleave(important(fresh))) : reviews.concat(important(fresh)), o.gradedToday ?? new Set());
+	const ordered = burySiblings(o.interleave ? interleave(reviews).concat(interleave(important(fresh))) : reviews.concat(important(fresh)), o.gradedToday ?? new Set());
 	const out: QueueItem[] = [];
 	let secs = 0;
 	const max = o.budgetMinutes * 60;
@@ -132,7 +132,7 @@ export function baseOf(key: string): string {
 }
 
 /** Siblings of one card (reverse, other highlights) never meet on the same day: the later ones are left out. */
-export function buryGemeos(items: QueueItem[], gradedToday: Set<string>): QueueItem[] {
+export function burySiblings(items: QueueItem[], gradedToday: Set<string>): QueueItem[] {
 	const graded = new Map<string, Set<string>>();
 	for (const k of gradedToday) graded.set(baseOf(k), (graded.get(baseOf(k)) ?? new Set()).add(k));
 	const seen = new Set<string>();

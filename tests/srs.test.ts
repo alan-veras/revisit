@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
 import { DEFAULT_SECS, newAllowedToday, newTodayByArea, quotaStatus, RevlogEntry, secsPerType } from '../src/srs/budget';
-import { buildSession, buryGemeos, interleave, matchesFilter, QueueItem, requeueIndex, sessionRequeue } from '../src/srs/queue';
+import { buildSession, burySiblings, interleave, matchesFilter, QueueItem, requeueIndex, sessionRequeue } from '../src/srs/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/srs/scheduler';
 
 const NOW = new Date('2026-11-02T10:00:00');
@@ -112,8 +112,8 @@ describe('fase 2', () => {
 		{ key: `${id}-r`, reverso: true, card: card(id), area: 'Carreira', suspended: false },
 	];
 	it('keeps a card and its reverse apart', () => {
-		expect(buryGemeos(twin('a'), new Set()).map((i) => i.key)).toEqual(['a']);
-		expect(buryGemeos(twin('a'), new Set(['a'])).map((i) => i.key)).toEqual(['a']);
+		expect(burySiblings(twin('a'), new Set()).map((i) => i.key)).toEqual(['a']);
+		expect(burySiblings(twin('a'), new Set(['a'])).map((i) => i.key)).toEqual(['a']);
 		expect(buildSession(twin('a').concat(twin('b')), opts({ newAllowed: 1 })).map((i) => i.key)).toEqual(['a']);
 	});
 	it('brings back a card due within the session', () => {
