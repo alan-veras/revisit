@@ -19,8 +19,8 @@ export function areaOf(path: string, extra: Record<string, string> = {}): string
 }
 
 /** Vault path the link inside a `Fonte:` points to (without `#page` or alias). */
-export function linkPath(fonte: string): string | null {
-	const m = /\[\[([^\]|#]+)/.exec(fonte);
+export function linkPath(source: string): string | null {
+	const m = /\[\[([^\]|#]+)/.exec(source);
 	return m ? (m[1] as string).trim() : null;
 }
 

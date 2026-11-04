@@ -1,5 +1,5 @@
 import { clozes } from './cloze';
-import { Card, isTipo, parseTags, Tipo } from './types';
+import { Card, isCardType, parseTags, CardType } from './types';
 
 /**
  * Card files: blocks separated by a line `---` (outside code fences), each with
@@ -72,28 +72,28 @@ export function parseBlock(block: Block): Card | null {
 		if (FENCE_RE.test(raw)) fence = !fence;
 	}
 	const get = (label: Label) => trimBlock((fields[label] ?? []).join('\n'));
-	const frente = get('Frente');
-	const verso = get('Verso');
-	if (!frente || (!verso && !clozes(frente).length)) return null;
-	const tipoRaw = get('Tipo');
-	const tipo: Tipo = isTipo(tipoRaw) ? tipoRaw : 'Pergunta';
-	const assuntos = get('Assunto')
+	const front = get('Frente');
+	const back = get('Verso');
+	if (!front || (!back && !clozes(front).length)) return null;
+	const typeRaw = get('Tipo');
+	const type: CardType = isCardType(typeRaw) ? typeRaw : 'Pergunta';
+	const topics = get('Assunto')
 		.split(';')
-		.map((a) => normalizeAssunto(a))
+		.map((a) => normalizeTopic(a))
 		.filter(Boolean);
 	const tags = parseTags(get('Tags'));
 	const area = get('Área');
-	const reverso = /^(sim|s|yes|true)$/i.test(get('Reverso'));
+	const reverse = /^(sim|s|yes|true)$/i.test(get('Reverso'));
 	return {
 		id,
-		tipo,
-		frente,
-		verso,
+		type,
+		front,
+		back,
 		...(area ? { area } : {}),
-		assuntos,
+		topics,
 		...(tags.length ? { tags } : {}),
-		...(reverso ? { reverso } : {}),
-		fonte: get('Fonte'),
+		...(reverse ? { reverse } : {}),
+		source: get('Fonte'),
 		start: block.start,
 		end: block.end,
 	};
@@ -106,7 +106,7 @@ export function parseCardFile(text: string): Card[] {
 }
 
 /** `a >b>  c` becomes `a > b > c`. */
-export function normalizeAssunto(value: string): string {
+export function normalizeTopic(value: string): string {
 	return value
 		.split('>')
 		.map((p) => p.trim())
@@ -119,15 +119,15 @@ function field(label: Label, value: string): string {
 }
 
 /** Writes a card block (without the `---` separator). */
-export type CardFields = Pick<Card, 'id' | 'tipo' | 'frente' | 'verso' | 'assuntos' | 'fonte' | 'area' | 'reverso' | 'tags'>;
+export type CardFields = Pick<Card, 'id' | 'type' | 'front' | 'back' | 'topics' | 'source' | 'area' | 'reverse' | 'tags'>;
 
 export function serializeCard(card: CardFields): string {
-	const lines = [field('Frente', card.frente.trim()), field('Verso', card.verso.trim()), `Tipo: ${card.tipo}`];
+	const lines = [field('Frente', card.front.trim()), field('Verso', card.back.trim()), `Tipo: ${card.type}`];
 	if (card.area) lines.push(`Área: ${card.area}`);
-	if (card.assuntos.length) lines.push(`Assunto: ${card.assuntos.join('; ')}`);
+	if (card.topics.length) lines.push(`Assunto: ${card.topics.join('; ')}`);
 	if (card.tags?.length) lines.push(`Tags: ${card.tags.map((t) => `#${t}`).join(' ')}`);
-	if (card.reverso) lines.push('Reverso: sim');
-	if (card.fonte) lines.push(`Fonte: ${card.fonte}`);
+	if (card.reverse) lines.push('Reverso: sim');
+	if (card.source) lines.push(`Fonte: ${card.source}`);
 	if (card.id) {
 		const last = lines.length - 1;
 		lines[last] = `${lines[last] as string} ^${card.id}`;
@@ -282,6 +282,6 @@ export function renameSourceFolder(text: string, fromFolder: string, toFolder: s
 }
 
 /** Assuntos as shown on screen: only the last level (`Sustento > Perseguição` reads `Perseguição`). */
-export function assuntosLabel(assuntos: string[]): string {
-	return assuntos.map((a) => a.split(' > ').pop() ?? a).join('; ');
+export function topicsLabel(topics: string[]): string {
+	return topics.map((a) => a.split(' > ').pop() ?? a).join('; ');
 }

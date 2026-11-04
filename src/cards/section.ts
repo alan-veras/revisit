@@ -8,8 +8,8 @@ export function headingAbove(text: string, line: number): string | null {
 	return null;
 }
 
-/** Section named in a source link (`[[nota#Seção|...]]`), never a PDF page. */
-export function sectionOf(fonte: string): string | null {
-	const m = /\[\[[^\]|#]*#([^\]|]+)/.exec(fonte);
+/** Section named in a source link (`[[grade#Seção|...]]`), never a PDF page. */
+export function sectionOf(source: string): string | null {
+	const m = /\[\[[^\]|#]*#([^\]|]+)/.exec(source);
 	return m && !m[1]?.startsWith('page=') ? (m[1] as string) : null;
 }

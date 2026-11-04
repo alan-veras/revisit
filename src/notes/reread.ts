@@ -4,42 +4,42 @@
  * between 1 and 365 days. No FSRS here: a note is not a question.
  */
 
-export type Leitura = 'dificil' | 'bom' | 'facil';
+export type RereadGrade = 'hard' | 'good' | 'easy';
 
-export interface Releitura {
+export interface Reread {
 	/** ISO date of the next reading */
 	due: string;
 	/** days of the last interval */
-	dias: number;
+	days: number;
 	/** ISO time of the last reading */
-	lida: string;
+	lastRead: string;
 	/** how many times it was read */
-	vezes: number;
+	times: number;
 }
 
-const FIRST: Record<Leitura, number> = { dificil: 1, bom: 3, facil: 7 };
-const GROW: Record<Leitura, number> = { dificil: 1.2, bom: 2.5, facil: 4 };
+const FIRST: Record<RereadGrade, number> = { hard: 1, good: 3, easy: 7 };
+const GROW: Record<RereadGrade, number> = { hard: 1.2, good: 2.5, easy: 4 };
 
-export function nextInterval(prev: Releitura | undefined, l: Leitura): number {
-	const d = prev ? Math.round(prev.dias * GROW[l]) : FIRST[l];
+export function nextInterval(prev: Reread | undefined, l: RereadGrade): number {
+	const d = prev ? Math.round(prev.days * GROW[l]) : FIRST[l];
 	return Math.min(365, Math.max(1, d));
 }
 
-export function read(prev: Releitura | undefined, l: Leitura, now: Date): Releitura {
-	const dias = nextInterval(prev, l);
+export function read(prev: Reread | undefined, l: RereadGrade, now: Date): Reread {
+	const days = nextInterval(prev, l);
 	const due = new Date(now);
 	due.setHours(0, 0, 0, 0);
-	due.setDate(due.getDate() + dias);
-	return { due: due.toISOString(), dias, lida: now.toISOString(), vezes: (prev?.vezes ?? 0) + 1 };
+	due.setDate(due.getDate() + days);
+	return { due: due.toISOString(), days, lastRead: now.toISOString(), times: (prev?.times ?? 0) + 1 };
 }
 
 export function daysLabel(d: number): string {
-	if (d < 30) return d === 1 ? '1 dia' : `${d} dias`;
+	if (d < 30) return d === 1 ? '1 dia' : `${d} days`;
 	const m = Math.round(d / 30);
 	return m < 12 ? (m === 1 ? '1 mês' : `${m} meses`) : '1 ano';
 }
 
-/** When a date falls, counted in calendar days from `now`: hoje, amanhã, em 3 dias, em 2 meses. */
+/** When a date falls, counted in calendar days from `now`: hoje, amanhã, em 3 days, em 2 meses. */
 export function untilLabel(due: Date, now: Date): string {
 	const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
 	const d = Math.round(day(due) - day(now));
@@ -52,12 +52,12 @@ export function untilLabel(due: Date, now: Date): string {
  * Notes to reread today: the due ones (oldest first), then never-read ones,
  * at most `newCap` of those per day.
  */
-export function dueNotes(notes: { path: string; r?: Releitura }[], now: Date, newCap: number): string[] {
+export function dueNotes(notes: { path: string; r?: Reread }[], now: Date, newCap: number): string[] {
 	const day = now.toDateString();
-	const startedToday = notes.filter((n) => n.r?.vezes === 1 && new Date(n.r.lida).toDateString() === day).length;
+	const startedToday = notes.filter((n) => n.r?.times === 1 && new Date(n.r.lastRead).toDateString() === day).length;
 	const due = notes
 		.filter((n) => n.r && new Date(n.r.due) <= now)
-		.sort((a, b) => (a.r as Releitura).due.localeCompare((b.r as Releitura).due))
+		.sort((a, b) => (a.r as Reread).due.localeCompare((b.r as Reread).due))
 		.map((n) => n.path);
 	const fresh = notes
 		.filter((n) => !n.r)

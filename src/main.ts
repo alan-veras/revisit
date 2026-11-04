@@ -1,7 +1,7 @@
 import { getAllTags, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
 import { clozes } from './cards/cloze';
-import { daysLabel, dueNotes, Leitura, read, Releitura } from './notes/reread';
+import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
 import { mirrorPath } from './cards/mirror';
 import { AREAS, Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
@@ -9,7 +9,7 @@ import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureMod
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
-import { DEFAULT_SETTINGS, LembroSettings, LembroSettingTab } from './settings';
+import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, NO_AREA, QueueItem } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
@@ -18,8 +18,8 @@ import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
 import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
 import { registerCli } from './cli/commands';
 
-export default class LembroPlugin extends Plugin {
-	settings: LembroSettings = DEFAULT_SETTINGS;
+export default class RevisitPlugin extends Plugin {
+	settings: RevisitSettings = DEFAULT_SETTINGS;
 	store!: Store;
 	scheduler!: Scheduler;
 	private statusEl: HTMLElement | null = null;
@@ -31,17 +31,17 @@ export default class LembroPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
 		this.addCommand({ id: 'open-painel', name: 'Abrir painel', callback: () => void this.openPainel() });
-		this.addSettingTab(new LembroSettingTab(this.app, this));
+		this.addSettingTab(new RevisitSettingTab(this.app, this));
 		registerCli(this);
 
 		this.addCommand({ id: 'capture', name: 'Adicionar à revisão', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Revisar', callback: () => void this.review(null) });
 		this.addCommand({ id: 'review-area', name: 'Revisar uma área', callback: () => this.pickArea() });
 		this.addCommand({ id: 'review-extra', name: 'Sessão extra antes da prova', callback: () => this.pickArea(true) });
-		this.addCommand({ id: 'reread-toggle', name: 'Reler esta nota de tempos em tempos (liga ou desliga)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
-		this.addCommand({ id: 'reread-next', name: 'Reler a próxima nota', callback: () => void this.openNextReread() });
-		this.addCommand({ id: 'note-cards', name: 'Cartões desta nota', callback: () => void this.openNoteCards() });
-		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta nota', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
+		this.addCommand({ id: 'reread-toggle', name: 'Reler esta grade de tempos em tempos (liga ou desliga)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
+		this.addCommand({ id: 'reread-next', name: 'Reler a próxima grade', callback: () => void this.openNextReread() });
+		this.addCommand({ id: 'note-cards', name: 'Cartões desta grade', callback: () => void this.openNoteCards() });
+		this.addCommand({ id: 'review-note', name: 'Revisar os cartões desta grade', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
@@ -49,13 +49,13 @@ export default class LembroPlugin extends Plugin {
 				if (file.extension === 'md')
 					menu.addItem((i) =>
 						i
-							.setTitle(this.isReread(file.path) ? 'Parar de reler esta nota' : 'Reler esta nota de tempos em tempos')
+							.setTitle(this.isReread(file.path) ? 'Parar de reler esta grade' : 'Reler esta grade de tempos em tempos')
 							.setIcon('book-open')
 							.onClick(() => void this.toggleReread(file)),
 					);
-				menu.addItem((i) => i.setTitle('Revisar os cartões desta nota').setIcon('layers').onClick(() => void this.reviewNote(file)));
+				menu.addItem((i) => i.setTitle('Revisar os cartões desta grade').setIcon('layers').onClick(() => void this.reviewNote(file)));
 				menu.addItem((i) =>
-					i.setTitle('Cartões desta nota').setIcon('layers').onClick(() => {
+					i.setTitle('Cartões desta grade').setIcon('layers').onClick(() => {
 						this.lastSource = file;
 						void this.openNoteCards();
 					}),
@@ -104,9 +104,9 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<LembroSettings> | null);
-		// the general cap is gone: each area has its own cota
-		delete (this.settings as Partial<LembroSettings> & { newPerDay?: number }).newPerDay;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<RevisitSettings> | null);
+		// the general cap is gone: each area has its own quota
+		delete (this.settings as Partial<RevisitSettings> & { newPerDay?: number }).newPerDay;
 		// the FSRS advises against asking for more than 95%
 		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
 		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
@@ -161,7 +161,7 @@ export default class LembroPlugin extends Plugin {
 
 	/** Vault path of the source note or PDF of a card. */
 	resolveSource(card: Card): string | null {
-		const link = linkPath(card.fonte);
+		const link = linkPath(card.source);
 		if (!link) return null;
 		const file = this.app.metadataCache.getFirstLinkpathDest(link, card.file ?? '');
 		return file ? file.path : link;
@@ -177,15 +177,15 @@ export default class LembroPlugin extends Plugin {
 		for (const card of this.store.cards) {
 			if (!card.id) continue;
 			const area = this.areaOfCard(card);
-			const suspended = this.store.state[card.id]?.st === 'suspenso';
-			const holes = card.tipo === 'Lacuna' ? clozes(card.frente).length : 0;
+			const suspended = this.store.state[card.id]?.st === 'suspended';
+			const holes = card.type === 'Lacuna' ? clozes(card.front).length : 0;
 			const keys: [string, boolean, number | undefined][] = holes
 				? Array.from({ length: holes }, (_, i) => [i ? `${card.id as string}-c${i + 1}` : (card.id as string), false, i])
 				: [[card.id, false, undefined]];
-			if (card.reverso && !holes) keys.push([`${card.id}-r`, true, undefined]);
-			for (const [key, reverso, cloze] of keys) {
+			if (card.reverse && !holes) keys.push([`${card.id}-r`, true, undefined]);
+			for (const [key, reverse, cloze] of keys) {
 				const st = this.store.state[key];
-				out.push({ key, reverso, ...(cloze !== undefined ? { cloze } : {}), card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
+				out.push({ key, reverse, ...(cloze !== undefined ? { cloze } : {}), card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
 			}
 		}
 		this.itemsCache = { version, items: out };
@@ -194,7 +194,7 @@ export default class LembroPlugin extends Plugin {
 
 	/** The card and its siblings (reverse, clozes) are suspended. */
 	isSuspended(card: Card): boolean {
-		return !!card.id && this.store.state[card.id]?.st === 'suspenso';
+		return !!card.id && this.store.state[card.id]?.st === 'suspended';
 	}
 
 	/** Keys graded today, outside extra sessions. */
@@ -203,7 +203,7 @@ export default class LembroPlugin extends Plugin {
 		return new Set(this.store.log.filter((e) => !e.extra && new Date(e.t).toDateString() === day).map((e) => e.id));
 	}
 
-	session(area: string | null, minutes?: number, extra = false, assunto: string | null = null): QueueItem[] {
+	session(area: string | null, minutes?: number, extra = false, topic: string | null = null): QueueItem[] {
 		const now = new Date();
 		const items = this.items();
 		const secs = this.secs();
@@ -213,18 +213,18 @@ export default class LembroPlugin extends Plugin {
 			now,
 			area,
 			budgetMinutes: budget,
-			newAllowed: q.total.livres,
-			newLeftByArea: new Map(q.areas.map((a) => [a.area, a.livres])),
+			newAllowed: q.total.free,
+			newLeftByArea: new Map(q.areas.map((a) => [a.area, a.free])),
 			secs,
 			interleave: this.settings.interleave,
 			retrievability: (c, n) => this.scheduler.retrievability(c, n),
 			gradedToday: this.gradedToday(now),
 			extra,
-			assunto,
+			topic,
 		});
 	}
 
-	/** New cards left today in each area (its cota comes from the settings, 5 by default). */
+	/** New cards left today in each area (its quota comes from the settings, 5 by default). */
 	quota(now = new Date(), items = this.items()): QuotaStatus {
 		const areaById = new Map<string, string>();
 		for (const it of items) areaById.set(it.key, it.area ?? NO_AREA);
@@ -265,12 +265,12 @@ export default class LembroPlugin extends Plugin {
 		const s = this.session(null);
 		const n = s.length;
 		const newCount = s.filter((it) => isNew(it.fsrs)).length;
-		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'cabem'} hoje${newCount ? ` · ${newCount} ${newCount === 1 ? 'novo' : 'novos'}` : ''}`);
+		this.statusEl.setText(`Lembro: ${n} ${n === 1 ? 'cabe' : 'fit'} hoje${newCount ? ` · ${newCount} ${newCount === 1 ? 'new' : 'novos'}` : ''}`);
 	}
 
-	async review(area: string | null, minutes?: number, extra = false, assunto: string | null = null): Promise<void> {
+	async review(area: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
 		await this.reload();
-		await this.startReview(this.session(area, minutes, extra, assunto), assunto ? `${area ?? 'Tudo'} > ${assunto}` : (area ?? 'Tudo'), extra);
+		await this.startReview(this.session(area, minutes, extra, topic), topic ? `${area ?? 'Tudo'} > ${topic}` : (area ?? 'Tudo'), extra);
 	}
 
 	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
@@ -318,7 +318,7 @@ export default class LembroPlugin extends Plugin {
 
 	/** Every due or new card of one note, outside the daily caps. */
 	async reviewNote(file: TFile | null): Promise<void> {
-		if (!file) return void new Notice('Lembro: abra uma nota primeiro.');
+		if (!file) return void new Notice('Lembro: abra uma grade primeiro.');
 		await this.reload();
 		const now = new Date();
 		const items = this.items().filter((it) => this.resolveSource(it.card) === file.path);
@@ -335,8 +335,8 @@ export default class LembroPlugin extends Plugin {
 		await this.startReview(queue, file.basename, false);
 	}
 
-	assuntos(): string[] {
-		return [...new Set(this.store.cards.flatMap((c) => c.assuntos))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+	topics(): string[] {
+		return [...new Set(this.store.cards.flatMap((c) => c.topics))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 	}
 
 	async capture(): Promise<void> {
@@ -346,30 +346,30 @@ export default class LembroPlugin extends Plugin {
 		const path = file?.path ?? null;
 		// a card whose source is a card file would mirror itself inside the mirror
 		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
-			new Notice('Lembro: a fonte não pode ser um arquivo de cartões do plugin; abra a nota de origem.');
+			new Notice('Lembro: a source não pode ser um arquivo de cartões do plugin; abra a grade de origem.');
 			return;
 		}
-		const tipo = initialType({ isPdf: !!ctx?.isPdf, path, selection });
+		const type = initialType({ isPdf: !!ctx?.isPdf, path, selection });
 		const area = (path && areaOf(path, this.settings.areaMap)) ?? '';
-		let frente = '';
-		let verso = selection;
-		if (tipo === 'Questão') {
-			frente = splitAlternatives(selection);
-			verso = '';
-		} else if (tipo === 'Referência' && ctx) {
-			frente = bibleReference(ctx.noteText, ctx.cursorLine) ?? '';
+		let front = '';
+		let back = selection;
+		if (type === 'Questão') {
+			front = splitAlternatives(selection);
+			back = '';
+		} else if (type === 'Referência' && ctx) {
+			front = bibleReference(ctx.noteText, ctx.cursorLine) ?? '';
 		}
 		const draft = {
-			tipo,
-			frente,
-			verso,
-			area: area || (this.settings.lastAssunto['__area'] ?? AREAS[0]),
-			assunto: (area && this.settings.lastAssunto[area]) ?? '',
-			fonte: sourceLink(file, ctx?.page ?? null, ctx && !ctx.isPdf ? headingAbove(ctx.noteText, ctx.cursorLine) : null),
+			type,
+			front,
+			back,
+			area: area || (this.settings.lastTopic['__area'] ?? AREAS[0]),
+			topic: (area && this.settings.lastTopic[area]) ?? '',
+			source: sourceLink(file, ctx?.page ?? null, ctx && !ctx.isPdf ? headingAbove(ctx.noteText, ctx.cursorLine) : null),
 			context: ctx?.context ?? '',
 			sourcePath: path ?? '',
 		};
-		new CaptureModal(this.app, draft, this.assuntos(), 'Novo cartão', (r) => this.saveNew(r, path, area), tipo === 'Questão').open();
+		new CaptureModal(this.app, draft, this.topics(), 'Novo cartão', (r) => this.saveNew(r, path, area), type === 'Questão').open();
 	}
 
 	private async saveNew(r: CaptureResult, sourcePath: string | null, derivedArea: string): Promise<void> {
@@ -377,25 +377,25 @@ export default class LembroPlugin extends Plugin {
 		const target = mirrorPath(sourcePath, this.settings.folder);
 		const id = await this.store.addCard(target, {
 			id: null,
-			tipo: r.tipo,
-			frente: r.frente,
-			verso: r.verso,
+			type: r.type,
+			front: r.front,
+			back: r.back,
 			...(r.area && r.area !== derivedArea ? { area: r.area } : {}),
-			assuntos: r.assuntos,
-			...(r.reverso ? { reverso: true } : {}),
-			fonte: r.fonte,
+			topics: r.topics,
+			...(r.reverse ? { reverse: true } : {}),
+			source: r.source,
 		});
-		this.settings.lastAssunto[r.area] = r.assuntos.join('; ');
-		this.settings.lastAssunto['__area'] = r.area;
+		this.settings.lastTopic[r.area] = r.topics.join('; ');
+		this.settings.lastTopic['__area'] = r.area;
 		await this.saveSettings();
 		this.updateStatus();
-		new Notice(`Lembro: cartão criado em ${r.area}${r.assuntos.length ? ' > ' + r.assuntos[0] : ''} (^${id})`);
+		new Notice(`Lembro: cartão criado em ${r.area}${r.topics.length ? ' > ' + r.topics[0] : ''} (^${id})`);
 	}
 
-	// ---- releitura de notas inteiras ----
+	// ---- reread de notas inteiras ----
 
 	private rereadKey(path: string): string {
-		return `nota:${path}`;
+		return `note:${path}`;
 	}
 
 	private hasTag(file: TFile): boolean {
@@ -407,21 +407,21 @@ export default class LembroPlugin extends Plugin {
 
 	isReread(path: string): boolean {
 		const st = this.store.state[this.rereadKey(path)];
-		if (st) return st.st === 'ativo';
+		if (st) return st.st === 'active';
 		const f = this.app.vault.getAbstractFileByPath(path);
 		return f instanceof TFile && this.hasTag(f);
 	}
 
 	/** Every note to reread, with its schedule: marked by command, or carrying the tag. */
-	rereadNotes(): { path: string; r?: Releitura }[] {
+	rereadNotes(): { path: string; r?: Reread }[] {
 		const paths = new Set<string>();
-		for (const [k, v] of Object.entries(this.store.state)) if (k.startsWith('nota:') && v.st === 'ativo') paths.add(k.slice(5));
+		for (const [k, v] of Object.entries(this.store.state)) if (k.startsWith('note:') && v.st === 'active') paths.add(k.slice(5));
 		if (this.settings.rereadTag) for (const f of this.app.vault.getMarkdownFiles()) if (!f.path.startsWith(this.settings.folder + '/') && this.hasTag(f)) paths.add(f.path);
 		return [...paths]
-			.filter((p) => this.store.state[this.rereadKey(p)]?.st !== 'suspenso' && this.app.vault.getAbstractFileByPath(p))
+			.filter((p) => this.store.state[this.rereadKey(p)]?.st !== 'suspended' && this.app.vault.getAbstractFileByPath(p))
 			.sort()
 			.map((path) => {
-				const r = this.store.state[this.rereadKey(path)]?.releitura;
+				const r = this.store.state[this.rereadKey(path)]?.reread;
 				return r ? { path, r } : { path };
 			});
 	}
@@ -431,13 +431,13 @@ export default class LembroPlugin extends Plugin {
 	}
 
 	async toggleReread(file: TFile | null): Promise<void> {
-		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma nota primeiro.');
+		if (!file || file.extension !== 'md') return void new Notice('Lembro: abra uma grade primeiro.');
 		const key = this.rereadKey(file.path);
 		const on = !this.isReread(file.path);
-		this.store.state[key] = { ...(this.store.state[key] ?? {}), st: on ? 'ativo' : 'suspenso' };
+		this.store.state[key] = { ...(this.store.state[key] ?? {}), st: on ? 'active' : 'suspended' };
 		await this.store.saveState();
 		this.updateStatus();
-		new Notice(on ? `Lembro: ${file.basename} entra na releitura` : `Lembro: ${file.basename} sai da releitura`);
+		new Notice(on ? `Lembro: ${file.basename} entra na reread` : `Lembro: ${file.basename} sai da reread`);
 	}
 
 	/** Note being reread now, shown in the Notas tab of the painel. */
@@ -448,7 +448,7 @@ export default class LembroPlugin extends Plugin {
 		const next = this.dueRereads()[0];
 		if (!next) {
 			this.reading = null;
-			new Notice('Lembro: nenhuma nota para reler hoje.');
+			new Notice('Lembro: nenhuma grade para reler hoje.');
 		} else {
 			await this.openReread(next);
 			return;
@@ -470,12 +470,12 @@ export default class LembroPlugin extends Plugin {
 		this.updateStatus();
 	}
 
-	async gradeReread(path: string, l: Leitura): Promise<void> {
+	async gradeReread(path: string, l: RereadGrade): Promise<void> {
 		const key = this.rereadKey(path);
-		const prev = this.store.state[key]?.releitura;
-		this.store.state[key] = { st: 'ativo', releitura: read(prev, l, new Date()) };
+		const prev = this.store.state[key]?.reread;
+		this.store.state[key] = { st: 'active', reread: read(prev, l, new Date()) };
 		await this.store.saveState();
-		new Notice(`Lembro: volta a esta nota em ${daysLabel(this.store.state[key].releitura?.dias ?? 1)}`);
+		new Notice(`Lembro: volta a esta grade em ${daysLabel(this.store.state[key].reread?.days ?? 1)}`);
 		await this.openNextReread();
 	}
 
@@ -508,7 +508,7 @@ export default class LembroPlugin extends Plugin {
 		for (const k of Object.keys(this.store.state)) if (k === card.id || k.startsWith(card.id + '-')) delete this.store.state[k];
 		await this.store.saveState();
 		this.updateStatus();
-		new Notice('Lembro: cartão recomeçado, volta como novo');
+		new Notice('Lembro: cartão recomeçado, volta como new');
 	}
 
 	editCard(card: Card, after?: () => void): void {
@@ -518,17 +518,17 @@ export default class LembroPlugin extends Plugin {
 		})();
 		const area = card.area ?? derived ?? AREAS[0];
 		const draft = draftFromCard(card, area, card.file ?? '');
-		new CaptureModal(this.app, draft, this.assuntos(), 'Editar cartão', async (r) => {
+		new CaptureModal(this.app, draft, this.topics(), 'Editar cartão', async (r) => {
 			await this.store.updateCard(card, {
 				id: card.id,
-				tipo: r.tipo,
-				frente: r.frente,
-				verso: r.verso,
+				type: r.type,
+				front: r.front,
+				back: r.back,
 				...(r.area && r.area !== derived ? { area: r.area } : {}),
-				assuntos: r.assuntos,
+				topics: r.topics,
 				...(card.tags?.length ? { tags: card.tags } : {}),
-				...(r.reverso ? { reverso: true } : {}),
-				fonte: r.fonte,
+				...(r.reverse ? { reverse: true } : {}),
+				source: r.source,
 			});
 			this.updateStatus();
 			after?.();
@@ -545,11 +545,11 @@ export default class LembroPlugin extends Plugin {
 
 class AreaModal extends SuggestModal<string> {
 	constructor(
-		private plugin: LembroPlugin,
+		private plugin: RevisitPlugin,
 		private extra = false,
 	) {
 		super(plugin.app);
-		if (extra) this.setPlaceholder('Sessão extra: todos os cartões da área, sem mudar a agenda');
+		if (extra) this.setPlaceholder('Sessão extra: all os cartões da área, sem mudar a agenda');
 	}
 	getSuggestions(q: string): string[] {
 		return AREAS.filter((a) => a.toLowerCase().includes(q.toLowerCase()));

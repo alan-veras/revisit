@@ -1,30 +1,30 @@
 import { App, Component, MarkdownRenderer, Modal, Notice } from 'obsidian';
-import { normalizeAssunto } from '../cards/format';
-import { AREAS, Card, Tipo, TIPOS } from '../cards/types';
+import { normalizeTopic } from '../cards/format';
+import { AREAS, Card, CardType, CARD_TYPES } from '../cards/types';
 import { resolveOnSave } from './autoType';
 
 export interface CaptureDraft {
-	tipo: Tipo;
-	frente: string;
-	verso: string;
+	type: CardType;
+	front: string;
+	back: string;
 	area: string;
-	assunto: string;
-	fonte: string;
+	topic: string;
+	source: string;
 	/** paragraph around the selection, for a cloze */
 	context: string;
 	/** where the source note is, to resolve links in the preview */
 	sourcePath: string;
-	reverso?: boolean;
+	reverse?: boolean;
 }
 
 export interface CaptureResult {
-	tipo: Tipo;
-	frente: string;
-	verso: string;
+	type: CardType;
+	front: string;
+	back: string;
 	area: string;
-	assuntos: string[];
-	fonte: string;
-	reverso: boolean;
+	topics: string[];
+	source: string;
+	reverse: boolean;
 }
 
 /** The capture window: one front, one back, the area and the subject. */
@@ -37,7 +37,7 @@ export class CaptureModal extends Modal {
 	constructor(
 		app: App,
 		draft: CaptureDraft,
-		private assuntos: string[],
+		private topics: string[],
 		private title: string,
 		private onSave: (r: CaptureResult) => Promise<void>,
 		private focusBack = false,
@@ -53,15 +53,15 @@ export class CaptureModal extends Modal {
 		contentEl.createEl('h3', { text: this.title });
 
 		const chips = contentEl.createDiv({ cls: 'revisit-chips' });
-		TIPOS.forEach((t, i) => {
+		CARD_TYPES.forEach((t, i) => {
 			const b = chips.createEl('button', { text: t, attr: { title: `Ctrl+${i + 1}` } });
 			b.onclick = () => this.setTipo(t);
 			this.chips.push(b);
 		});
 		this.markTipo();
 
-		const front = this.area(contentEl, 'Frente', this.draft.frente, 'A pergunta', (v) => (this.draft.frente = v));
-		const back = this.area(contentEl, 'Verso', this.draft.verso, 'A resposta', (v) => (this.draft.verso = v));
+		const front = this.area(contentEl, 'Frente', this.draft.front, 'A pergunta', (v) => (this.draft.front = v));
+		const back = this.area(contentEl, 'Verso', this.draft.back, 'A resposta', (v) => (this.draft.back = v));
 
 		const row = contentEl.createDiv({ cls: 'revisit-row' });
 		const areaBox = row.createDiv({ cls: 'revisit-field' });
@@ -74,22 +74,22 @@ export class CaptureModal extends Modal {
 
 		const asBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
 		asBox.createEl('label', { text: 'Assunto' });
-		const listId = `revisit-assuntos-${Date.now()}`;
-		const as = asBox.createEl('input', { type: 'text', value: this.draft.assunto, attr: { list: listId, placeholder: 'Assunto > subassunto; outro' } });
+		const listId = `revisit-topics-${Date.now()}`;
+		const as = asBox.createEl('input', { type: 'text', value: this.draft.topic, attr: { list: listId, placeholder: 'Assunto > subassunto; outro' } });
 		const dl = asBox.createEl('datalist', { attr: { id: listId } });
-		for (const a of this.assuntos) dl.createEl('option', { value: a });
-		as.oninput = () => (this.draft.assunto = as.value);
+		for (const a of this.topics) dl.createEl('option', { value: a });
+		as.oninput = () => (this.draft.topic = as.value);
 
 		const fonteBox = contentEl.createDiv({ cls: 'revisit-field' });
 		fonteBox.createEl('label', { text: 'Fonte' });
-		const fonte = fonteBox.createEl('input', { type: 'text', value: this.draft.fonte });
-		fonte.oninput = () => (this.draft.fonte = fonte.value);
+		const source = fonteBox.createEl('input', { type: 'text', value: this.draft.source });
+		source.oninput = () => (this.draft.source = source.value);
 
 		const rev = contentEl.createEl('label', { cls: 'revisit-check' });
 		const cb = rev.createEl('input', { type: 'checkbox' });
-		cb.checked = !!this.draft.reverso;
-		cb.onchange = () => (this.draft.reverso = cb.checked);
-		rev.appendText(' Revisar nos dois sentidos (o verso também vira pergunta)');
+		cb.checked = !!this.draft.reverse;
+		cb.onchange = () => (this.draft.reverse = cb.checked);
+		rev.appendText(' Revisar nos dois sentidos (o back também vira pergunta)');
 
 		contentEl.createEl('label', { text: 'Prévia', cls: 'revisit-label' });
 		this.preview = contentEl.createDiv({ cls: 'revisit-preview' });
@@ -107,7 +107,7 @@ export class CaptureModal extends Modal {
 			void this.save();
 			return false;
 		});
-		TIPOS.forEach((t, i) =>
+		CARD_TYPES.forEach((t, i) =>
 			this.scope.register(['Mod'], String(i + 1), (e) => {
 				e.preventDefault();
 				this.setTipo(t);
@@ -129,13 +129,13 @@ export class CaptureModal extends Modal {
 		return ta;
 	}
 
-	private setTipo(t: Tipo): void {
-		this.draft.tipo = t;
+	private setTipo(t: CardType): void {
+		this.draft.type = t;
 		this.markTipo();
 	}
 
 	private markTipo(): void {
-		this.chips.forEach((b) => b.toggleClass('is-on', b.textContent === this.draft.tipo));
+		this.chips.forEach((b) => b.toggleClass('is-on', b.textContent === this.draft.type));
 	}
 
 	private async renderPreview(): Promise<void> {
@@ -143,22 +143,22 @@ export class CaptureModal extends Modal {
 		this.preview.empty();
 		const f = this.preview.createDiv({ cls: 'revisit-preview-front' });
 		const b = this.preview.createDiv({ cls: 'revisit-preview-back' });
-		await MarkdownRenderer.render(this.app, this.draft.frente || '…', f, this.draft.sourcePath, this.component);
-		await MarkdownRenderer.render(this.app, this.draft.verso || '…', b, this.draft.sourcePath, this.component);
+		await MarkdownRenderer.render(this.app, this.draft.front || '…', f, this.draft.sourcePath, this.component);
+		await MarkdownRenderer.render(this.app, this.draft.back || '…', b, this.draft.sourcePath, this.component);
 	}
 
 	private async save(): Promise<void> {
-		const r = resolveOnSave({ tipo: this.draft.tipo, frente: this.draft.frente, verso: this.draft.verso, context: this.draft.context });
+		const r = resolveOnSave({ type: this.draft.type, front: this.draft.front, back: this.draft.back, context: this.draft.context });
 		if ('error' in r) {
 			new Notice(r.error);
 			return;
 		}
-		const assuntos = this.draft.assunto
+		const topics = this.draft.topic
 			.split(';')
-			.map(normalizeAssunto)
+			.map(normalizeTopic)
 			.filter(Boolean);
 		try {
-			await this.onSave({ ...r, area: this.draft.area, assuntos, fonte: this.draft.fonte.trim(), reverso: !!this.draft.reverso });
+			await this.onSave({ ...r, area: this.draft.area, topics, source: this.draft.source.trim(), reverse: !!this.draft.reverse });
 			this.close();
 		} catch (e) {
 			new Notice(`Lembro: ${e instanceof Error ? e.message : String(e)}`);
@@ -173,14 +173,14 @@ export class CaptureModal extends Modal {
 
 export function draftFromCard(card: Card, area: string, sourcePath: string): CaptureDraft {
 	return {
-		tipo: card.tipo,
-		frente: card.frente,
-		verso: card.verso,
+		type: card.type,
+		front: card.front,
+		back: card.back,
 		area,
-		assunto: card.assuntos.join('; '),
-		fonte: card.fonte,
+		topic: card.topics.join('; '),
+		source: card.source,
 		context: '',
 		sourcePath,
-		reverso: !!card.reverso,
+		reverse: !!card.reverse,
 	};
 }

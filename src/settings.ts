@@ -1,10 +1,10 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import { parseAreaMap } from './cards/area';
 import { AREAS } from './cards/types';
-import type LembroPlugin from './main';
+import type RevisitPlugin from './main';
 import { DEFAULT_AREA_CAP } from './srs/budget';
 
-export interface LembroSettings {
+export interface RevisitSettings {
 	folder: string;
 	budgetMinutes: number;
 	/** new cards per day of each area; an area left out gets DEFAULT_AREA_CAP */
@@ -21,7 +21,7 @@ export interface LembroSettings {
 	requeueGap: number;
 	/** extra `pasta: Área` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
 	areaMap: Record<string, string>;
-	lastAssunto: Record<string, string>;
+	lastTopic: Record<string, string>;
 	/** `HH:MM` of the daily reminder, empty when off */
 	reminder: string;
 	/** notes with this tag are reread too */
@@ -31,7 +31,7 @@ export interface LembroSettings {
 	lastReminder: string;
 }
 
-export const DEFAULT_SETTINGS: LembroSettings = {
+export const DEFAULT_SETTINGS: RevisitSettings = {
 	folder: '8_System/Lembro',
 	budgetMinutes: 20,
 	newPerArea: {},
@@ -42,20 +42,20 @@ export const DEFAULT_SETTINGS: LembroSettings = {
 	showNewBadge: true,
 	requeueGap: 3,
 	areaMap: {},
-	lastAssunto: {},
+	lastTopic: {},
 	reminder: '',
 	rereadTag: '#review/permanent',
 	newNotesPerDay: 2,
 	lastReminder: '',
 };
 
-/** Settings key of an area's own cap: `cota:Espiritual`. */
-const COTA = 'cota:';
+/** Settings key of an area's own cap: `quota:Espiritual`. */
+const QUOTA = 'quota:';
 
-export class LembroSettingTab extends PluginSettingTab {
+export class RevisitSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
-		private plugin: LembroPlugin,
+		private plugin: RevisitPlugin,
 	) {
 		super(app, plugin);
 	}
@@ -67,8 +67,8 @@ export class LembroSettingTab extends PluginSettingTab {
 				heading: 'Cartões novos por dia',
 				items: AREAS.map((area) => ({
 					name: area,
-					desc: `Quantos cartões novos de ${area} entram por dia (padrão ${DEFAULT_AREA_CAP}). 0 pausa os novos da área. Se as revisões vencidas encherem o orçamento, a cota encolhe no dia.`,
-					control: { type: 'number' as const, key: `${COTA}${area}`, min: 0 },
+					desc: `Quantos cartões novos de ${area} entram por dia (padrão ${DEFAULT_AREA_CAP}). 0 pausa os novos da área. Se as revisões vencidas encherem o orçamento, a quota encolhe no dia.`,
+					control: { type: 'number' as const, key: `${QUOTA}${area}`, min: 0 },
 				})),
 			},
 			{
@@ -82,17 +82,17 @@ export class LembroSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Retenção desejada, em %',
-						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais vezes. Acima de 95 o FSRS recomenda não passar.',
+						desc: 'Chance de lembrar no dia da revisão. Mais alta revisa mais times. Acima de 95 o FSRS recomenda não passar.',
 						control: { type: 'slider', key: 'retention', min: 70, max: 95, step: 1 },
 					},
 					{
 						name: 'Retenção dos cartões #importante, em %',
-						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais vezes. O teto é 95, teto que o FSRS recomenda.',
+						desc: 'Meta para os cartões com a linha Tags: #importante. Mais alta que a geral, eles voltam mais times. O cap é 95, cap que o FSRS recomenda.',
 						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 95, step: 1 },
 					},
 					{
-						name: 'Intercalar assuntos',
-						desc: 'Mistura os assuntos na sessão. Desligado, revisa um assunto de cada vez.',
+						name: 'Intercalar topics',
+						desc: 'Mistura os topics na sessão. Desligado, revisa um topic de cada vez.',
 						control: { type: 'toggle', key: 'interleave' },
 					},
 					{
@@ -120,11 +120,11 @@ export class LembroSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
-				heading: 'Releitura de notas',
+				heading: 'Reread de notas',
 				items: [
 					{
 						name: 'Tag das notas para reler',
-						desc: 'Notas com esta tag entram na releitura, além das que você marca pelo comando. Vazio ignora a tag.',
+						desc: 'Notas com esta tag entram na reread, além das que você marca pelo comando. Vazio ignora a tag.',
 						control: { type: 'text', key: 'rereadTag', placeholder: '#review/permanent' },
 					},
 					{
@@ -151,7 +151,7 @@ export class LembroSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: 'Pasta dos cartões',
-						desc: 'Onde ficam os arquivos de cartões, o estado e o log de revisões.',
+						desc: 'Onde ficam os arquivos de cartões, o status e o log de revisões.',
 						control: { type: 'text', key: 'folder', placeholder: DEFAULT_SETTINGS.folder },
 					},
 					{
@@ -166,8 +166,8 @@ export class LembroSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
-		if (key.startsWith(COTA)) {
-			return s.newPerArea[key.slice(COTA.length)] ?? DEFAULT_AREA_CAP;
+		if (key.startsWith(QUOTA)) {
+			return s.newPerArea[key.slice(QUOTA.length)] ?? DEFAULT_AREA_CAP;
 		}
 		if (key === 'retention') return Math.round(s.retention * 100);
 		if (key === 'retentionImportant') return Math.round(s.retentionImportant * 100);
@@ -175,15 +175,15 @@ export class LembroSettingTab extends PluginSettingTab {
 			return Object.entries(s.areaMap)
 				.map(([k, v]) => `${k}: ${v}`)
 				.join('\n');
-		return s[key as keyof LembroSettings];
+		return s[key as keyof RevisitSettings];
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
-		if (key.startsWith(COTA)) {
+		if (key.startsWith(QUOTA)) {
 			const n = Number(value);
 			if (!Number.isFinite(n) || n < 0) return; // half-typed: keep the last valid value
-			s.newPerArea = { ...s.newPerArea, [key.slice(COTA.length)]: Math.floor(n) };
+			s.newPerArea = { ...s.newPerArea, [key.slice(QUOTA.length)]: Math.floor(n) };
 		} else if (key === 'folder') s.folder = String(value).trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
 		else if (key === 'budgetMinutes') s.budgetMinutes = Math.max(1, Number(value) || DEFAULT_SETTINGS.budgetMinutes);
 		else if (key === 'retention') {

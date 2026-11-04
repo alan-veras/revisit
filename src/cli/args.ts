@@ -31,7 +31,7 @@ export function unescape(v: string): string {
 }
 
 /** Cards of a batch file, written in the card format; every one must have front and back. */
-export function parseLote(text: string): Omit<Card, 'start' | 'end'>[] {
+export function parseBatch(text: string): Omit<Card, 'start' | 'end'>[] {
 	const cards = parseCardFile(text);
 	if (!cards.length) throw new CliError('lote', 'nenhum cartão no arquivo (blocos Frente:/Verso: separados por ---)');
 	return cards.map(({ start: _s, end: _e, ...c }) => ({ ...c, id: null }));

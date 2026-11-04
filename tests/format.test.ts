@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, appendCards, ensureIds, groupBy, normalizeAssunto, parseCardFile, removeCard, renameSource, renameSourceFolder, replaceCard, serializeCard } from '../src/cards/format';
+import { appendCard, appendCards, ensureIds, groupBy, normalizeTopic, parseCardFile, removeCard, renameSource, renameSourceFolder, replaceCard, serializeCard } from '../src/cards/format';
 
 const FILE = `Frente: Como desfazer o último rollout de um deployment?
 Verso:
@@ -26,18 +26,18 @@ describe('parseCardFile', () => {
 		expect(cards).toHaveLength(2);
 		const [a, b] = cards;
 		expect(a?.id).toBe('lk7q2a');
-		expect(a?.verso).toContain('kubectl rollout undo');
-		expect(a?.verso).toContain('--to-revision=2');
-		expect(a?.assuntos).toEqual(['Kubernetes > Workloads', 'CKA']);
-		expect(a?.fonte).toBe('[[3_Outputs/Carreira/Projetos/Bolsa LiFT 2026/Cronograma do CKA/Cronograma do CKA|Cronograma do CKA]]');
-		expect(b?.tipo).toBe('Referência');
+		expect(a?.back).toContain('kubectl rollout undo');
+		expect(a?.back).toContain('--to-revision=2');
+		expect(a?.topics).toEqual(['Kubernetes > Workloads', 'CKA']);
+		expect(a?.source).toBe('[[3_Outputs/Carreira/Projetos/Bolsa LiFT 2026/Cronograma do CKA/Cronograma do CKA|Cronograma do CKA]]');
+		expect(b?.type).toBe('Referência');
 		expect(b?.id).toBe('lab12c');
 	});
 
 	it('defaults the type and skips blocks without front or back', () => {
-		const cards = parseCardFile('Frente: só frente\n\n---\n\nFrente: a\nVerso: b\nTipo: Inventado\n');
+		const cards = parseCardFile('Frente: só front\n\n---\n\nFrente: a\nVerso: b\nTipo: Inventado\n');
 		expect(cards).toHaveLength(1);
-		expect(cards[0]?.tipo).toBe('Pergunta');
+		expect(cards[0]?.type).toBe('Pergunta');
 	});
 
 	it('reads an explicit area', () => {
@@ -48,24 +48,24 @@ describe('parseCardFile', () => {
 
 describe('serialize and edit', () => {
 	it('round trips a card', () => {
-		const block = serializeCard({ id: 'labcde', tipo: 'Questão', frente: 'Enunciado\n(A) x', verso: '(B) y', assuntos: ['Concursos > TI'], fonte: '[[p.pdf#page=3|p, p. 3]]' });
+		const block = serializeCard({ id: 'labcde', type: 'Questão', front: 'Enunciado\n(A) x', back: '(B) y', topics: ['Concursos > TI'], source: '[[p.pdf#page=3|p, p. 3]]' });
 		const [c] = parseCardFile(block);
-		expect(c).toMatchObject({ id: 'labcde', tipo: 'Questão', frente: 'Enunciado\n(A) x', verso: '(B) y', assuntos: ['Concursos > TI'] });
+		expect(c).toMatchObject({ id: 'labcde', type: 'Questão', front: 'Enunciado\n(A) x', back: '(B) y', topics: ['Concursos > TI'] });
 	});
 
 	it('puts the id on the last line when there is no source', () => {
-		const block = serializeCard({ id: 'lzzzzz', tipo: 'Pergunta', frente: 'a', verso: 'b', assuntos: [], fonte: '' });
+		const block = serializeCard({ id: 'lzzzzz', type: 'Pergunta', front: 'a', back: 'b', topics: [], source: '' });
 		expect(block.split('\n').pop()).toBe('Tipo: Pergunta ^lzzzzz');
 	});
 
 	it('appends, replaces and removes', () => {
-		let text = appendCard('', serializeCard({ id: 'laaaaa', tipo: 'Pergunta', frente: 'um', verso: '1', assuntos: [], fonte: '' }));
-		text = appendCard(text, serializeCard({ id: 'lbbbbb', tipo: 'Pergunta', frente: 'dois', verso: '2', assuntos: [], fonte: '' }));
-		expect(parseCardFile(text).map((c) => c.frente)).toEqual(['um', 'dois']);
+		let text = appendCard('', serializeCard({ id: 'laaaaa', type: 'Pergunta', front: 'um', back: '1', topics: [], source: '' }));
+		text = appendCard(text, serializeCard({ id: 'lbbbbb', type: 'Pergunta', front: 'dois', back: '2', topics: [], source: '' }));
+		expect(parseCardFile(text).map((c) => c.front)).toEqual(['um', 'dois']);
 		const second = parseCardFile(text)[1];
 		if (!second) throw new Error('no card');
-		text = replaceCard(text, second, serializeCard({ ...second, frente: 'dois editado' }));
-		expect(parseCardFile(text).map((c) => c.frente)).toEqual(['um', 'dois editado']);
+		text = replaceCard(text, second, serializeCard({ ...second, front: 'dois editado' }));
+		expect(parseCardFile(text).map((c) => c.front)).toEqual(['um', 'dois editado']);
 		const first = parseCardFile(text)[0];
 		if (!first) throw new Error('no card');
 		text = removeCard(text, first);
@@ -89,7 +89,7 @@ describe('ensureIds', () => {
 		expect(ensureIds(FILE, new Set()).text).toBe(FILE);
 	});
 
-	it('verso terminando em code fence recebe o id fora da fence e converge', () => {
+	it('back terminando em code fence recebe o id fora da fence e converge', () => {
 		const text = 'Frente: O que faz o comando?\nVerso:\n```bash\nkubectl rollout undo\n```\nTipo: Pergunta\n';
 		const taken = new Set<string>();
 		const first = ensureIds(text, taken);
@@ -99,17 +99,17 @@ describe('ensureIds', () => {
 		expect(again.added).toBe(0);
 		const [c] = parseCardFile(first.text);
 		expect(c?.id).toMatch(/^l[a-z0-9]{5}$/);
-		expect(c?.verso).toContain('kubectl rollout undo');
-		expect(c?.tipo).toBe('Pergunta');
+		expect(c?.back).toContain('kubectl rollout undo');
+		expect(c?.type).toBe('Pergunta');
 	});
 
-	it('verso que é só code fence recebe o id numa linha de campo que aguenta', () => {
+	it('back que é só code fence recebe o id numa linha de campo que aguenta', () => {
 		const text = 'Frente: a\nVerso:\n```bash\nls\n```\n';
 		const { text: out, added } = ensureIds(text, new Set());
 		expect(added).toBe(1);
 		const [c] = parseCardFile(out);
 		expect(c?.id).toMatch(/^l[a-z0-9]{5}$/);
-		expect(c?.verso).toContain('ls');
+		expect(c?.back).toContain('ls');
 	});
 });
 
@@ -120,7 +120,7 @@ describe('removeCard com frontmatter', () => {
 		if (!first) throw new Error('no card');
 		const out = removeCard(text, first);
 		expect(out.startsWith('---\ntags: [revisit]\n---')).toBe(true);
-		expect(parseCardFile(out).map((c) => c.frente)).toEqual(['C']);
+		expect(parseCardFile(out).map((c) => c.front)).toEqual(['C']);
 	});
 
 	it('não colapsa linhas vazias dentro de fences de outros cartões', () => {
@@ -132,29 +132,29 @@ describe('removeCard com frontmatter', () => {
 	});
 });
 
-describe('normalizeAssunto', () => {
+describe('normalizeTopic', () => {
 	it('trims the levels', () => {
-		expect(normalizeAssunto(' Concursos>TI  >  Árvores ')).toBe('Concursos > TI > Árvores');
+		expect(normalizeTopic(' Concursos>TI  >  Árvores ')).toBe('Concursos > TI > Árvores');
 	});
 	it('reads and writes Reverso', () => {
 		const c = parseCardFile('Frente: a\nVerso: b\nReverso: sim ^labcde')[0];
-		expect(c?.reverso).toBe(true);
+		expect(c?.reverse).toBe(true);
 		expect(serializeCard({ ...(c as NonNullable<typeof c>) })).toContain('Reverso: sim ^labcde');
 	});
 	it('renames a source link', () => {
-		const t = 'Frente: a\nVerso: b\nFonte: [[3_Outputs/X/Nota|Nota]] ^labcde\n\n---\n\nFonte: [[Outra]]';
-		const out = renameSource(t, '3_Outputs/X/Nota.md', '3_Outputs/Y/Nova.md');
-		expect(out).toContain('[[3_Outputs/Y/Nova|Nota]] ^labcde');
+		const t = 'Frente: a\nVerso: b\nFonte: [[3_Outputs/X/Grade|Grade]] ^labcde\n\n---\n\nFonte: [[Outra]]';
+		const out = renameSource(t, '3_Outputs/X/Grade.md', '3_Outputs/Y/Nova.md');
+		expect(out).toContain('[[3_Outputs/Y/Nova|Grade]] ^labcde');
 		expect(out).toContain('[[Outra]]');
 		expect(renameSource('Fonte: [[a.pdf#page=3|a, p. 3]]', 'a.pdf', 'b/a.pdf')).toBe('Fonte: [[b/a.pdf#page=3|a, p. 3]]');
 	});
 
 	it('renames links de uma pasta inteira', () => {
-		const t = 'Fonte: [[Pasta Antiga/Nota|Nota]]\nFonte: [[Pasta Antiga]]\nFonte: [[Outro Lugar/Nota]]';
+		const t = 'Fonte: [[Pasta Antiga/Grade|Grade]]\nFonte: [[Pasta Antiga]]\nFonte: [[Outro Lugar/Grade]]';
 		const out = renameSourceFolder(t, 'Pasta Antiga', 'Novo Lugar');
-		expect(out).toContain('[[Novo Lugar/Nota|Nota]]');
+		expect(out).toContain('[[Novo Lugar/Grade|Grade]]');
 		expect(out).toContain('[[Novo Lugar]]');
-		expect(out).toContain('[[Outro Lugar/Nota]]');
+		expect(out).toContain('[[Outro Lugar/Grade]]');
 		expect(renameSourceFolder('Fonte: [[P/A.pdf#page=2|p]]', 'P', 'Q')).toBe('Fonte: [[Q/A.pdf#page=2|p]]');
 	});
 });
@@ -174,7 +174,7 @@ describe('lote numa escrita só', () => {
 
 describe('Tags', () => {
 	it('lê e grava a linha Tags só quando existe', () => {
-		const base = { id: 'lab123', tipo: 'Pergunta' as const, frente: 'f', verso: 'v', assuntos: [], fonte: '' };
+		const base = { id: 'lab123', type: 'Pergunta' as const, front: 'f', back: 'v', topics: [], source: '' };
 		const text = serializeCard({ ...base, tags: ['importante'] });
 		expect(text).toContain('Tags: #importante');
 		expect(parseCardFile(text)[0]?.tags).toEqual(['importante']);
@@ -183,7 +183,7 @@ describe('Tags', () => {
 	});
 });
 
-it('assuntosLabel mostra só o último nível', async () => {
-	const { assuntosLabel } = await import('../src/cards/format');
-	expect(assuntosLabel(['Sustento > Perseguição', 'Kubernetes'])).toBe('Perseguição; Kubernetes');
+it('topicsLabel mostra só o último nível', async () => {
+	const { topicsLabel } = await import('../src/cards/format');
+	expect(topicsLabel(['Sustento > Perseguição', 'Kubernetes'])).toBe('Perseguição; Kubernetes');
 });

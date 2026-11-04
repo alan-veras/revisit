@@ -1,11 +1,11 @@
 import { Card as FsrsCard } from 'ts-fsrs';
-import { Card, isImportant, Tipo } from '../cards/types';
+import { Card, isImportant, CardType } from '../cards/types';
 import { isNew } from './scheduler';
 
 export interface QueueItem {
 	/** key in estado.json and the log: the card id, plus `-r` for the reverse */
 	key: string;
-	reverso: boolean;
+	reverse: boolean;
 	/** which `==highlight==` of a Lacuna this item asks, when the front has them */
 	cloze?: number;
 	card: Card;
@@ -14,19 +14,19 @@ export interface QueueItem {
 	suspended: boolean;
 }
 
-/** Area key of the cards whose source has no area: they share one cota. */
+/** Area key of the cards whose source has no area: they share one quota. */
 export const NO_AREA = 'Sem área';
 
 export interface QueueOptions {
 	now: Date;
 	area?: string | null;
-	/** prefix of an assunto, `Concursos` matches `Concursos > TI` */
-	assunto?: string | null;
+	/** prefix of an topic, `Concursos` matches `Concursos > TI` */
+	topic?: string | null;
 	budgetMinutes: number;
 	newAllowed: number;
 	/** new cards still allowed today per area; an area missing here has no cap of its own */
 	newLeftByArea?: Map<string, number>;
-	secs: Record<Tipo, number>;
+	secs: Record<CardType, number>;
 	interleave: boolean;
 	retrievability: (card: FsrsCard, now: Date) => number;
 	/** keys graded today, to keep a card and its reverse apart */
@@ -35,11 +35,11 @@ export interface QueueOptions {
 	extra?: boolean;
 }
 
-export function matchesFilter(item: QueueItem, area?: string | null, assunto?: string | null): boolean {
+export function matchesFilter(item: QueueItem, area?: string | null, topic?: string | null): boolean {
 	if (area && item.area !== area) return false;
-	if (assunto) {
-		const want = assunto.toLowerCase();
-		return item.card.assuntos.some((a) => {
+	if (topic) {
+		const want = topic.toLowerCase();
+		return item.card.topics.some((a) => {
 			const x = a.toLowerCase();
 			return x === want || x.startsWith(want + ' > ');
 		});
@@ -53,11 +53,11 @@ function endOfDay(now: Date): Date {
 	return d;
 }
 
-/** Round robin over the first assunto, keeping the order inside each group. */
+/** Round robin over the first topic, keeping the order inside each group. */
 export function interleave(items: QueueItem[]): QueueItem[] {
 	const groups = new Map<string, QueueItem[]>();
 	for (const it of items) {
-		const key = it.card.assuntos[0] ?? '';
+		const key = it.card.topics[0] ?? '';
 		const g = groups.get(key);
 		if (g) g.push(it);
 		else groups.set(key, [it]);
@@ -76,11 +76,11 @@ export function dueReviews(items: QueueItem[], now: Date): QueueItem[] {
 
 /**
  * The session: due reviews first, most at risk of being forgotten first, then new
- * cards up to the daily allowance; mixed by assunto; cut at the time budget.
+ * cards up to the daily allowance; mixed by topic; cut at the time budget.
  * Due dates are never touched: what does not fit simply shows up again tomorrow.
  */
 export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
-	const pool = items.filter((it) => !it.suspended && matchesFilter(it, o.area, o.assunto));
+	const pool = items.filter((it) => !it.suspended && matchesFilter(it, o.area, o.topic));
 	if (o.extra) {
 		const r = (it: QueueItem) => (it.fsrs ? o.retrievability(it.fsrs, o.now) : 0);
 		const all = [...pool].sort((a, b) => r(a) - r(b));
@@ -114,7 +114,7 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	let secs = 0;
 	const max = o.budgetMinutes * 60;
 	for (const it of ordered) {
-		const cost = o.secs[it.card.tipo];
+		const cost = o.secs[it.card.type];
 		if (out.length && secs + cost > max) break;
 		out.push(it);
 		secs += cost;
@@ -122,8 +122,8 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	return out;
 }
 
-export function estimateMinutes(items: QueueItem[], secs: Record<Tipo, number>): number {
-	return Math.ceil(items.reduce((s, it) => s + secs[it.card.tipo], 0) / 60);
+export function estimateMinutes(items: QueueItem[], secs: Record<CardType, number>): number {
+	return Math.ceil(items.reduce((s, it) => s + secs[it.card.type], 0) / 60);
 }
 
 /** Card id of an item key: `lxxxxx`, `lxxxxx-r` (reverse) and `lxxxxx-c2` (second highlight) share it. */
@@ -151,8 +151,8 @@ export function burySiblings(items: QueueItem[], gradedToday: Set<string>): Queu
  * Where a card graded now comes back in the same session: when its next due time
  * falls before the session should end, a few cards ahead (or at the end); -1 otherwise.
  */
-export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: Date, secs: Record<Tipo, number>, gap = 3): number {
-	const left = queue.slice(index + 1).reduce((s, it) => s + secs[it.card.tipo], 0);
+export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: Date, secs: Record<CardType, number>, gap = 3): number {
+	const left = queue.slice(index + 1).reduce((s, it) => s + secs[it.card.type], 0);
 	const end = now.getTime() + Math.max(left, 600) * 1000;
 	if (due.getTime() > end) return -1;
 	return Math.min(queue.length, index + 1 + gap);
@@ -166,14 +166,14 @@ export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: 
  */
 export function sessionRequeue(o: {
 	extra: boolean;
-	nota: number;
+	grade: number;
 	queue: QueueItem[];
 	index: number;
 	due: Date;
 	now: Date;
-	secs: Record<Tipo, number>;
+	secs: Record<CardType, number>;
 	gap: number;
 }): number {
-	if (o.extra) return o.nota === 1 ? Math.min(o.queue.length, o.index + 1 + o.gap) : -1;
+	if (o.extra) return o.grade === 1 ? Math.min(o.queue.length, o.index + 1 + o.gap) : -1;
 	return requeueIndex(o.queue, o.index, o.due, o.now, o.secs, o.gap);
 }

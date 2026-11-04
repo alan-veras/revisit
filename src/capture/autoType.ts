@@ -1,14 +1,14 @@
 import { clozes } from '../cards/cloze';
-import { Tipo } from '../cards/types';
+import { CardType } from '../cards/types';
 
-export const LACUNA_MAX_WORDS = 8;
+export const CLOZE_MAX_WORDS = 8;
 
 export function wordCount(text: string): number {
 	return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
 /** The type the capture window opens with. */
-export function initialType(o: { isPdf: boolean; path: string | null; selection: string }): Tipo {
+export function initialType(o: { isPdf: boolean; path: string | null; selection: string }): CardType {
 	if (o.isPdf && o.selection) return 'Questão';
 	if (o.path?.startsWith('2_The Bible/') && o.selection) return 'Referência';
 	return 'Pergunta';
@@ -46,16 +46,16 @@ export function clozeFront(context: string, selection: string): string {
  * What a card becomes when saved: an empty front on a short selection turns into
  * a cloze; an empty front on a long one is refused (returns an error message).
  */
-export function resolveOnSave(o: { tipo: Tipo; frente: string; verso: string; context: string }):
-	| { tipo: Tipo; frente: string; verso: string }
+export function resolveOnSave(o: { type: CardType; front: string; back: string; context: string }):
+	| { type: CardType; front: string; back: string }
 	| { error: string } {
-	const frente = o.frente.trim();
-	const verso = o.verso.trim();
-	if (!verso && clozes(frente).length) return { tipo: 'Lacuna', frente, verso: '' };
-	if (!verso) return { error: 'O verso está vazio.' };
-	if (frente) return { tipo: o.tipo, frente, verso };
-	if (wordCount(verso) <= LACUNA_MAX_WORDS && o.context.trim()) {
-		return { tipo: 'Lacuna', frente: clozeFront(o.context, verso), verso };
+	const front = o.front.trim();
+	const back = o.back.trim();
+	if (!back && clozes(front).length) return { type: 'Lacuna', front, back: '' };
+	if (!back) return { error: 'O back está vazio.' };
+	if (front) return { type: o.type, front, back };
+	if (wordCount(back) <= CLOZE_MAX_WORDS && o.context.trim()) {
+		return { type: 'Lacuna', front: clozeFront(o.context, back), back };
 	}
 	return { error: 'Escreva a pergunta: lacuna só vale para trecho curto.' };
 }

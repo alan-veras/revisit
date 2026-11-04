@@ -5,21 +5,21 @@ export interface TreeNode {
 	path: string;
 	name: string;
 	area: string;
-	/** assunto prefix for the filter; null at the area level */
-	assunto: string | null;
+	/** topic prefix for the filter; null at the area level */
+	topic: string | null;
 	cards: number;
 	children: TreeNode[];
 }
 
 /** Área > Assunto > … with the number of cards under each level; empty levels are left out. */
-export function assuntoTree(items: { area: string | null; card: { assuntos: string[] } }[]): TreeNode[] {
+export function topicTree(items: { area: string | null; card: { topics: string[] } }[]): TreeNode[] {
 	const roots = new Map<string, TreeNode>();
-	const node = (parent: TreeNode | null, area: string, name: string, assunto: string | null): TreeNode => {
+	const node = (parent: TreeNode | null, area: string, name: string, topic: string | null): TreeNode => {
 		const list = parent ? parent.children : null;
-		const path = assunto ? `${area} > ${assunto}` : area;
+		const path = topic ? `${area} > ${topic}` : area;
 		let n = list ? list.find((c) => c.path === path) : roots.get(area);
 		if (!n) {
-			n = { path, name, area, assunto, cards: 0, children: [] };
+			n = { path, name, area, topic, cards: 0, children: [] };
 			if (list) list.push(n);
 			else roots.set(area, n);
 		}
@@ -30,7 +30,7 @@ export function assuntoTree(items: { area: string | null; card: { assuntos: stri
 		const root = node(null, area, area, null);
 		root.cards++;
 		const seen = new Set<TreeNode>();
-		for (const a of it.card.assuntos) {
+		for (const a of it.card.topics) {
 			let cur = root;
 			const parts = a.split(' > ');
 			parts.forEach((p, i) => {

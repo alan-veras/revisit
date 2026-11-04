@@ -3,9 +3,9 @@ import { checkCloze, hintWords, normalizeAnswer } from '../src/review/answer';
 
 describe('hintWords', () => {
 	it('gives the first words, skipping verse numbers and marks', () => {
-		const verso = '<sup>4</sup> Mesmo quando eu andar\n<sup>5</sup> **Preparas** um banquete';
-		expect(hintWords(verso, 3)).toBe('Mesmo quando eu…');
-		expect(hintWords(verso, 5)).toBe('Mesmo quando eu andar Preparas…');
+		const back = '<sup>4</sup> Mesmo quando eu andar\n<sup>5</sup> **Preparas** um banquete';
+		expect(hintWords(back, 3)).toBe('Mesmo quando eu…');
+		expect(hintWords(back, 5)).toBe('Mesmo quando eu andar Preparas…');
 		expect(hintWords('**4** Ora, a fé', 1)).toBe('Ora,…');
 	});
 	it('shows the whole text without … when n covers it, and nothing for n = 0', () => {

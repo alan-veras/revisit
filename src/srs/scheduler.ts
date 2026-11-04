@@ -1,11 +1,11 @@
 import { Card as FsrsCard, createEmptyCard, fsrs, FSRS, Rating, State } from 'ts-fsrs';
 
-export type Nota = 1 | 2 | 3 | 4;
-export const NOTAS: { nota: Nota; nome: string }[] = [
-	{ nota: 1, nome: 'Errei' },
-	{ nota: 2, nome: 'Difícil' },
-	{ nota: 3, nome: 'Bom' },
-	{ nota: 4, nome: 'Fácil' },
+export type Grade = 1 | 2 | 3 | 4;
+export const GRADES: { grade: Grade; name: string }[] = [
+	{ grade: 1, name: 'Errei' },
+	{ grade: 2, name: 'Difícil' },
+	{ grade: 3, name: 'Bom' },
+	{ grade: 4, name: 'Fácil' },
 ];
 
 /** FSRS card as stored in estado.json (dates as ISO strings). */
@@ -29,7 +29,7 @@ export function isNew(card: FsrsCard | undefined): boolean {
 	return !card || card.state === State.New;
 }
 
-/** "10 min", "3 h", "amanhã", "5 dias", "2 meses", "1 ano". */
+/** "10 min", "3 h", "amanhã", "5 days", "2 meses", "1 ano". */
 export function formatInterval(ms: number): string {
 	const min = Math.max(1, Math.round(ms / 60000));
 	if (min < 60) return `${min} min`;
@@ -37,7 +37,7 @@ export function formatInterval(ms: number): string {
 	if (h < 24) return `${h} h`;
 	const d = Math.round(h / 24);
 	if (d === 1) return 'amanhã';
-	if (d < 31) return `${d} dias`;
+	if (d < 31) return `${d} days`;
 	const m = Math.round(d / 30);
 	if (m < 12) return m === 1 ? '1 mês' : `${m} meses`;
 	const y = Math.round(d / 365);
@@ -57,18 +57,18 @@ export class Scheduler {
 	}
 
 	/** The next card for each grade, plus a label for the buttons. */
-	preview(card: FsrsCard, now: Date, important = false): Record<Nota, { card: FsrsCard; label: string }> {
+	preview(card: FsrsCard, now: Date, important = false): Record<Grade, { card: FsrsCard; label: string }> {
 		const p = this.pick(important).repeat(card, now);
-		const out = {} as Record<Nota, { card: FsrsCard; label: string }>;
-		for (const { nota } of NOTAS) {
-			const next = p[nota].card;
-			out[nota] = { card: next, label: formatInterval(next.due.getTime() - now.getTime()) };
+		const out = {} as Record<Grade, { card: FsrsCard; label: string }>;
+		for (const { grade } of GRADES) {
+			const next = p[grade].card;
+			out[grade] = { card: next, label: formatInterval(next.due.getTime() - now.getTime()) };
 		}
 		return out;
 	}
 
-	apply(card: FsrsCard, nota: Nota, now: Date, important = false): FsrsCard {
-		return this.pick(important).next(card, now, nota).card;
+	apply(card: FsrsCard, grade: Grade, now: Date, important = false): FsrsCard {
+		return this.pick(important).next(card, now, grade).card;
 	}
 
 	retrievability(card: FsrsCard, now: Date): number {

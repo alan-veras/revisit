@@ -1,22 +1,22 @@
-export const TIPOS = ['Pergunta', 'Lacuna', 'Referência', 'Questão'] as const;
-export type Tipo = (typeof TIPOS)[number];
+export const CARD_TYPES = ['Pergunta', 'Lacuna', 'Referência', 'Questão'] as const;
+export type CardType = (typeof CARD_TYPES)[number];
 
 export const AREAS = ['Carreira', 'Academia', 'Desenvolvimento Pessoal', 'Espiritual', 'Lazer'] as const;
 
 /** One flashcard as written in a card file. */
 export interface Card {
 	id: string | null;
-	tipo: Tipo;
-	frente: string;
-	verso: string;
+	type: CardType;
+	front: string;
+	back: string;
 	/** written only when it cannot be read from the source path, or differs */
 	area?: string;
-	assuntos: string[];
+	topics: string[];
 	/** `#importante` and the like: written only when the card has some */
 	tags?: string[];
 	/** also reviewed back to front */
-	reverso?: boolean;
-	fonte: string;
+	reverse?: boolean;
+	source: string;
 	/** card file this card lives in (vault path); set by the store */
 	file?: string;
 	/** first and last line of the block inside its file (0-based, inclusive) */
@@ -24,8 +24,8 @@ export interface Card {
 	end: number;
 }
 
-export function isTipo(value: string): value is Tipo {
-	return (TIPOS as readonly string[]).includes(value);
+export function isCardType(value: string): value is CardType {
+	return (CARD_TYPES as readonly string[]).includes(value);
 }
 
 export const IMPORTANT_TAG = 'importante';

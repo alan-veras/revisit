@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { parseEstadoText, parseLogLines } from '../src/store/parse';
+import { parseStateText, parseLogLines } from '../src/store/parse';
 
-describe('parseEstadoText', () => {
-	it('lê um estado válido', () => {
-		const s = parseEstadoText('{"labcde":{"st":"ativo"},"nota:/caminho/Nota.md":{"st":"ativo"}}');
-		expect(s['labcde']?.st).toBe('ativo');
+describe('parseStateText', () => {
+	it('lê um status válido', () => {
+		const s = parseStateText('{"labcde":{"st":"active"},"note:/caminho/Grade.md":{"st":"active"}}');
+		expect(s['labcde']?.st).toBe('active');
 		expect(Object.keys(s)).toHaveLength(2);
 	});
-	it('estado truncado ou estranho devolve erro ao chamador, não meia configuração', () => {
-		expect(() => parseEstadoText('{"labcde":{"st":"ati')).toThrow();
-		expect(() => parseEstadoText('[]')).toThrow();
-		expect(() => parseEstadoText('null')).toThrow();
+	it('status truncado ou estranho devolve erro ao chamador, não meia configuração', () => {
+		expect(() => parseStateText('{"labcde":{"st":"ati')).toThrow();
+		expect(() => parseStateText('[]')).toThrow();
+		expect(() => parseStateText('null')).toThrow();
 	});
 });
 
 describe('parseLogLines', () => {
-	const line = '{"id":"labcde","t":"2026-11-03T10:00:00Z","nota":3,"segundos":10,"tipo":"Pergunta","novo":false,"extra":false}';
+	const line = '{"id":"labcde","t":"2026-11-03T10:00:00Z","grade":3,"seconds":10,"type":"Pergunta","new":false,"extra":false}';
 	it('lê as linhas boas e conta as ruins, sem abortar', () => {
 		const { entries, bad } = parseLogLines([line, '{"id": truncado', '', line].join('\n'));
 		expect(entries).toHaveLength(2);

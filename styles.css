@@ -87,16 +87,16 @@
 .revisit-table { border-top: 1px solid var(--background-modifier-border); }
 .revisit-tr { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-bottom: 1px solid var(--background-modifier-border); transition: background .12s; }
 .revisit-tr:hover { background: var(--background-modifier-hover); }
-.revisit-tr.is-suspenso .revisit-td-f { text-decoration: line-through; color: var(--text-faint); }
-.revisit-tr.is-suspenso .revisit-td-sub { color: var(--text-faint); }
+.revisit-tr.is-suspended .revisit-td-f { text-decoration: line-through; color: var(--text-faint); }
+.revisit-tr.is-suspended .revisit-td-sub { color: var(--text-faint); }
 .revisit-td-c { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .revisit-td-f { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-ui-small); }
 .revisit-td-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .revisit-st { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 86px; padding: 1px 8px; border-radius: 999px; font-size: var(--font-ui-smaller); font-weight: 600; }
-.revisit-st.is-novo { background: rgba(var(--color-green-rgb), 0.16); color: var(--color-green); }
-.revisit-st.is-aprendendo { background: rgba(var(--color-orange-rgb), 0.16); color: var(--color-orange); }
-.revisit-st.is-revisao { background: hsla(var(--interactive-accent-hsl), 0.16); color: var(--interactive-accent); }
-.revisit-st.is-suspenso { color: var(--text-faint); }
+.revisit-st.is-new { background: rgba(var(--color-green-rgb), 0.16); color: var(--color-green); }
+.revisit-st.is-learning { background: rgba(var(--color-orange-rgb), 0.16); color: var(--color-orange); }
+.revisit-st.is-review { background: hsla(var(--interactive-accent-hsl), 0.16); color: var(--interactive-accent); }
+.revisit-st.is-suspended { color: var(--text-faint); }
 .revisit-st.is-zero { opacity: 0.45; }
 .revisit-td-due { flex: none; width: 64px; text-align: right; font-size: var(--font-ui-smaller); color: var(--text-muted); white-space: nowrap; }
 .revisit-td-n { flex: none; width: 26px; text-align: right; font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }

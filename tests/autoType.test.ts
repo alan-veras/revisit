@@ -12,7 +12,7 @@ tags: []
 Ora, a fé é a certeza daquilo que esperamos e a prova das coisas que não vemos.
 
 ###### 2
-Pois foi por meio dela que os antigos receberam bom testemunho.
+Pois foi por meio dela que os antigos receberam good testemunho.
 `;
 
 describe('initialType', () => {
@@ -30,22 +30,22 @@ describe('bibleReference', () => {
 		expect(bibleReference(HEB, 12)).toBe('Hebreus 11:2');
 	});
 	it('is null outside a Bible note', () => {
-		expect(bibleReference('# Uma nota\n\ntexto', 2)).toBeNull();
+		expect(bibleReference('# Uma grade\n\ntexto', 2)).toBeNull();
 	});
 });
 
 describe('resolveOnSave', () => {
 	it('keeps a written front', () => {
-		expect(resolveOnSave({ tipo: 'Pergunta', frente: ' P? ', verso: ' R ', context: '' })).toEqual({ tipo: 'Pergunta', frente: 'P?', verso: 'R' });
+		expect(resolveOnSave({ type: 'Pergunta', front: ' P? ', back: ' R ', context: '' })).toEqual({ type: 'Pergunta', front: 'P?', back: 'R' });
 	});
 	it('turns an empty front on a short selection into a cloze', () => {
-		const r = resolveOnSave({ tipo: 'Pergunta', frente: '', verso: 'Amazon Bedrock', context: 'Foundation Model as a Service: Amazon Bedrock.' });
-		expect(r).toEqual({ tipo: 'Lacuna', frente: 'Foundation Model as a Service: [...].', verso: 'Amazon Bedrock' });
+		const r = resolveOnSave({ type: 'Pergunta', front: '', back: 'Amazon Bedrock', context: 'Foundation Model as a Service: Amazon Bedrock.' });
+		expect(r).toEqual({ type: 'Lacuna', front: 'Foundation Model as a Service: [...].', back: 'Amazon Bedrock' });
 	});
 	it('refuses an empty front on a long selection and an empty back', () => {
 		const long = 'um dois três quatro cinco seis sete oito nove dez';
-		expect('error' in resolveOnSave({ tipo: 'Pergunta', frente: '', verso: long, context: long })).toBe(true);
-		expect('error' in resolveOnSave({ tipo: 'Pergunta', frente: 'P', verso: ' ', context: '' })).toBe(true);
+		expect('error' in resolveOnSave({ type: 'Pergunta', front: '', back: long, context: long })).toBe(true);
+		expect('error' in resolveOnSave({ type: 'Pergunta', front: 'P', back: ' ', context: '' })).toBe(true);
 	});
 	it('clozeFront without context still hides', () => {
 		expect(clozeFront('', 'x')).toBe('[...]');

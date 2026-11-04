@@ -5,7 +5,7 @@ export function cardStats(log: RevlogEntry[]): Map<string, { ok: number; bad: nu
 	const out = new Map<string, { ok: number; bad: number }>();
 	for (const e of log) {
 		const s = out.get(e.id) ?? { ok: 0, bad: 0 };
-		if (e.nota === 1) s.bad++;
+		if (e.grade === 1) s.bad++;
 		else s.ok++;
 		out.set(e.id, s);
 	}
@@ -28,7 +28,7 @@ export function retentionBy(log: RevlogEntry[], group: (id: string) => string | 
 		if (!g) continue;
 		const r = out.get(g) ?? { ok: 0, total: 0 };
 		r.total++;
-		if (e.nota !== 1) r.ok++;
+		if (e.grade !== 1) r.ok++;
 		out.set(g, r);
 	}
 	return out;
@@ -60,7 +60,7 @@ export function newPerWeek(log: RevlogEntry[], now: Date, weeks = 8): number[] {
 	const thisWeek = mondayOf(now);
 	const seen = new Set<string>();
 	for (const e of log) {
-		if (!e.novo || e.extra || seen.has(e.id)) continue;
+		if (!e.new || e.extra || seen.has(e.id)) continue;
 		seen.add(e.id);
 		const ago = Math.round((thisWeek - mondayOf(new Date(e.t))) / (7 * 86400000));
 		if (ago >= 0 && ago < weeks) out[weeks - 1 - ago] = (out[weeks - 1 - ago] ?? 0) + 1;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CliError, flag, need, parseLote, short, unescape } from '../src/cli/args';
+import { CliError, flag, need, parseBatch, short, unescape } from '../src/cli/args';
 
 describe('args da CLI', () => {
 	it('need exige o valor', () => {
@@ -19,13 +19,13 @@ describe('args da CLI', () => {
 		expect(short('a\n b', 10)).toBe('a b');
 		expect(short('x'.repeat(20), 10)).toHaveLength(10);
 	});
-	it('parseLote lê os blocos e zera os ids', () => {
-		const cards = parseLote('Frente: A\nVerso: B\nTipo: Pergunta\n---\nFrente: C\nVerso: D\nTipo: Lacuna\nFonte: [[x]] ^labcde');
+	it('parseBatch lê os blocos e zera os ids', () => {
+		const cards = parseBatch('Frente: A\nVerso: B\nTipo: Pergunta\n---\nFrente: C\nVerso: D\nTipo: Lacuna\nFonte: [[x]] ^labcde');
 		expect(cards).toHaveLength(2);
 		expect(cards.every((c) => c.id === null)).toBe(true);
-		expect(cards[1]?.tipo).toBe('Lacuna');
+		expect(cards[1]?.type).toBe('Lacuna');
 	});
-	it('parseLote recusa arquivo sem cartões', () => {
-		expect(() => parseLote('nada aqui')).toThrow(CliError);
+	it('parseBatch recusa arquivo sem cartões', () => {
+		expect(() => parseBatch('nada aqui')).toThrow(CliError);
 	});
 });

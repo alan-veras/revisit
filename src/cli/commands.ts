@@ -1,15 +1,15 @@
 import { CliFlags, normalizePath, TFile } from 'obsidian';
 import { areaOf, linkPath } from '../cards/area';
 import { clozes } from '../cards/cloze';
-import { groupBy, normalizeAssunto } from '../cards/format';
+import { groupBy, normalizeTopic } from '../cards/format';
 import { mirrorPath } from '../cards/mirror';
-import { AREAS, Card, isTipo } from '../cards/types';
-import type LembroPlugin from '../main';
+import { AREAS, Card, isCardType } from '../cards/types';
+import type RevisitPlugin from '../main';
 import { forecast } from '../srs/budget';
 import { estimateMinutes, matchesFilter } from '../srs/queue';
-import { cardRow } from '../srs/rows';
+import { CardStatus, cardRow } from '../srs/rows';
 import { cardStats } from '../srs/stats';
-import { CliError, flag, json, need, Params, parseLote, short, unescape } from './args';
+import { CliError, flag, json, need, Params, parseBatch, short, unescape } from './args';
 
 /**
  * `revisit:` commands of the Obsidian CLI, for agents. They read and write cards;
@@ -19,10 +19,19 @@ import { CliError, flag, json, need, Params, parseLote, short, unescape } from '
 interface Command {
 	desc: string;
 	flags: Record<string, string>;
-	run: (p: Params, plugin: LembroPlugin) => Promise<string>;
+	run: (p: Params, plugin: RevisitPlugin) => Promise<string>;
 }
 
 const BOOL_FLAGS = ['dry', 'reativar', 'reverso'];
+
+/** The `estado` flag keeps its old Portuguese values working beside the new English ones. */
+const STATUS_ALIASES: Record<string, CardStatus> = { novo: 'new', aprendendo: 'learning', revisao: 'review', suspenso: 'suspended' };
+
+function statusFilter(p: Params): string | undefined {
+	const v = p.estado?.toLowerCase();
+	if (!v) return undefined;
+	return STATUS_ALIASES[v] ?? v;
+}
 
 function area(p: Params): string | null {
 	const a = p.area?.trim();
@@ -32,30 +41,30 @@ function area(p: Params): string | null {
 	return hit;
 }
 
-function findCard(plugin: LembroPlugin, id: string): Card {
+function findCard(plugin: RevisitPlugin, id: string): Card {
 	const c = plugin.store.cards.find((x) => x.id === id.replace(/^\^/, ''));
 	if (!c) throw new CliError('id', `cartão não encontrado: ${id}`);
 	return c;
 }
 
-function assuntosOf(p: Params): string[] {
-	return (p.assunto ?? '').split(';').map(normalizeAssunto).filter(Boolean);
+function topicsOf(p: Params): string[] {
+	return (p.assunto ?? '').split(';').map(normalizeTopic).filter(Boolean);
 }
 
 /** Card file and derived área for a source link (or none). */
-function placeFor(plugin: LembroPlugin, fonte: string): { path: string; derived: string | null } {
-	const link = linkPath(fonte);
+function placeFor(plugin: RevisitPlugin, source: string): { path: string; derived: string | null } {
+	const link = linkPath(source);
 	const file = link ? plugin.app.metadataCache.getFirstLinkpathDest(link, '') : null;
 	const src = file?.path ?? (link || null);
 	// a source that is itself a card file would be mirrored inside the mirror (Lembro/x/Lembro/x.md)
 	const folder = normalizePath(plugin.settings.folder);
 	if (src && (src === folder || src.startsWith(folder + '/')))
-		throw new CliError('fonte', `a fonte ${fonte} aponta para um arquivo de cartões do Lembro (${src}); use a nota de origem`);
+		throw new CliError('fonte', `a fonte ${source} aponta para um arquivo de cartões do Lembro (${src}); use a nota de origem`);
 	return { path: mirrorPath(src, plugin.settings.folder), derived: src ? areaOf(src, plugin.settings.areaMap) : null };
 }
 
-function tipoOf(value: string): Card['tipo'] {
-	if (!isTipo(value)) throw new CliError('parametro', `tipo inválido: ${value} (use Pergunta, Lacuna, Referência, Questão)`);
+function typeOf(value: string): Card['type'] {
+	if (!isCardType(value)) throw new CliError('parametro', `tipo inválido: ${value} (use Pergunta, Lacuna, Referência, Questão)`);
 	return value;
 }
 
@@ -69,13 +78,13 @@ const COMMANDS: Record<string, Command> = {
 			const items = plugin.items().filter((it) => matchesFilter(it, a));
 			return json({
 				area: a ?? 'Tudo',
-				cabem: s.length,
-				minutos: estimateMinutes(s, plugin.secs()),
-				orcamento: plugin.settings.budgetMinutes,
-				proximos7: forecast(items, plugin.secs(), new Date()),
-				novos: (() => {
+				fit: s.length,
+				minutes: estimateMinutes(s, plugin.secs()),
+				budget: plugin.settings.budgetMinutes,
+				next7: forecast(items, plugin.secs(), new Date()),
+				new: (() => {
 					const q = plugin.quota();
-					return { total: q.total, encolheu: q.reduced, areas: Object.fromEntries(q.areas.map((x) => [x.area, { usados: x.usados, teto: x.teto, cota: x.cota }])) };
+					return { total: q.total, reduced: q.reduced, areas: Object.fromEntries(q.areas.map((x) => [x.area, { used: x.used, cap: x.cap, quota: x.quota }])) };
 				})(),
 			});
 		},
@@ -88,26 +97,27 @@ const COMMANDS: Record<string, Command> = {
 			const stats = cardStats(plugin.store.log);
 			const nota = p.nota?.toLowerCase();
 			const busca = p.busca?.toLowerCase();
+			const status = statusFilter(p);
 			const rows = plugin
 				.items()
 				.filter((it) => matchesFilter(it, a, p.assunto))
 				.filter((it) => !nota || (plugin.resolveSource(it.card) ?? '').toLowerCase().includes(nota))
-				.filter((it) => !busca || `${it.card.frente}\n${it.card.verso}`.toLowerCase().includes(busca))
+				.filter((it) => !busca || `${it.card.front}\n${it.card.back}`.toLowerCase().includes(busca))
 				.map((it) => cardRow(it, stats, new Date()))
-				.filter((r) => !p.estado || r.estado === p.estado)
+				.filter((r) => !status || r.status === status)
 				.slice(0, Number(p.limite) || 50)
 				.map((r) => ({
 					id: r.id,
-					lado: r.lado,
-					frente: short(r.frente),
-					tipo: r.tipo,
+					side: r.side,
+					front: short(r.front),
+					type: r.type,
 					area: r.area,
-					assunto: r.assuntos,
-					fonte: plugin.resolveSource(r.item.card),
-					estado: r.estado,
-					proxima: r.proxima ? r.proxima.toISOString().slice(0, 10) : null,
-					acertos: r.ok,
-					erros: r.bad,
+					topics: r.topics,
+					source: plugin.resolveSource(r.item.card),
+					status: r.status,
+					next: r.due ? r.due.toISOString().slice(0, 10) : null,
+					correct: r.ok,
+					wrong: r.bad,
 				}));
 			return json(rows);
 		},
@@ -117,34 +127,34 @@ const COMMANDS: Record<string, Command> = {
 		flags: { id: 'Id do cartão (lxxxxx)' },
 		run: async (p, plugin) => {
 			const c = findCard(plugin, need(p, 'id'));
-			return json({ id: c.id, tipo: c.tipo, frente: c.frente, verso: c.verso, area: plugin.areaOfCard(c), assunto: c.assuntos, fonte: c.fonte, arquivo: c.file });
+			return json({ id: c.id, type: c.type, front: c.front, back: c.back, area: plugin.areaOfCard(c), topics: c.topics, source: c.source, file: c.file });
 		},
 	},
 	novo: {
 		desc: 'Cria um cartão no arquivo-espelho da fonte',
 		flags: { frente: 'Frente (\\n quebra linha)', verso: 'Verso (vazio vale quando a frente tem ==lacuna==)', fonte: 'Link [[...]] da origem', assunto: 'Assunto; outro', tipo: 'Pergunta, Lacuna, Referência, Questão', area: 'Dedicação, se a fonte não disser', reverso: 'Revisar também do verso para a frente', dry: 'Só mostra, não grava' },
 		run: async (p, plugin) => {
-			const tipo = tipoOf(p.tipo ?? 'Pergunta');
-			const fonte = p.fonte ?? '';
-			const { path, derived } = placeFor(plugin, fonte);
+			const type = typeOf(p.tipo ?? 'Pergunta');
+			const source = p.fonte ?? '';
+			const { path, derived } = placeFor(plugin, source);
 			const a = area(p);
-			const frente = unescape(need(p, 'frente'));
-			const verso = p.verso && p.verso !== 'true' ? unescape(p.verso) : '';
-			if (!verso && !clozes(frente).length) throw new CliError('parametro', 'falta verso= (ou marque a lacuna com ==assim== na frente)');
+			const front = unescape(need(p, 'frente'));
+			const back = p.verso && p.verso !== 'true' ? unescape(p.verso) : '';
+			if (!back && !clozes(front).length) throw new CliError('parametro', 'falta verso= (ou marque a lacuna com ==assim== na frente)');
 			const card = {
 				id: null,
-				tipo,
-				frente,
-				verso,
+				type,
+				front,
+				back,
 				...(a && a !== derived ? { area: a } : {}),
-				assuntos: assuntosOf(p),
-				...(flag(p, 'reverso') ? { reverso: true } : {}),
-				fonte,
+				topics: topicsOf(p),
+				...(flag(p, 'reverso') ? { reverse: true } : {}),
+				source,
 			};
-			if (flag(p, 'dry')) return json({ dry: true, arquivo: path, area: a ?? derived, cartao: card });
+			if (flag(p, 'dry')) return json({ dry: true, file: path, area: a ?? derived, card });
 			const id = await plugin.store.addCard(path, card);
 			await plugin.reload();
-			return json({ ok: true, id, arquivo: path });
+			return json({ ok: true, id, file: path });
 		},
 	},
 	lote: {
@@ -154,13 +164,13 @@ const COMMANDS: Record<string, Command> = {
 			const path = normalizePath(need(p, 'arquivo'));
 			const file = plugin.app.vault.getAbstractFileByPath(path);
 			if (!(file instanceof TFile)) throw new CliError('arquivo', `arquivo não encontrado: ${path}`);
-			const cards = parseLote(await plugin.app.vault.cachedRead(file)).map((c) => ({
+			const cards = parseBatch(await plugin.app.vault.cachedRead(file)).map((c) => ({
 				...c,
-				fonte: c.fonte || (p.fonte ?? ''),
-				assuntos: c.assuntos.length ? c.assuntos : assuntosOf(p),
+				source: c.source || (p.fonte ?? ''),
+				topics: c.topics.length ? c.topics : topicsOf(p),
 			}));
-			const dests = cards.map((c) => placeFor(plugin, c.fonte).path);
-			if (flag(p, 'dry')) return json({ dry: true, cartoes: cards.length, arquivos: [...new Set(dests)], previa: cards.slice(0, 5).map((c) => ({ frente: short(c.frente), tipo: c.tipo, assunto: c.assuntos })) });
+			const dests = cards.map((c) => placeFor(plugin, c.source).path);
+			if (flag(p, 'dry')) return json({ dry: true, cards: cards.length, files: [...new Set(dests)], preview: cards.slice(0, 5).map((c) => ({ front: short(c.front), type: c.type, topics: c.topics })) });
 			// one write per destination file, then check that every card landed; retry the missing once
 			const items = cards.map((card, i) => ({ card, dest: dests[i] as string }));
 			const written: typeof items = [];
@@ -177,8 +187,8 @@ const COMMANDS: Record<string, Command> = {
 				missing = written.filter((it) => !present().has(it.card.id));
 			}
 			const ids = written.map((it) => it.card.id as string);
-			if (missing.length) return json({ ok: false, criados: ids.length - missing.length, faltando: missing.map((it) => ({ id: it.card.id, frente: short(it.card.frente), arquivo: it.dest })) });
-			return json({ ok: true, criados: ids.length, ids });
+			if (missing.length) return json({ ok: false, created: ids.length - missing.length, missing: missing.map((it) => ({ id: it.card.id, front: short(it.card.front), file: it.dest })) });
+			return json({ ok: true, created: ids.length, ids });
 		},
 	},
 	editar: {
@@ -189,12 +199,12 @@ const COMMANDS: Record<string, Command> = {
 			const { start: _s, end: _e, file: _f, ...rest } = c;
 			const next = {
 				...rest,
-				tipo: tipoOf(p.tipo ?? c.tipo),
-				frente: p.frente ? unescape(p.frente) : c.frente,
-				verso: p.verso ? unescape(p.verso) : c.verso,
-				assuntos: p.assunto ? assuntosOf(p) : c.assuntos,
+				type: typeOf(p.tipo ?? c.type),
+				front: p.frente ? unescape(p.frente) : c.front,
+				back: p.verso ? unescape(p.verso) : c.back,
+				topics: p.assunto ? topicsOf(p) : c.topics,
 			};
-			if (flag(p, 'dry')) return json({ dry: true, cartao: next });
+			if (flag(p, 'dry')) return json({ dry: true, card: next });
 			await plugin.store.updateCard(c, next);
 			await plugin.reload();
 			return json({ ok: true, id: c.id });
@@ -205,12 +215,12 @@ const COMMANDS: Record<string, Command> = {
 		flags: { id: 'Id do cartão', reativar: 'Reativa em vez de suspender', dry: 'Só mostra, não grava' },
 		run: async (p, plugin) => {
 			const id = findCard(plugin, need(p, 'id')).id as string;
-			const st = flag(p, 'reativar') ? 'ativo' : 'suspenso';
-			if (flag(p, 'dry')) return json({ dry: true, id, estado: st });
+			const st = flag(p, 'reativar') ? 'active' : 'suspended';
+			if (flag(p, 'dry')) return json({ dry: true, id, status: st });
 			plugin.store.state[id] = { ...(plugin.store.state[id] ?? {}), st };
 			await plugin.store.saveState();
 			plugin.updateStatus();
-			return json({ ok: true, id, estado: st });
+			return json({ ok: true, id, status: st });
 		},
 	},
 	revisar: {
@@ -221,12 +231,12 @@ const COMMANDS: Record<string, Command> = {
 			if (minutes !== undefined && !(minutes > 0)) throw new CliError('parametro', `minutos inválido: ${p.minutos}`);
 			const a = area(p);
 			await plugin.review(a, minutes);
-			return json({ ok: true, cabem: plugin.session(a, minutes).length });
+			return json({ ok: true, fit: plugin.session(a, minutes).length });
 		},
 	},
 };
 
-export async function runCli(plugin: LembroPlugin, cmd: Command, params: Params): Promise<string> {
+export async function runCli(plugin: RevisitPlugin, cmd: Command, params: Params): Promise<string> {
 	try {
 		await plugin.reload();
 		return await cmd.run({ ...params }, plugin);
@@ -237,7 +247,7 @@ export async function runCli(plugin: LembroPlugin, cmd: Command, params: Params)
 }
 
 /** Registers every command as `revisit:<nome>` in the Obsidian CLI. */
-export function registerCli(plugin: LembroPlugin): void {
+export function registerCli(plugin: RevisitPlugin): void {
 	for (const [name, cmd] of Object.entries(COMMANDS)) {
 		const flags: CliFlags = Object.fromEntries(
 			Object.entries(cmd.flags).map(([k, description]) => [k, BOOL_FLAGS.includes(k) ? { description } : { value: `<${k}>`, description }]),

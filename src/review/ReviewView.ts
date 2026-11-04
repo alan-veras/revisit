@@ -1,14 +1,14 @@
-import { assuntosLabel } from '../cards/format';
+import { topicsLabel } from '../cards/format';
 import { Component, ItemView, MarkdownRenderer, Notice, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { sectionOf } from '../cards/section';
 import { clozes, hideCloze } from '../cards/cloze';
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
-import type LembroPlugin from '../main';
+import type RevisitPlugin from '../main';
 import { estimateMinutes, QueueItem, sessionRequeue } from '../srs/queue';
 import { checkCloze, hintWords } from './answer';
 import { IMPORTANT_TAG, isImportant } from '../cards/types';
-import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
+import { fromStored, freshCard, isNew, Grade, GRADES, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
@@ -30,11 +30,11 @@ export class ReviewView extends ItemView {
 	private revealed = false;
 	private shownAt = 0;
 	private startedAt = 0;
-	private results: Record<Nota, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+	private results: Record<Grade, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
 	private wrong: QueueItem[] = [];
 	private undo: Undo[] = [];
 	/** grades undone with ← that → gives back, newest last */
-	private redo: Nota[] = [];
+	private redo: Grade[] = [];
 	private label = 'Tudo';
 	private ended = false;
 	/** extra session: grades go to the log only, the schedule stays */
@@ -47,7 +47,7 @@ export class ReviewView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: LembroPlugin,
+		private plugin: RevisitPlugin,
 	) {
 		super(leaf);
 	}
@@ -66,7 +66,7 @@ export class ReviewView extends ItemView {
 		this.contentEl.addClass('revisit-review');
 		this.scope = new Scope(this.app.scope);
 		this.scope?.register([], ' ', (e) => this.key(e, () => this.flip()));
-		for (const { nota } of NOTAS) this.scope?.register([], String(nota), (e) => this.key(e, () => void this.grade(nota)));
+		for (const { grade } of GRADES) this.scope?.register([], String(grade), (e) => this.key(e, () => void this.grade(grade)));
 		this.scope?.register([], 'Enter', (e) => this.key(e, () => this.flip()));
 		this.scope?.register([], 'e', (e) => this.key(e, () => this.edit()));
 		this.scope?.register([], 'i', (e) => this.key(e, () => void this.toggleImportant()));
@@ -121,10 +121,10 @@ export class ReviewView extends ItemView {
 		return item.fsrs ?? freshCard(new Date());
 	}
 
-	private previewCache: { key: string; fsrs: FsrsCard | undefined; preview: Record<Nota, { card: FsrsCard; label: string }> } | null = null;
+	private previewCache: { key: string; fsrs: FsrsCard | undefined; preview: Record<Grade, { card: FsrsCard; label: string }> } | null = null;
 
 	/** Intervals shown on the grade buttons, frozen while the card is the same: the fuzz does not reshuffle on every redraw. */
-	private previewOf(item: QueueItem): Record<Nota, { card: FsrsCard; label: string }> {
+	private previewOf(item: QueueItem): Record<Grade, { card: FsrsCard; label: string }> {
 		if (this.previewCache && this.previewCache.key === item.key && this.previewCache.fsrs === item.fsrs) return this.previewCache.preview;
 		const preview = this.plugin.scheduler.preview(this.fsrsOf(item), new Date(), isImportant(item.card));
 		this.previewCache = { key: item.key, fsrs: item.fsrs, preview };
@@ -155,7 +155,7 @@ export class ReviewView extends ItemView {
 		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'revisit-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
-		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'revisit-back-btn', attr: { title: 'Avança de novo com a mesma avaliação (→)' } });
+		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'revisit-back-btn', attr: { title: 'Avança de new com a mesma avaliação (→)' } });
 		nextBtn.disabled = !this.redo.length;
 		nextBtn.onclick = () => void this.redoNext();
 		headLeft.createSpan({ text: this.extra ? `${this.label} · extra, não muda a agenda` : this.label });
@@ -167,20 +167,20 @@ export class ReviewView extends ItemView {
 		const scene = root.createDiv({ cls: 'revisit-scene' });
 		const card = scene.createDiv({ cls: 'revisit-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
-		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + assuntosLabel(item.card.assuntos) : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}${sectionOf(item.card.fonte) ? ' · § ' + sectionOf(item.card.fonte) : ''}`;
-		const hole = item.cloze !== undefined ? clozes(item.card.frente)[item.cloze] : undefined;
-		const ask = hole !== undefined ? hideCloze(item.card.frente, item.cloze as number) : item.reverso ? item.card.verso : item.card.frente;
-		const answer = hole ?? (item.reverso ? item.card.frente : item.card.verso);
-		const extraBack = hole !== undefined ? item.card.verso : '';
+		const tag = `${item.area ?? 'Sem área'}${item.card.topics.length ? ' · ' + topicsLabel(item.card.topics) : ''} · ${item.card.type}${item.reverse ? ' · reverse' : ''}${sectionOf(item.card.source) ? ' · § ' + sectionOf(item.card.source) : ''}`;
+		const hole = item.cloze !== undefined ? clozes(item.card.front)[item.cloze] : undefined;
+		const ask = hole !== undefined ? hideCloze(item.card.front, item.cloze as number) : item.reverse ? item.card.back : item.card.front;
+		const answer = hole ?? (item.reverse ? item.card.front : item.card.back);
+		const extraBack = hole !== undefined ? item.card.back : '';
 
 		const front = card.createDiv({ cls: 'revisit-face revisit-front' });
 		const ftag = front.createDiv({ cls: 'revisit-tag', text: tag });
 		if (this.plugin.settings.showNewBadge && isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'revisit-new-badge', text: 'Novo' }));
-		const isQuestao = item.card.tipo === 'Questão' && !item.reverso;
-		const frente = isQuestao ? splitAlternatives(ask) : ask;
-		const q = front.createDiv({ cls: 'revisit-q' + (isQuestao ? ' is-question' : '') });
-		void MarkdownRenderer.render(this.app, frente, q, sourcePath, this.render);
-		const typeCloze = item.card.tipo === 'Lacuna' && !item.reverso;
+		const isQuestion = item.card.type === 'Questão' && !item.reverse;
+		const questionText = isQuestion ? splitAlternatives(ask) : ask;
+		const q = front.createDiv({ cls: 'revisit-q' + (isQuestion ? ' is-question' : '') });
+		void MarkdownRenderer.render(this.app, questionText, q, sourcePath, this.render);
+		const typeCloze = item.card.type === 'Lacuna' && !item.reverse;
 		if (typeCloze) {
 			const input = front.createEl('input', { type: 'text', cls: 'revisit-type', attr: { placeholder: 'Digite a resposta' } });
 			input.value = this.typed;
@@ -190,7 +190,7 @@ export class ReviewView extends ItemView {
 		}
 		if (this.canHint(item)) {
 			const dica = front.createDiv({ cls: 'revisit-hint' });
-			if (this.hint) dica.createDiv({ cls: 'revisit-hint-text', text: hintWords(item.card.verso, this.hint) });
+			if (this.hint) dica.createDiv({ cls: 'revisit-hint-text', text: hintWords(item.card.back, this.hint) });
 			const btn = dica.createEl('button', { text: 'Dica', attr: { 'aria-label': `Mostra mais ${this.plugin.settings.hintWords} palavras do texto` } });
 			btn.onclick = (e) => {
 				e.stopPropagation();
@@ -202,7 +202,7 @@ export class ReviewView extends ItemView {
 		const back = card.createDiv({ cls: 'revisit-face revisit-back' });
 		back.createDiv({ cls: 'revisit-tag', text: tag });
 		const bq = back.createDiv({ cls: 'revisit-backq' });
-		void MarkdownRenderer.render(this.app, frente, bq, sourcePath, this.render);
+		void MarkdownRenderer.render(this.app, questionText, bq, sourcePath, this.render);
 		const check = typeCloze ? (this.typed.trim() ? checkCloze(this.typed, answer) : null) : null;
 		if (check !== null) {
 			back.createDiv({ cls: 'revisit-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${this.typed.trim()}` });
@@ -210,9 +210,9 @@ export class ReviewView extends ItemView {
 		const a = back.createDiv({ cls: 'revisit-a' });
 		void MarkdownRenderer.render(this.app, answer, a, sourcePath, this.render);
 		if (extraBack) void MarkdownRenderer.render(this.app, extraBack, back.createDiv({ cls: 'revisit-muted' }), sourcePath, this.render);
-		if (item.card.fonte) {
+		if (item.card.source) {
 			const src = back.createDiv({ cls: 'revisit-src' });
-			void MarkdownRenderer.render(this.app, `Fonte: ${item.card.fonte}`, src, sourcePath, this.render);
+			void MarkdownRenderer.render(this.app, `Fonte: ${item.card.source}`, src, sourcePath, this.render);
 		}
 		scene.onclick = (e) => {
 			if ((e.target as HTMLElement).closest('a')) return;
@@ -221,17 +221,17 @@ export class ReviewView extends ItemView {
 
 		const grades = root.createDiv({ cls: 'revisit-grades' + (this.revealed ? ' is-on' : '') });
 		const preview = this.previewOf(item);
-		for (const { nota, nome } of NOTAS) {
-			const b = grades.createEl('button', { cls: `revisit-g${nota}` });
-			b.createEl('b', { text: nome });
-			b.createEl('small', { text: preview[nota].label });
-			b.onclick = () => void this.grade(nota);
+		for (const { grade, name } of GRADES) {
+			const b = grades.createEl('button', { cls: `revisit-g${grade}` });
+			b.createEl('b', { text: name });
+			b.createEl('small', { text: preview[grade].label });
+			b.onclick = () => void this.grade(grade);
 		}
 		const tools = root.createDiv({ cls: 'revisit-tools' });
 		const skipBtn = tools.createEl('button', { text: 'Pular', attr: { 'aria-label': 'Manda o cartão para o fim da sessão, sem avaliar' } });
 		skipBtn.disabled = this.index >= this.queue.length - 1;
 		skipBtn.onclick = () => this.skip();
-		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
+		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como new' } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
 		root.createDiv({ cls: 'revisit-keys', text: 'Espaço vira · 1 a 4 avaliam · E edita · Q encerra' });
@@ -261,7 +261,7 @@ export class ReviewView extends ItemView {
 			list.createEl('h4', { text: 'Errados hoje' });
 			for (const it of this.wrong) {
 				const row = list.createDiv({ cls: 'revisit-wrong-row' });
-				row.createSpan({ text: it.card.frente.replace(/\s+/g, ' ').slice(0, 90) });
+				row.createSpan({ text: it.card.front.replace(/\s+/g, ' ').slice(0, 90) });
 				row.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(it.card);
 			}
 		}
@@ -273,7 +273,7 @@ export class ReviewView extends ItemView {
 
 	/** A Referência asked from the reference: the first words of the text can be revealed. */
 	private canHint(item: QueueItem): boolean {
-		return item.card.tipo === 'Referência' && !item.reverso && item.cloze === undefined;
+		return item.card.type === 'Referência' && !item.reverse && item.cloze === undefined;
 	}
 
 	/** Shows three more words of the back on the front. */
@@ -297,7 +297,7 @@ export class ReviewView extends ItemView {
 		if (this.revealed) this.contentEl.querySelector('.revisit-grades')?.addClass('is-on');
 	}
 
-	private async grade(nota: Nota, fromRedo = false): Promise<void> {
+	private async grade(grade: Grade, fromRedo = false): Promise<void> {
 		const item = this.current();
 		if (this.ended || !item || !this.revealed || !item.card.id) return;
 		if (!fromRedo) this.redo = [];
@@ -307,19 +307,19 @@ export class ReviewView extends ItemView {
 		const now = new Date();
 		const wasNew = isNew(item.fsrs);
 		const prevCard = this.fsrsOf(item);
-		const next = this.plugin.scheduler.apply(prevCard, nota, now, isImportant(item.card));
-		if (!this.extra) store.state[id] = { st: 'ativo', fsrs: toStored(next) };
+		const next = this.plugin.scheduler.apply(prevCard, grade, now, isImportant(item.card));
+		if (!this.extra) store.state[id] = { st: 'active', fsrs: toStored(next) };
 		try {
 			await store.saveState();
 			await store.appendLog({
 				id,
 				t: now.toISOString(),
-				nota,
-				segundos: Math.round((Date.now() - this.shownAt) / 1000),
-				tipo: item.card.tipo,
-				novo: wasNew,
+				grade,
+				seconds: Math.round((Date.now() - this.shownAt) / 1000),
+				type: item.card.type,
+				new: wasNew,
 				extra: this.extra,
-				estado: prevCard.state,
+				state: prevCard.state,
 			});
 		} catch (e) {
 			new Notice(`Lembro: não consegui gravar (${e instanceof Error ? e.message : String(e)})`);
@@ -327,7 +327,7 @@ export class ReviewView extends ItemView {
 		}
 		if (!this.extra) item.fsrs = next;
 		// a card whose next due falls inside the session comes back a few cards ahead
-		const at = sessionRequeue({ extra: this.extra, nota, queue: this.queue, index: this.index, due: next.due, now, secs: this.plugin.secs(), gap: this.plugin.settings.requeueGap });
+		const at = sessionRequeue({ extra: this.extra, grade, queue: this.queue, index: this.index, due: next.due, now, secs: this.plugin.secs(), gap: this.plugin.settings.requeueGap });
 		let copy: QueueItem | undefined;
 		if (at >= 0) {
 			copy = { ...item };
@@ -336,8 +336,8 @@ export class ReviewView extends ItemView {
 		this.undo.push({ index: this.index, id, before, requeuedItem: copy });
 		this.typed = '';
 		this.hint = 0;
-		this.results[nota]++;
-		if (nota === 1 && !this.wrong.some((w) => w.key === item.key)) this.wrong.push(item);
+		this.results[grade]++;
+		if (grade === 1 && !this.wrong.some((w) => w.key === item.key)) this.wrong.push(item);
 		this.index++;
 		this.flipped = false;
 		this.revealed = false;
@@ -358,10 +358,10 @@ export class ReviewView extends ItemView {
 		await store.saveState();
 		const last = store.log[store.log.length - 1];
 		if (last && last.id === u.id) {
-			const nota = last.nota as Nota;
-			this.redo.push(nota);
-			this.results[nota]--;
-			if (nota === 1) this.wrong = this.wrong.filter((w) => w.key !== u.id);
+			const grade = last.grade as Grade;
+			this.redo.push(grade);
+			this.results[grade]--;
+			if (grade === 1) this.wrong = this.wrong.filter((w) => w.key !== u.id);
 			await store.popLog();
 		}
 		const item = this.queue[u.index];
@@ -379,10 +379,10 @@ export class ReviewView extends ItemView {
 
 	/** → after ←: gives the card back the grade it had, and moves on. */
 	private async redoNext(): Promise<void> {
-		const nota = this.redo.pop();
-		if (nota === undefined || this.ended || !this.current()) return;
+		const grade = this.redo.pop();
+		if (grade === undefined || this.ended || !this.current()) return;
 		this.revealed = true;
-		await this.grade(nota, true);
+		await this.grade(grade, true);
 	}
 
 	/** Puts the card at the end of the session without grading it. */
@@ -436,9 +436,9 @@ export class ReviewView extends ItemView {
 		const item = this.current();
 		if (!item?.card.id) return;
 		const store = this.plugin.store;
-		store.state[item.card.id] = { ...(store.state[item.card.id] ?? {}), st: 'suspenso' };
+		store.state[item.card.id] = { ...(store.state[item.card.id] ?? {}), st: 'suspended' };
 		await store.saveState();
-		new Notice('Cartão suspenso');
+		new Notice('Cartão suspended');
 		const cid = item.card.id;
 		this.queue = this.queue.filter((it, i) => i < this.index || it.card.id !== cid);
 		this.flipped = false;

@@ -3,15 +3,15 @@ import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, r
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
-import { Releitura } from '../notes/reread';
-import { parseEstadoText, parseLogLines } from './parse';
+import { Reread } from '../notes/reread';
+import { parseStateText, parseLogLines } from './parse';
 
-export type Estado = 'ativo' | 'suspenso';
+export type Estado = 'active' | 'suspended';
 
 export interface CardState {
 	fsrs?: StoredFsrs;
-	/** notes to reread live here too, under the key `nota:<path>` */
-	releitura?: Releitura;
+	/** notes to reread live here too, under the key `note:<path>` */
+	reread?: Reread;
 	st: Estado;
 }
 
@@ -47,11 +47,11 @@ export class Store {
 	}
 
 	/** estado.json first; when it is unreadable, the last good copy written before it. */
-	private async readEstado(): Promise<Record<string, CardState>> {
+	private async readState(): Promise<Record<string, CardState>> {
 		for (const path of [this.statePath, this.backupPath]) {
 			try {
 				if (!(await this.app.vault.adapter.exists(path))) continue;
-				return parseEstadoText(await this.app.vault.adapter.read(path));
+				return parseStateText(await this.app.vault.adapter.read(path));
 			} catch (e) {
 				new Notice(`Lembro: ${path} está ilegível (${e instanceof Error ? e.message : String(e)}); tentando o backup.`);
 			}
@@ -61,7 +61,7 @@ export class Store {
 
 	async load(): Promise<void> {
 		const adapter = this.app.vault.adapter;
-		this.state = await this.readEstado();
+		this.state = await this.readState();
 		this.lastSavedState = JSON.stringify(this.state);
 		this.log = [];
 		if (await adapter.exists(this.logPath)) {

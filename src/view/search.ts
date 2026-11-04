@@ -7,8 +7,8 @@ export function fold(text: string): string {
 }
 
 /** Does the query show up in any field of the card, without accents and case? Empty query matches everything. */
-export function matchesCard(c: { frente: string; verso: string; assuntos: string[]; fonte: string }, q: string): boolean {
+export function matchesCard(c: { front: string; back: string; topics: string[]; source: string }, q: string): boolean {
 	const needle = fold(q.trim());
 	if (!needle) return true;
-	return [c.frente, c.verso, c.assuntos.join('; '), c.fonte].some((t) => fold(t).includes(needle));
+	return [c.front, c.back, c.topics.join('; '), c.source].some((t) => fold(t).includes(needle));
 }

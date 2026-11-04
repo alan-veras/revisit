@@ -1,32 +1,32 @@
-import { assuntosLabel } from '../cards/format';
+import { topicsLabel } from '../cards/format';
 import { ItemView, Menu, Notice, setIcon, setTooltip, TFile, WorkspaceLeaf } from 'obsidian';
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
-import { assuntoTree, TreeNode } from '../srs/tree';
+import { topicTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
-import { cardRow, EstadoCartao, estadoOf, rowOrder } from '../srs/rows';
+import { cardRow, CardStatus, statusOf, rowOrder } from '../srs/rows';
 import { cardStats, retentionBy, reviewsPerDay } from '../srs/stats';
 import { matchesCard } from './search';
 import { AREAS } from '../cards/types';
-import type LembroPlugin from '../main';
+import type RevisitPlugin from '../main';
 import { estimateMinutes, matchesFilter, QueueItem } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PANEL = 'revisit-painel';
 
-const ESTADOS: (readonly [EstadoCartao | 'todos', string])[] = [
-	['todos', 'Todos os estados'],
-	['novo', 'Novo'],
-	['aprendendo', 'Aprendendo'],
-	['revisao', 'Revisão'],
-	['suspenso', 'Suspenso'],
+const STATUSES: (readonly [CardStatus | 'all', string])[] = [
+	['all', 'Todos os estados'],
+	['new', 'Novo'],
+	['learning', 'Aprendendo'],
+	['review', 'Revisão'],
+	['suspended', 'Suspenso'],
 ];
-const ESTADO_LABEL: Record<EstadoCartao, string> = { novo: 'novo', aprendendo: 'aprendendo', revisao: 'revisão', suspenso: 'suspenso' };
+const STATUS_LABEL: Record<CardStatus, string> = { new: 'new', learning: 'learning', review: 'revisão', suspended: 'suspended' };
 
 /** One screen: what fits today, the browser, the notes and the progress. */
 export class PanelView extends ItemView {
 	private q = '';
 	/** browser filters */
-	private estado: EstadoCartao | 'todos' = 'todos';
+	private status: CardStatus | 'all' = 'all';
 	private areaF: string | null = null;
 	private limit = 100;
 	/** tree rows opened (Área or Área > Assunto paths) */
@@ -37,7 +37,7 @@ export class PanelView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: LembroPlugin,
+		private plugin: RevisitPlugin,
 	) {
 		super(leaf);
 	}
@@ -76,7 +76,7 @@ export class PanelView extends ItemView {
 		const today = p.session(null);
 		const hero = wrap.createDiv({ cls: 'revisit-hero' });
 		hero.createDiv({ cls: 'revisit-big', text: String(today.length) });
-		hero.createDiv({ cls: 'revisit-muted', text: today.length ? `${today.length === 1 ? 'cartão cabe' : 'cartões cabem'} hoje · uns ${Math.max(1, estimateMinutes(today, p.secs()))} min` : 'nada para hoje' });
+		hero.createDiv({ cls: 'revisit-muted', text: today.length ? `${today.length === 1 ? 'cartão cabe' : 'cartões fit'} hoje · uns ${Math.max(1, estimateMinutes(today, p.secs()))} min` : 'nada para hoje' });
 		const go = hero.createEl('button', { text: 'Revisar', cls: 'mod-cta revisit-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.review(null);
@@ -87,13 +87,13 @@ export class PanelView extends ItemView {
 	/** Started once: areas with something for today open on the first draw. */
 	private seeded = false;
 
-	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's cota as a small meter; an open parent shows only its name. */
+	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's quota as a small meter; an open parent shows only its name. */
 	private drawDecks(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const q = p.quota();
-		const items = p.items().filter((it) => !it.reverso && !it.cloze);
-		const tree = assuntoTree(items.filter((it) => !it.suspended));
-		const suspended = assuntoTree(items.filter((it) => it.suspended));
+		const items = p.items().filter((it) => !it.reverse && !it.cloze);
+		const tree = topicTree(items.filter((it) => !it.suspended));
+		const suspended = topicTree(items.filter((it) => it.suspended));
 		const suspendedOf = (path: string) => {
 			const find = (ns: TreeNode[]): number => {
 				for (const n of ns) {
@@ -114,7 +114,7 @@ export class PanelView extends ItemView {
 
 		const list = wrap.createDiv({ cls: 'revisit-list' });
 		const row = (node: TreeNode, depth: number) => {
-			const s = p.session(node.area, undefined, false, node.assunto);
+			const s = p.session(node.area, undefined, false, node.topic);
 			const newCount = s.filter((it) => isNew(it.fsrs)).length;
 			const toReview = s.length - newCount;
 			const kids = node.children.length > 0;
@@ -130,38 +130,38 @@ export class PanelView extends ItemView {
 			const summary = !(kids && open);
 			const pills = r.createSpan({ cls: 'revisit-li-pills' });
 			if (summary && toReview) setTooltip(pills.createSpan({ cls: 'revisit-np is-due', text: String(toReview) }), `${toReview} para revisar hoje`);
-			if (summary && newCount) setTooltip(pills.createSpan({ cls: 'revisit-np is-new', text: String(newCount) }), `${newCount} ${newCount === 1 ? 'novo entra' : 'novos entram'} hoje`);
+			if (summary && newCount) setTooltip(pills.createSpan({ cls: 'revisit-np is-new', text: String(newCount) }), `${newCount} ${newCount === 1 ? 'new entra' : 'novos entram'} hoje`);
 
 			// nothing for today: say when the next review falls, so the row is never mute
 			if (summary && !s.length) {
 				const next = items
-					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === 'Sem área' ? null : node.area, node.assunto))
+					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === 'Sem área' ? null : node.area, node.topic))
 					.reduce<Date | null>((m, it) => (it.fsrs && (!m || it.fsrs.due < m) ? it.fsrs.due : m), null);
 				if (next) setTooltip(r.createSpan({ cls: 'revisit-li-next', text: untilLabel(next, new Date()) }), `Próxima revisão: ${next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`);
 			}
 			const total = r.createSpan({ cls: 'revisit-li-total', text: summary ? String(node.cards) : '' });
-			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão ativo' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
+			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'cartão active' : 'cartões ativos'}${susp ? ` · ${susp} suspensos` : ''}`);
 
-			const cota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
+			const quota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
 			const meter = r.createSpan({ cls: 'revisit-li-quota' });
-			if (cota) {
-				const full = cota.teto > 0 && cota.livres === 0;
-				const paused = cota.cota === 0;
+			if (quota) {
+				const full = quota.cap > 0 && quota.free === 0;
+				const paused = quota.quota === 0;
 				if (full) meter.addClass('is-full');
 				const bar = meter.createSpan({ cls: 'revisit-li-bar' });
-				bar.createEl('i').style.width = `${cota.teto ? Math.min(100, (cota.usados / cota.teto) * 100) : 0}%`;
-				meter.createSpan({ cls: 'revisit-li-quota-n', text: paused ? 'pausado' : `${cota.usados}/${cota.teto}` });
+				bar.createEl('i').style.width = `${quota.cap ? Math.min(100, (quota.used / quota.cap) * 100) : 0}%`;
+				meter.createSpan({ cls: 'revisit-li-quota-n', text: paused ? 'pausado' : `${quota.used}/${quota.cap}` });
 				if (full) setIcon(meter.createSpan({ cls: 'revisit-li-ok' }), 'check');
-				setTooltip(meter, paused ? 'Cota 0: novos desta área pausados' : full ? `Cota de novos completa hoje (${cota.teto}): voltam amanhã` : `Novos hoje: ${cota.usados} de ${cota.teto}${q.reduced ? ' · cota encolhida pelo orçamento' : ''}`);
+				setTooltip(meter, paused ? 'Cota 0: novos desta área pausados' : full ? `Cota de novos completa hoje (${quota.cap}): voltam amanhã` : `Novos hoje: ${quota.used} de ${quota.cap}${q.reduced ? ' · quota encolhida pelo orçamento' : ''}`);
 			}
 
 			const go = r.createSpan({ cls: 'revisit-li-go' });
 			if (s.length) {
 				setIcon(go, 'play');
-				setTooltip(go, `Revisar ${node.assunto ?? node.area} (${s.length})`);
+				setTooltip(go, `Revisar ${node.topic ?? node.area} (${s.length})`);
 				go.onclick = (e) => {
 					e.stopPropagation();
-					void p.review(node.area, undefined, false, node.assunto);
+					void p.review(node.area, undefined, false, node.topic);
 				};
 			}
 			if (kids)
@@ -170,7 +170,7 @@ export class PanelView extends ItemView {
 					else this.expanded.add(node.path);
 					this.draw();
 				};
-			else if (s.length) r.onclick = () => void p.review(node.area, undefined, false, node.assunto);
+			else if (s.length) r.onclick = () => void p.review(node.area, undefined, false, node.topic);
 			if (open) for (const c of node.children) row(c, depth + 1);
 		};
 		for (const t of tree) row(t, 0);
@@ -189,7 +189,7 @@ export class PanelView extends ItemView {
 
 		const hero = wrap.createDiv({ cls: 'revisit-hero' });
 		hero.createDiv({ cls: 'revisit-big', text: String(due.length) });
-		hero.createDiv({ cls: 'revisit-muted', text: due.length ? `${due.length === 1 ? 'nota para reler' : 'notas para reler'} hoje` : 'nenhuma nota para reler hoje' });
+		hero.createDiv({ cls: 'revisit-muted', text: due.length ? `${due.length === 1 ? 'grade para reler' : 'notas para reler'} hoje` : 'nenhuma grade para reler hoje' });
 		const go = hero.createEl('button', { text: 'Ler a próxima', cls: 'mod-cta revisit-go' });
 		go.disabled = !due.length;
 		go.onclick = () => void p.openNextReread();
@@ -199,12 +199,12 @@ export class PanelView extends ItemView {
 			const box = wrap.createDiv({ cls: 'revisit-reading' });
 			box.createDiv({ cls: 'revisit-muted', text: 'Lendo agora' });
 			box.createEl('h3', { text: name(path) });
-			box.createDiv({ cls: 'revisit-muted', text: 'Terminou? Diga como foi a releitura:' });
+			box.createDiv({ cls: 'revisit-muted', text: 'Terminou? Diga como foi a reread:' });
 			const prev = all.find((n) => n.path === path)?.r;
 			const row = box.createDiv({ cls: 'revisit-reading-btns' });
-			for (const [l, nome] of [['dificil', 'Difícil'], ['bom', 'Bom'], ['facil', 'Fácil']] as const) {
-				const b = row.createEl('button', { cls: l === 'bom' ? 'mod-cta' : '' });
-				b.createEl('b', { text: nome });
+			for (const [l, name] of [['hard', 'Difícil'], ['good', 'Bom'], ['easy', 'Fácil']] as const) {
+				const b = row.createEl('button', { cls: l === 'good' ? 'mod-cta' : '' });
+				b.createEl('b', { text: name });
 				b.createEl('small', { text: daysLabel(nextInterval(prev, l)) });
 				b.onclick = () => void p.gradeReread(path, l);
 			}
@@ -222,7 +222,7 @@ export class PanelView extends ItemView {
 				const r = all.find((n) => n.path === path)?.r;
 				const row = list.createDiv({ cls: 'revisit-area' });
 				row.createSpan({ text: name(path) });
-				row.createSpan({ cls: 'revisit-area-n', text: r ? `lida ${r.vezes}x` : 'nova' });
+				row.createSpan({ cls: 'revisit-area-n', text: r ? `lastRead ${r.times}x` : 'nova' });
 				setIcon(row.createSpan({ cls: 'revisit-area-go' }), 'chevron-right');
 				row.onclick = () => open(path);
 			}
@@ -245,7 +245,7 @@ export class PanelView extends ItemView {
 
 		wrap.createEl('p', {
 			cls: 'revisit-muted revisit-small',
-			text: `${all.length} ${all.length === 1 ? 'nota' : 'notas'} na releitura. Para incluir uma nota, clique com o botão direito nela e escolha "Reler esta nota de tempos em tempos"${p.settings.rereadTag ? `, ou use a tag ${p.settings.rereadTag}` : ''}.`,
+			text: `${all.length} ${all.length === 1 ? 'grade' : 'notas'} na reread. Para incluir uma grade, clique com o botão direito nela e escolha "Reler esta grade de tempos em tempos"${p.settings.rereadTag ? `, ou use a tag ${p.settings.rereadTag}` : ''}.`,
 		});
 	}
 
@@ -263,12 +263,12 @@ export class PanelView extends ItemView {
 			this.draw();
 		};
 		const est = bar.createEl('select', { attr: { 'aria-label': 'Estado' } });
-		for (const [v, nome] of ESTADOS) {
-			const o = est.createEl('option', { text: nome, value: v });
-			if (this.estado === v) o.selected = true;
+		for (const [v, name] of STATUSES) {
+			const o = est.createEl('option', { text: name, value: v });
+			if (this.status === v) o.selected = true;
 		}
 		est.onchange = () => {
-			this.estado = est.value as EstadoCartao | 'todos';
+			this.status = est.value as CardStatus | 'all';
 			this.draw();
 		};
 		const sel = bar.createEl('select', { attr: { 'aria-label': 'Área' } });
@@ -281,18 +281,18 @@ export class PanelView extends ItemView {
 			this.draw();
 		};
 
-		const clean = this.q.trim() || this.estado !== 'todos' || this.areaF;
+		const clean = this.q.trim() || this.status !== 'all' || this.areaF;
 		if (!clean) {
-			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Digite para buscar, ou filtre por estado e área.' });
+			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Digite para buscar, ou filtre por status e área.' });
 			return;
 		}
 		const rows = p
 			.items()
 			.map((it) => cardRow(it, stats, now))
-			.filter((r) => (this.estado === 'todos' || r.estado === this.estado) && (!this.areaF || (r.area ?? 'Sem área') === this.areaF))
+			.filter((r) => (this.status === 'all' || r.status === this.status) && (!this.areaF || (r.area ?? 'Sem área') === this.areaF))
 			.filter((r) => matchesCard(r.item.card, this.q))
 			.sort(rowOrder);
-		const hoje = rows.filter((r) => r.venceHoje).length;
+		const hoje = rows.filter((r) => r.dueToday).length;
 		wrap.createDiv({
 			cls: 'revisit-muted revisit-small revisit-count',
 			text: `${rows.length} ${rows.length === 1 ? 'cartão' : 'cartões'}${hoje ? ` · ${hoje} ${hoje === 1 ? 'vence' : 'vencem'} hoje` : ''}`,
@@ -311,12 +311,12 @@ export class PanelView extends ItemView {
 
 		const table = wrap.createDiv({ cls: 'revisit-table' });
 		for (const r of rows.slice(0, this.limit)) {
-			const row = table.createDiv({ cls: `revisit-tr is-${r.estado}` });
+			const row = table.createDiv({ cls: `revisit-tr is-${r.status}` });
 			const c = row.createDiv({ cls: 'revisit-td-c' });
-			c.createDiv({ cls: 'revisit-td-f', text: r.frente.replace(/\s+/g, ' ') });
-			c.createDiv({ cls: 'revisit-td-sub', text: [r.area ?? 'Sem área', assuntosLabel(r.assuntos), r.lado !== 'frente' ? r.lado : r.tipo].filter(Boolean).join(' · ') });
-			row.createSpan({ cls: `revisit-st is-${r.estado}`, text: ESTADO_LABEL[r.estado] });
-			row.createSpan({ cls: 'revisit-td-due', text: r.proxima ? untilLabel(r.proxima, now) : '—' });
+			c.createDiv({ cls: 'revisit-td-f', text: r.front.replace(/\s+/g, ' ') });
+			c.createDiv({ cls: 'revisit-td-sub', text: [r.area ?? 'Sem área', topicsLabel(r.topics), r.side !== 'front' ? r.side : r.type].filter(Boolean).join(' · ') });
+			row.createSpan({ cls: `revisit-st is-${r.status}`, text: STATUS_LABEL[r.status] });
+			row.createSpan({ cls: 'revisit-td-due', text: r.due ? untilLabel(r.due, now) : '—' });
 			row.createSpan({ cls: 'revisit-td-n is-ok', text: r.ok ? String(r.ok) : '' });
 			row.createSpan({ cls: 'revisit-td-n is-bad', text: r.bad ? String(r.bad) : '' });
 			const acts = row.createDiv({ cls: 'revisit-td-acts' });
@@ -343,20 +343,20 @@ export class PanelView extends ItemView {
 		const p = this.plugin;
 		const menu = new Menu();
 		menu.addItem((i) =>
-			i.setTitle('Revisar os cartões desta nota').setIcon('layers').onClick(() => {
+			i.setTitle('Revisar os cartões desta grade').setIcon('layers').onClick(() => {
 				const src = p.resolveSource(r.item.card);
 				const f = src ? p.app.vault.getAbstractFileByPath(src) : null;
 				if (f instanceof TFile) void p.reviewNote(f);
-				else new Notice('Lembro: a fonte deste cartão não está no vault.');
+				else new Notice('Lembro: a source deste cartão não está no vault.');
 			}),
 		);
-		menu.addItem((i) => i.setTitle('Recomeçar: volta como novo').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
+		menu.addItem((i) => i.setTitle('Recomeçar: volta como new').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
 		menu.addItem((i) =>
 			i
-				.setTitle(r.estado === 'suspenso' ? 'Reativar' : 'Suspender')
-				.setIcon(r.estado === 'suspenso' ? 'play' : 'pause')
+				.setTitle(r.status === 'suspended' ? 'Reativar' : 'Suspender')
+				.setIcon(r.status === 'suspended' ? 'play' : 'pause')
 				.onClick(async () => {
-					p.store.state[r.id] = { ...(p.store.state[r.id] ?? {}), st: r.estado === 'suspenso' ? 'ativo' : 'suspenso' };
+					p.store.state[r.id] = { ...(p.store.state[r.id] ?? {}), st: r.status === 'suspended' ? 'active' : 'suspended' };
 					await p.store.saveState();
 					p.updateStatus();
 					this.draw();
@@ -384,16 +384,16 @@ export class PanelView extends ItemView {
 			k.createDiv({ cls: 'revisit-muted revisit-small', text: label });
 		};
 		kpi(all.total ? `${Math.round((all.ok / all.total) * 100)}%` : '—', `acerto nos maduros · meta ${meta}%`);
-		kpi(String(past.filter((x) => x > 0).length), 'dias com sessão', ' / 30');
+		kpi(String(past.filter((x) => x > 0).length), 'days com sessão', ' / 30');
 		kpi(String(p.store.cards.length), 'cartões no total');
 
-		const by = { novo: 0, aprendendo: 0, revisao: 0, suspenso: 0 };
-		for (const it of items) by[estadoOf(it)]++;
+		const by = { new: 0, learning: 0, review: 0, suspended: 0 };
+		for (const it of items) by[statusOf(it)]++;
 		const strip = wrap.createDiv({ cls: 'revisit-statuses' });
-		for (const e of ['novo', 'aprendendo', 'revisao', 'suspenso'] as const) {
+		for (const e of ['new', 'learning', 'review', 'suspended'] as const) {
 			const n = by[e];
-			const pill = strip.createSpan({ cls: `revisit-st is-${e}${n ? '' : ' is-zero'}`, text: `${ESTADO_LABEL[e]} ${n}` });
-			setTooltip(pill, `${n} ${n === 1 ? 'cartão' : 'cartões'} ${ESTADO_LABEL[e]}s`);
+			const pill = strip.createSpan({ cls: `revisit-st is-${e}${n ? '' : ' is-zero'}`, text: `${STATUS_LABEL[e]} ${n}` });
+			setTooltip(pill, `${n} ${n === 1 ? 'cartão' : 'cartões'} ${STATUS_LABEL[e]}s`);
 		}
 
 		const chart = (title: string, sub: string) => {
@@ -416,7 +416,7 @@ export class PanelView extends ItemView {
 			if (d < 7) byDay[d]?.push(it);
 		}
 		const pick = this.day ?? Math.max(0, byDay.findIndex((l) => l.length));
-		const next = chart('Próximos 7 dias', 'Minutos previstos por dia; clique num dia para ver os cartões');
+		const next = chart('Próximos 7 days', 'Minutos previstos por dia; clique num dia para ver os cartões');
 		cols(
 			next,
 			fut,
@@ -435,19 +435,19 @@ export class PanelView extends ItemView {
 		for (const it of cards) {
 			const row = list.createDiv({ cls: 'revisit-result' });
 			const t = row.createDiv({ cls: 'revisit-result-t' });
-			t.createDiv({ cls: 'revisit-result-f', text: it.card.frente.replace(/\s+/g, ' ') });
-			t.createDiv({ cls: 'revisit-muted revisit-small', text: [it.area ?? 'Sem área', assuntosLabel(it.card.assuntos), it.card.tipo].filter(Boolean).join(' · ') });
+			t.createDiv({ cls: 'revisit-result-f', text: it.card.front.replace(/\s+/g, ' ') });
+			t.createDiv({ cls: 'revisit-muted revisit-small', text: [it.area ?? 'Sem área', topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Editar' }).onclick = () => p.editCard(it.card, () => this.draw());
 		}
 		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);
 		cols(
-			chart('Últimos 30 dias', `${past.reduce((a, b) => a + b, 0)} revisões; dias sem barra não tiveram sessão`),
+			chart('Últimos 30 days', `${past.reduce((a, b) => a + b, 0)} revisões; days sem barra não tiveram sessão`),
 			past,
 			past.map((_, i) => (i % 7 === 1 || i === 29 ? String(day(i).getDate()) : '')),
 			past.map((v, i) => `${day(i).getDate()}/${day(i).getMonth() + 1} · ${v ? `${v} revisões` : 'sem sessão'}`),
 		);
 
-		const hb = chart('Acerto por área', `Cartões vistos há 7 dias ou mais; o traço é a meta de ${meta}%`).createDiv({ cls: 'revisit-hbars' });
+		const hb = chart('Acerto por área', `Cartões vistos há 7 days ou mais; o traço é a meta de ${meta}%`).createDiv({ cls: 'revisit-hbars' });
 		for (const a of AREAS) {
 			const r = ret.get(a);
 			const pct = r ? Math.round((r.ok / r.total) * 100) : null;
