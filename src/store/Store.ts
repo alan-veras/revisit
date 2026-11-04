@@ -6,13 +6,13 @@ import { StoredFsrs } from '../srs/scheduler';
 import { Reread } from '../notes/reread';
 import { parseStateText, parseLogLines } from './parse';
 
-export type Estado = 'active' | 'suspended';
+export type Status = 'active' | 'suspended';
 
 export interface CardState {
 	fsrs?: StoredFsrs;
 	/** notes to reread live here too, under the key `note:<path>` */
 	reread?: Reread;
-	st: Estado;
+	st: Status;
 }
 
 /** Everything Revisit keeps lives in one vault folder. */
@@ -20,6 +20,8 @@ export class Store {
 	cards: Card[] = [];
 	state: Record<string, CardState> = {};
 	log: RevlogEntry[] = [];
+	/** the log lines as read, so undo rewrites the file without touching the bytes of the kept lines */
+	private rawLog: string[] = [];
 	/** goes up whenever cards or state change on disk; keys the items() memo */
 	version = 0;
 	private lastSavedState: string | null = null;
@@ -46,12 +48,23 @@ export class Store {
 		return this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/'));
 	}
 
-	/** estado.json first; when it is unreadable, the last good copy written before it. */
+	private get migrationBackupPath(): string {
+		return `${this.base}/estado.json.backup-pre-migration`;
+	}
+
+	/** estado.json first; when it is unreadable, the last good copy written before it. The old Portuguese schema is migrated: backed up once, then persisted in English right away. */
 	private async readState(): Promise<Record<string, CardState>> {
 		for (const path of [this.statePath, this.backupPath]) {
 			try {
 				if (!(await this.app.vault.adapter.exists(path))) continue;
-				return parseStateText(await this.app.vault.adapter.read(path));
+				const text = await this.app.vault.adapter.read(path);
+				const { state, changed } = parseStateText(text);
+				if (changed && path === this.statePath) {
+					if (!(await this.app.vault.adapter.exists(this.migrationBackupPath)))
+						await this.app.vault.adapter.write(this.migrationBackupPath, text);
+					await this.app.vault.adapter.write(this.statePath, JSON.stringify(state));
+				}
+				return state;
 			} catch (e) {
 				new Notice(`Revisit: ${path} is unreadable (${e instanceof Error ? e.message : String(e)}); trying the backup.`);
 			}
@@ -64,9 +77,11 @@ export class Store {
 		this.state = await this.readState();
 		this.lastSavedState = JSON.stringify(this.state);
 		this.log = [];
+		this.rawLog = [];
 		if (await adapter.exists(this.logPath)) {
 			const parsed = parseLogLines(await adapter.read(this.logPath));
 			this.log = parsed.entries;
+			this.rawLog = parsed.lines;
 			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in revisoes.jsonl.`);
 		}
 		const taken = new Set<string>();
@@ -173,13 +188,15 @@ export class Store {
 
 	async appendLog(entry: RevlogEntry): Promise<void> {
 		this.log.push(entry);
+		this.rawLog.push(JSON.stringify(entry));
 		await this.ensureFolder(this.logPath);
 		await this.app.vault.adapter.append(this.logPath, JSON.stringify(entry) + '\n');
 	}
 
-	/** Takes back the last log line (undo). */
+	/** Takes back the last log line (undo); the kept lines keep their original bytes, Portuguese or English. */
 	async popLog(): Promise<void> {
 		this.log.pop();
-		await this.app.vault.adapter.write(this.logPath, this.log.map((e) => JSON.stringify(e) + '\n').join(''));
+		this.rawLog.pop();
+		await this.app.vault.adapter.write(this.logPath, this.rawLog.map((l) => l + '\n').join(''));
 	}
 }

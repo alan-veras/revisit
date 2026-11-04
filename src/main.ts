@@ -1,4 +1,4 @@
-import { getAllTags, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { getAllTags, normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { areaOf, linkPath } from './cards/area';
 import { clozes } from './cards/cloze';
 import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings
 import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, NO_AREA, QueueItem } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
+import { migrateSettings } from './store/migrate';
 import { Store } from './store/Store';
 import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
 import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
@@ -104,12 +105,26 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<RevisitSettings> | null);
+		const raw = (await this.loadData()) as Record<string, unknown> | null;
+		const { settings, changed } = migrateSettings(raw);
+		// before the first migration writes over data.json, the original is copied once
+		if (changed) await this.backupDataOnce();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
 		// the general cap is gone: each area has its own quota
 		delete (this.settings as Partial<RevisitSettings> & { newPerDay?: number }).newPerDay;
 		// the FSRS advises against asking for more than 95%
 		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
 		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
+		if (changed) await this.saveSettings();
+	}
+
+	/** One-time copy of data.json beside the plugin files, before the first settings migration. */
+	private async backupDataOnce(): Promise<void> {
+		const dir = this.manifest.dir ?? '';
+		const target = normalizePath(`${dir}/data.json.backup-pre-migration`);
+		if (await this.app.vault.adapter.exists(target)) return;
+		const source = normalizePath(`${dir}/data.json`);
+		if (await this.app.vault.adapter.exists(source)) await this.app.vault.adapter.write(target, await this.app.vault.adapter.read(source));
 	}
 
 	async saveSettings(): Promise<void> {
