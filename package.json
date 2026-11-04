@@ -1,6 +1,6 @@
 {
-	"name": "lembro",
-	"version": "0.1.0",
+	"name": "revisit",
+	"version": "0.2.0",
 	"description": "Obsidian plugin: flashcards with FSRS, made from your notes.",
 	"main": "main.js",
 	"type": "module",
