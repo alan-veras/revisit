@@ -51,7 +51,7 @@ export async function captureContext(app: App): Promise<CaptureContext | null> {
 	return null;
 }
 
-/** `[[path|name]]`, `[[path#Seção|name]]`, or `[[file.pdf#page=12|file, p. 12]]`. */
+/** `[[path|name]]`, `[[path#Section|name]]`, or `[[file.pdf#page=12|file, p. 12]]`. */
 export function sourceLink(file: TFile | null, page: number | null, heading: string | null = null): string {
 	if (!file) return '';
 	if (file.extension === 'pdf') {

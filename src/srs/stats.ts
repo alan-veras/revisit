@@ -13,7 +13,7 @@ export function cardStats(log: RevlogEntry[]): Map<string, { ok: number; bad: nu
 }
 
 /**
- * Retention: share of answers that were not "Errei", over reviews of cards that
+ * Retention: share of answers that were not "Again", over reviews of cards that
  * had been seen at least 7 days before (mature), grouped by `group(id)`.
  */
 export function retentionBy(log: RevlogEntry[], group: (id: string) => string | null): Map<string, { ok: number; total: number }> {

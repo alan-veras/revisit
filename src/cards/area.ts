@@ -1,6 +1,6 @@
 import { AREAS } from './types';
 
-/** The Dedicação a source path belongs to, or null when it cannot tell. */
+/** The area a source path belongs to, or null when it cannot tell. */
 export function areaOf(path: string, extra: Record<string, string> = {}): string | null {
 	const parts = path.split('/');
 	const [root, second] = parts;

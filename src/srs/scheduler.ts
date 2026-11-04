@@ -2,10 +2,10 @@ import { Card as FsrsCard, createEmptyCard, fsrs, FSRS, Rating, State } from 'ts
 
 export type Grade = 1 | 2 | 3 | 4;
 export const GRADES: { grade: Grade; name: string }[] = [
-	{ grade: 1, name: 'Errei' },
-	{ grade: 2, name: 'Difícil' },
-	{ grade: 3, name: 'Bom' },
-	{ grade: 4, name: 'Fácil' },
+	{ grade: 1, name: 'Again' },
+	{ grade: 2, name: 'Hard' },
+	{ grade: 3, name: 'Good' },
+	{ grade: 4, name: 'Easy' },
 ];
 
 /** FSRS card as stored in estado.json (dates as ISO strings). */

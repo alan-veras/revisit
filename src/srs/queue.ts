@@ -160,9 +160,9 @@ export function requeueIndex(queue: QueueItem[], index: number, due: Date, now: 
 
 /**
  * Where a graded card comes back in the same session. An extra session brings
- * only an Errei back, always. A normal session brings any grade back whose next
- * due time falls inside the remaining session: the Errei, and the short first
- * steps of a Difícil or Bom on a new card too. -1 stays out.
+ * only an Again back, always. A normal session brings any grade back whose next
+ * due time falls inside the remaining session: the Again, and the short first
+ * steps of a Hard or Good on a new card too. -1 stays out.
  */
 export function sessionRequeue(o: {
 	extra: boolean;

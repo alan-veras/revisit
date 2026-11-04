@@ -1,6 +1,6 @@
 /**
  * Rereading whole notes: each note marked to reread comes back after some days.
- * The interval grows with each reading (Difícil x1.2, Bom x2.5, Fácil x4),
+ * The interval grows with each reading (Hard x1.2, Good x2.5, Easy x4),
  * between 1 and 365 days. No FSRS here: a note is not a question.
  */
 
