@@ -1,7 +1,7 @@
 import { parseCardFile } from '../cards/format';
 import { Card } from '../cards/types';
 
-/** Pure helpers of the `lembro:` commands; nothing here touches Obsidian. */
+/** Pure helpers of the `revisit:` commands; nothing here touches Obsidian. */
 
 export class CliError extends Error {
 	constructor(

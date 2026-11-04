@@ -48,11 +48,11 @@ export class CaptureModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl } = this;
-		this.modalEl.addClass('lembro-capture');
+		this.modalEl.addClass('revisit-capture');
 		this.component.load();
 		contentEl.createEl('h3', { text: this.title });
 
-		const chips = contentEl.createDiv({ cls: 'lembro-chips' });
+		const chips = contentEl.createDiv({ cls: 'revisit-chips' });
 		TIPOS.forEach((t, i) => {
 			const b = chips.createEl('button', { text: t, attr: { title: `Ctrl+${i + 1}` } });
 			b.onclick = () => this.setTipo(t);
@@ -63,8 +63,8 @@ export class CaptureModal extends Modal {
 		const front = this.area(contentEl, 'Frente', this.draft.frente, 'A pergunta', (v) => (this.draft.frente = v));
 		const back = this.area(contentEl, 'Verso', this.draft.verso, 'A resposta', (v) => (this.draft.verso = v));
 
-		const row = contentEl.createDiv({ cls: 'lembro-row' });
-		const areaBox = row.createDiv({ cls: 'lembro-field' });
+		const row = contentEl.createDiv({ cls: 'revisit-row' });
+		const areaBox = row.createDiv({ cls: 'revisit-field' });
 		areaBox.createEl('label', { text: 'Área' });
 		const sel = areaBox.createEl('select');
 		for (const a of AREAS) sel.createEl('option', { text: a, value: a });
@@ -72,35 +72,35 @@ export class CaptureModal extends Modal {
 		this.draft.area = sel.value;
 		sel.onchange = () => (this.draft.area = sel.value);
 
-		const asBox = row.createDiv({ cls: 'lembro-field lembro-grow' });
+		const asBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
 		asBox.createEl('label', { text: 'Assunto' });
-		const listId = `lembro-assuntos-${Date.now()}`;
+		const listId = `revisit-assuntos-${Date.now()}`;
 		const as = asBox.createEl('input', { type: 'text', value: this.draft.assunto, attr: { list: listId, placeholder: 'Assunto > subassunto; outro' } });
 		const dl = asBox.createEl('datalist', { attr: { id: listId } });
 		for (const a of this.assuntos) dl.createEl('option', { value: a });
 		as.oninput = () => (this.draft.assunto = as.value);
 
-		const fonteBox = contentEl.createDiv({ cls: 'lembro-field' });
+		const fonteBox = contentEl.createDiv({ cls: 'revisit-field' });
 		fonteBox.createEl('label', { text: 'Fonte' });
 		const fonte = fonteBox.createEl('input', { type: 'text', value: this.draft.fonte });
 		fonte.oninput = () => (this.draft.fonte = fonte.value);
 
-		const rev = contentEl.createEl('label', { cls: 'lembro-check' });
+		const rev = contentEl.createEl('label', { cls: 'revisit-check' });
 		const cb = rev.createEl('input', { type: 'checkbox' });
 		cb.checked = !!this.draft.reverso;
 		cb.onchange = () => (this.draft.reverso = cb.checked);
 		rev.appendText(' Revisar nos dois sentidos (o verso também vira pergunta)');
 
-		contentEl.createEl('label', { text: 'Prévia', cls: 'lembro-label' });
-		this.preview = contentEl.createDiv({ cls: 'lembro-preview' });
+		contentEl.createEl('label', { text: 'Prévia', cls: 'revisit-label' });
+		this.preview = contentEl.createDiv({ cls: 'revisit-preview' });
 		void this.renderPreview();
 
-		const buttons = contentEl.createDiv({ cls: 'lembro-buttons' });
+		const buttons = contentEl.createDiv({ cls: 'revisit-buttons' });
 		buttons.createEl('button', { text: 'Cancelar' }).onclick = () => this.close();
 		const save = buttons.createEl('button', { text: 'Salvar (Ctrl+Enter)', cls: 'mod-cta' });
 		save.onclick = () => void this.save();
 
-		contentEl.createDiv({ cls: 'lembro-tip', text: 'Uma coisa por cartão. A pergunta tem uma resposta certa.' });
+		contentEl.createDiv({ cls: 'revisit-tip', text: 'Uma coisa por cartão. A pergunta tem uma resposta certa.' });
 
 		this.scope.register(['Mod'], 'Enter', (e) => {
 			e.preventDefault();
@@ -118,7 +118,7 @@ export class CaptureModal extends Modal {
 	}
 
 	private area(parent: HTMLElement, label: string, value: string, placeholder: string, set: (v: string) => void): HTMLTextAreaElement {
-		const box = parent.createDiv({ cls: 'lembro-field' });
+		const box = parent.createDiv({ cls: 'revisit-field' });
 		box.createEl('label', { text: label });
 		const ta = box.createEl('textarea', { attr: { rows: '3', placeholder } });
 		ta.value = value;
@@ -141,8 +141,8 @@ export class CaptureModal extends Modal {
 	private async renderPreview(): Promise<void> {
 		if (!this.preview) return;
 		this.preview.empty();
-		const f = this.preview.createDiv({ cls: 'lembro-preview-front' });
-		const b = this.preview.createDiv({ cls: 'lembro-preview-back' });
+		const f = this.preview.createDiv({ cls: 'revisit-preview-front' });
+		const b = this.preview.createDiv({ cls: 'revisit-preview-back' });
 		await MarkdownRenderer.render(this.app, this.draft.frente || '…', f, this.draft.sourcePath, this.component);
 		await MarkdownRenderer.render(this.app, this.draft.verso || '…', b, this.draft.sourcePath, this.component);
 	}

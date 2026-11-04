@@ -11,7 +11,7 @@ import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Nota, NOTAS, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
 
-export const VIEW_TYPE_REVIEW = 'lembro-review';
+export const VIEW_TYPE_REVIEW = 'revisit-review';
 
 interface Undo {
 	index: number;
@@ -63,7 +63,7 @@ export class ReviewView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		this.contentEl.addClass('lembro-review');
+		this.contentEl.addClass('revisit-review');
 		this.scope = new Scope(this.app.scope);
 		this.scope?.register([], ' ', (e) => this.key(e, () => this.flip()));
 		for (const { nota } of NOTAS) this.scope?.register([], String(nota), (e) => this.key(e, () => void this.grade(nota)));
@@ -139,33 +139,33 @@ export class ReviewView extends ItemView {
 		root.empty();
 		if (this.ended) return this.drawEnd();
 		if (!this.queue.length) {
-			const box = root.createDiv({ cls: 'lembro-end' });
+			const box = root.createDiv({ cls: 'revisit-end' });
 			box.createEl('h2', { text: 'Nada para revisar agora' });
-			box.createEl('p', { text: 'Crie cartões pelo comando de captura, ou volte amanhã.', cls: 'lembro-muted' });
+			box.createEl('p', { text: 'Crie cartões pelo comando de captura, ou volte amanhã.', cls: 'revisit-muted' });
 			return;
 		}
 		const item = this.current();
 		if (!item) return this.drawEnd();
 
-		const head = root.createDiv({ cls: 'lembro-head' });
-		const headLeft = head.createSpan({ cls: 'lembro-head-left' });
-		const home = headLeft.createEl('button', { cls: 'lembro-back-btn lembro-home', attr: { 'aria-label': 'Voltar ao painel' } });
+		const head = root.createDiv({ cls: 'revisit-head' });
+		const headLeft = head.createSpan({ cls: 'revisit-head-left' });
+		const home = headLeft.createEl('button', { cls: 'revisit-back-btn revisit-home', attr: { 'aria-label': 'Voltar ao painel' } });
 		setIcon(home, 'layout-dashboard');
 		home.onclick = () => void this.plugin.openPainel();
-		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'lembro-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
+		const prevBtn = headLeft.createEl('button', { text: 'Anterior', cls: 'revisit-back-btn', attr: { title: 'Volta ao cartão anterior e desfaz a avaliação dele (← ou Ctrl+Z)' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
-		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'lembro-back-btn', attr: { title: 'Avança de novo com a mesma avaliação (→)' } });
+		const nextBtn = headLeft.createEl('button', { text: 'Próximo', cls: 'revisit-back-btn', attr: { title: 'Avança de novo com a mesma avaliação (→)' } });
 		nextBtn.disabled = !this.redo.length;
 		nextBtn.onclick = () => void this.redoNext();
 		headLeft.createSpan({ text: this.extra ? `${this.label} · extra, não muda a agenda` : this.label });
 		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
 		head.createSpan({ text: `${this.index + 1} de ${this.queue.length} · ~${Math.max(1, left)} min` });
-		const bar = root.createDiv({ cls: 'lembro-bar' });
+		const bar = root.createDiv({ cls: 'revisit-bar' });
 		bar.createEl('i').style.width = `${(this.index / this.queue.length) * 100}%`;
 
-		const scene = root.createDiv({ cls: 'lembro-scene' });
-		const card = scene.createDiv({ cls: 'lembro-card' + (this.flipped ? ' is-flipped' : '') });
+		const scene = root.createDiv({ cls: 'revisit-scene' });
+		const card = scene.createDiv({ cls: 'revisit-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
 		const tag = `${item.area ?? 'Sem área'}${item.card.assuntos.length ? ' · ' + assuntosLabel(item.card.assuntos) : ''} · ${item.card.tipo}${item.reverso ? ' · reverso' : ''}${sectionOf(item.card.fonte) ? ' · § ' + sectionOf(item.card.fonte) : ''}`;
 		const hole = item.cloze !== undefined ? clozes(item.card.frente)[item.cloze] : undefined;
@@ -173,45 +173,45 @@ export class ReviewView extends ItemView {
 		const answer = hole ?? (item.reverso ? item.card.frente : item.card.verso);
 		const extraBack = hole !== undefined ? item.card.verso : '';
 
-		const front = card.createDiv({ cls: 'lembro-face lembro-front' });
-		const ftag = front.createDiv({ cls: 'lembro-tag', text: tag });
-		if (this.plugin.settings.showNewBadge && isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'lembro-new-badge', text: 'Novo' }));
+		const front = card.createDiv({ cls: 'revisit-face revisit-front' });
+		const ftag = front.createDiv({ cls: 'revisit-tag', text: tag });
+		if (this.plugin.settings.showNewBadge && isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'revisit-new-badge', text: 'Novo' }));
 		const isQuestao = item.card.tipo === 'Questão' && !item.reverso;
 		const frente = isQuestao ? splitAlternatives(ask) : ask;
-		const q = front.createDiv({ cls: 'lembro-q' + (isQuestao ? ' is-questao' : '') });
+		const q = front.createDiv({ cls: 'revisit-q' + (isQuestao ? ' is-question' : '') });
 		void MarkdownRenderer.render(this.app, frente, q, sourcePath, this.render);
 		const typeCloze = item.card.tipo === 'Lacuna' && !item.reverso;
 		if (typeCloze) {
-			const input = front.createEl('input', { type: 'text', cls: 'lembro-type', attr: { placeholder: 'Digite a resposta' } });
+			const input = front.createEl('input', { type: 'text', cls: 'revisit-type', attr: { placeholder: 'Digite a resposta' } });
 			input.value = this.typed;
 			input.onclick = (e) => e.stopPropagation();
 			input.oninput = () => (this.typed = input.value);
 			window.setTimeout(() => input.focus(), 50);
 		}
 		if (this.canHint(item)) {
-			const dica = front.createDiv({ cls: 'lembro-dica' });
-			if (this.hint) dica.createDiv({ cls: 'lembro-dica-text', text: hintWords(item.card.verso, this.hint) });
+			const dica = front.createDiv({ cls: 'revisit-hint' });
+			if (this.hint) dica.createDiv({ cls: 'revisit-hint-text', text: hintWords(item.card.verso, this.hint) });
 			const btn = dica.createEl('button', { text: 'Dica', attr: { 'aria-label': `Mostra mais ${this.plugin.settings.hintWords} palavras do texto` } });
 			btn.onclick = (e) => {
 				e.stopPropagation();
 				this.moreHint();
 			};
 		}
-		front.createDiv({ cls: 'lembro-hint', text: typeCloze ? 'Enter confere e vira' : 'Clique ou Espaço para virar' });
+		front.createDiv({ cls: 'revisit-flip-hint', text: typeCloze ? 'Enter confere e vira' : 'Clique ou Espaço para virar' });
 
-		const back = card.createDiv({ cls: 'lembro-face lembro-back' });
-		back.createDiv({ cls: 'lembro-tag', text: tag });
-		const bq = back.createDiv({ cls: 'lembro-backq' });
+		const back = card.createDiv({ cls: 'revisit-face revisit-back' });
+		back.createDiv({ cls: 'revisit-tag', text: tag });
+		const bq = back.createDiv({ cls: 'revisit-backq' });
 		void MarkdownRenderer.render(this.app, frente, bq, sourcePath, this.render);
 		const check = typeCloze ? (this.typed.trim() ? checkCloze(this.typed, answer) : null) : null;
 		if (check !== null) {
-			back.createDiv({ cls: 'lembro-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${this.typed.trim()}` });
+			back.createDiv({ cls: 'revisit-verdict ' + (check ? 'is-ok' : 'is-bad'), text: `${check ? '✓' : '✗'} Você respondeu: ${this.typed.trim()}` });
 		}
-		const a = back.createDiv({ cls: 'lembro-a' });
+		const a = back.createDiv({ cls: 'revisit-a' });
 		void MarkdownRenderer.render(this.app, answer, a, sourcePath, this.render);
-		if (extraBack) void MarkdownRenderer.render(this.app, extraBack, back.createDiv({ cls: 'lembro-muted' }), sourcePath, this.render);
+		if (extraBack) void MarkdownRenderer.render(this.app, extraBack, back.createDiv({ cls: 'revisit-muted' }), sourcePath, this.render);
 		if (item.card.fonte) {
-			const src = back.createDiv({ cls: 'lembro-src' });
+			const src = back.createDiv({ cls: 'revisit-src' });
 			void MarkdownRenderer.render(this.app, `Fonte: ${item.card.fonte}`, src, sourcePath, this.render);
 		}
 		scene.onclick = (e) => {
@@ -219,22 +219,22 @@ export class ReviewView extends ItemView {
 			this.flip();
 		};
 
-		const grades = root.createDiv({ cls: 'lembro-grades' + (this.revealed ? ' is-on' : '') });
+		const grades = root.createDiv({ cls: 'revisit-grades' + (this.revealed ? ' is-on' : '') });
 		const preview = this.previewOf(item);
 		for (const { nota, nome } of NOTAS) {
-			const b = grades.createEl('button', { cls: `lembro-g${nota}` });
+			const b = grades.createEl('button', { cls: `revisit-g${nota}` });
 			b.createEl('b', { text: nome });
 			b.createEl('small', { text: preview[nota].label });
 			b.onclick = () => void this.grade(nota);
 		}
-		const tools = root.createDiv({ cls: 'lembro-tools' });
+		const tools = root.createDiv({ cls: 'revisit-tools' });
 		const skipBtn = tools.createEl('button', { text: 'Pular', attr: { 'aria-label': 'Manda o cartão para o fim da sessão, sem avaliar' } });
 		skipBtn.disabled = this.index >= this.queue.length - 1;
 		skipBtn.onclick = () => this.skip();
 		const resetBtn = tools.createEl('button', { text: 'Recomeçar', attr: { 'aria-label': 'Esquece a agenda do cartão: ele volta como novo' } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
-		root.createDiv({ cls: 'lembro-keys', text: 'Espaço vira · 1 a 4 avaliam · E edita · Q encerra' });
+		root.createDiv({ cls: 'revisit-keys', text: 'Espaço vira · 1 a 4 avaliam · E edita · Q encerra' });
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -249,23 +249,23 @@ export class ReviewView extends ItemView {
 
 	private drawEnd(): void {
 		const root = this.contentEl;
-		const box = root.createDiv({ cls: 'lembro-end' });
+		const box = root.createDiv({ cls: 'revisit-end' });
 		box.createEl('h2', { text: 'Sessão encerrada' });
 		const done = this.results[1] + this.results[2] + this.results[3] + this.results[4];
 		const ok = done - this.results[1];
 		const min = Math.max(1, Math.round((Date.now() - this.startedAt) / 60000));
-		box.createEl('p', { text: `${done} cartões · ${ok} lembrados · ${this.results[1]} para rever · ${min} min`, cls: 'lembro-muted' });
-		box.createEl('p', { text: 'O que não coube aparece amanhã.', cls: 'lembro-muted' });
+		box.createEl('p', { text: `${done} cartões · ${ok} lembrados · ${this.results[1]} para rever · ${min} min`, cls: 'revisit-muted' });
+		box.createEl('p', { text: 'O que não coube aparece amanhã.', cls: 'revisit-muted' });
 		if (this.wrong.length) {
-			const list = box.createDiv({ cls: 'lembro-wrong' });
+			const list = box.createDiv({ cls: 'revisit-wrong' });
 			list.createEl('h4', { text: 'Errados hoje' });
 			for (const it of this.wrong) {
-				const row = list.createDiv({ cls: 'lembro-wrong-row' });
+				const row = list.createDiv({ cls: 'revisit-wrong-row' });
 				row.createSpan({ text: it.card.frente.replace(/\s+/g, ' ').slice(0, 90) });
 				row.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(it.card);
 			}
 		}
-		const btns = box.createDiv({ cls: 'lembro-buttons' });
+		const btns = box.createDiv({ cls: 'revisit-buttons' });
 		if (this.undo.length) btns.createEl('button', { text: 'Voltar ao último cartão' }).onclick = () => void this.undoLast();
 		btns.createEl('button', { text: 'Voltar ao painel' }).onclick = () => void this.plugin.openPainel();
 		btns.createEl('button', { text: 'Mais 5 minutos', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
@@ -293,8 +293,8 @@ export class ReviewView extends ItemView {
 			this.draw();
 			return;
 		}
-		this.contentEl.querySelector('.lembro-card')?.toggleClass('is-flipped', this.flipped);
-		if (this.revealed) this.contentEl.querySelector('.lembro-grades')?.addClass('is-on');
+		this.contentEl.querySelector('.revisit-card')?.toggleClass('is-flipped', this.flipped);
+		if (this.revealed) this.contentEl.querySelector('.revisit-grades')?.addClass('is-on');
 	}
 
 	private async grade(nota: Nota, fromRedo = false): Promise<void> {

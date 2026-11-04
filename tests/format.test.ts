@@ -115,11 +115,11 @@ describe('ensureIds', () => {
 
 describe('removeCard com frontmatter', () => {
 	it('preserva o frontmatter ao remover o primeiro cartão', () => {
-		const text = '---\ntags: [lembro]\n---\n\nFrente: A\nVerso: B\n\n---\n\nFrente: C\nVerso: D\n';
+		const text = '---\ntags: [revisit]\n---\n\nFrente: A\nVerso: B\n\n---\n\nFrente: C\nVerso: D\n';
 		const [first] = parseCardFile(text);
 		if (!first) throw new Error('no card');
 		const out = removeCard(text, first);
-		expect(out.startsWith('---\ntags: [lembro]\n---')).toBe(true);
+		expect(out.startsWith('---\ntags: [revisit]\n---')).toBe(true);
 		expect(parseCardFile(out).map((c) => c.frente)).toEqual(['C']);
 	});
 

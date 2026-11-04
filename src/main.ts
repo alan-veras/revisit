@@ -14,7 +14,7 @@ import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/bud
 import { buildSession, dueReviews, estimateMinutes, NO_AREA, QueueItem } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
 import { Store } from './store/Store';
-import { PainelView, VIEW_TYPE_PAINEL } from './view/PainelView';
+import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
 import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
 import { registerCli } from './cli/commands';
 
@@ -29,7 +29,7 @@ export default class LembroPlugin extends Plugin {
 		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
 		this.store = new Store(this.app, () => this.settings.folder);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
-		this.registerView(VIEW_TYPE_PAINEL, (leaf: WorkspaceLeaf) => new PainelView(leaf, this));
+		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
 		this.addCommand({ id: 'open-painel', name: 'Abrir painel', callback: () => void this.openPainel() });
 		this.addSettingTab(new LembroSettingTab(this.app, this));
 		registerCli(this);
@@ -239,10 +239,10 @@ export default class LembroPlugin extends Plugin {
 
 	async openPainel(): Promise<void> {
 		await this.reload();
-		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)[0];
+		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PANEL)[0];
 		if (!leaf) {
 			leaf = this.app.workspace.getLeaf('tab');
-			await leaf.setViewState({ type: VIEW_TYPE_PAINEL, active: true });
+			await leaf.setViewState({ type: VIEW_TYPE_PANEL, active: true });
 		}
 		await this.app.workspace.revealLeaf(leaf);
 	}
@@ -260,7 +260,7 @@ export default class LembroPlugin extends Plugin {
 
 	private updateStatusNow(): void {
 		this.redrawNoteCards();
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PAINEL)) if (leaf.view instanceof PainelView) leaf.view.draw();
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PANEL)) if (leaf.view instanceof PanelView) leaf.view.draw();
 		if (!this.statusEl) return;
 		const s = this.session(null);
 		const n = s.length;
@@ -538,7 +538,7 @@ export default class LembroPlugin extends Plugin {
 	onunload(): void {
 		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
 		// no ghost leaves of the view types this plugin registered
-		for (const t of [VIEW_TYPE_REVIEW, VIEW_TYPE_PAINEL, VIEW_TYPE_NOTE]) this.app.workspace.detachLeavesOfType(t);
+		for (const t of [VIEW_TYPE_REVIEW, VIEW_TYPE_PANEL, VIEW_TYPE_NOTE]) this.app.workspace.detachLeavesOfType(t);
 	}
 }
 

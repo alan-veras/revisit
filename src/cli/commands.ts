@@ -12,7 +12,7 @@ import { cardStats } from '../srs/stats';
 import { CliError, flag, json, need, Params, parseLote, short, unescape } from './args';
 
 /**
- * `lembro:` commands of the Obsidian CLI, for agents. They read and write cards;
+ * `revisit:` commands of the Obsidian CLI, for agents. They read and write cards;
  * none of them grades a card: grading is the owner's.
  */
 
@@ -236,12 +236,12 @@ export async function runCli(plugin: LembroPlugin, cmd: Command, params: Params)
 	}
 }
 
-/** Registers every command as `lembro:<nome>` in the Obsidian CLI. */
+/** Registers every command as `revisit:<nome>` in the Obsidian CLI. */
 export function registerCli(plugin: LembroPlugin): void {
 	for (const [name, cmd] of Object.entries(COMMANDS)) {
 		const flags: CliFlags = Object.fromEntries(
 			Object.entries(cmd.flags).map(([k, description]) => [k, BOOL_FLAGS.includes(k) ? { description } : { value: `<${k}>`, description }]),
 		);
-		plugin.registerCliHandler(`lembro:${name}`, cmd.desc, Object.keys(flags).length ? flags : null, (params) => runCli(plugin, cmd, params));
+		plugin.registerCliHandler(`revisit:${name}`, cmd.desc, Object.keys(flags).length ? flags : null, (params) => runCli(plugin, cmd, params));
 	}
 }
