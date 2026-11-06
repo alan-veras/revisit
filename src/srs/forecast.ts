@@ -69,6 +69,23 @@ export function forecastMinutes(cards: readonly ForecastCard[], secs: SecsByType
 	};
 }
 
+/** Cards due per day over the next `days` days (index 0 = today, overdue counts today). */
+export function dueCounts(cards: readonly ForecastCard[], now: Date, days = 30): number[] {
+	const start = startOfDay(now).getTime();
+	const out = new Array<number>(days).fill(0);
+	for (const c of cards) {
+		if (!isScheduled(c)) continue;
+		const d = Math.max(0, Math.floor((c.fsrs.due.getTime() - start) / DAY_MS));
+		if (d < days) out[d] = (out[d] ?? 0) + 1;
+	}
+	return out;
+}
+
+/** Average minutes per day over the 7 days after today (tomorrow to day 7). */
+export function averageAhead(f: Forecast): number {
+	return round1(f.perDay.slice(1, 8).reduce((a, b) => a + b, 0) / 7);
+}
+
 export type LoadLabel = 'Light' | 'Sustainable' | 'Heavy';
 
 export interface Sustainability {

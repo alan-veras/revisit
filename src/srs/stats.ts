@@ -78,3 +78,15 @@ export function folderGroup(path: string, depth = 2): string {
 export function topGroups(ret: Map<string, { ok: number; total: number }>, max = 8): [string, { ok: number; total: number }][] {
 	return [...ret.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0])).slice(0, max);
 }
+
+/**
+ * Heat level 0 to 4 of each day for the heatmap: 0 for a day without reviews,
+ * 1 to 4 by quartile of the days that had some, so one huge day does not wash
+ * out the rest.
+ */
+export function heatLevels(values: readonly number[]): number[] {
+	const active = values.filter((v) => v > 0).sort((a, b) => a - b);
+	if (!active.length) return values.map(() => 0);
+	const cut = [0.25, 0.5, 0.75].map((q) => active[Math.min(active.length - 1, Math.floor(q * active.length))] as number);
+	return values.map((v) => (v <= 0 ? 0 : 1 + cut.filter((c) => v > c).length));
+}
