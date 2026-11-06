@@ -78,7 +78,7 @@ export class PanelView extends ItemView {
 		hero.createDiv({ cls: 'revisit-muted', text: today.length ? `${today.length === 1 ? 'card fits' : 'cards fit'} today · about ${Math.max(1, estimateMinutes(today, p.secs()))} min` : 'nothing for today' });
 		const go = hero.createEl('button', { text: 'Review', cls: 'mod-cta revisit-go' });
 		go.disabled = !today.length;
-		go.onclick = () => void p.review(null);
+		go.onclick = () => void p.chooseReview(null);
 		const q = p.quota();
 		hero.createDiv({ cls: 'revisit-muted revisit-small', text: q.quota ? `New today: ${q.used} of ${q.cap}` : 'New cards are paused' });
 
@@ -160,7 +160,7 @@ export class PanelView extends ItemView {
 				setTooltip(go, `Review ${node.name} (${s.length})`);
 				go.onclick = (e) => {
 					e.stopPropagation();
-					void p.review(node.scope, undefined, false, node.topic);
+					void p.chooseReview(node.scope, node.topic);
 				};
 			}
 			if (kids)
@@ -169,7 +169,7 @@ export class PanelView extends ItemView {
 					else this.expanded.add(node.path);
 					this.draw();
 				};
-			else if (s.length) r.onclick = () => void p.review(node.scope, undefined, false, node.topic);
+			else if (s.length) r.onclick = () => void p.chooseReview(node.scope, node.topic);
 			if (open) for (const c of node.children) row(c, depth + 1);
 		};
 		for (const t of tree) row(t, 0);
@@ -214,14 +214,15 @@ export class PanelView extends ItemView {
 
 		if (due.length) {
 			wrap.createEl('h4', { text: 'For today', cls: 'revisit-sub' });
-			const list = wrap.createDiv({ cls: 'revisit-areas' });
+			const list = wrap.createDiv({ cls: 'revisit-reread-list' });
 			for (const path of due) {
 				const r = all.find((n) => n.path === path)?.r;
-				const row = list.createDiv({ cls: 'revisit-area' });
+				const row = list.createDiv({ cls: 'revisit-reread-row', attr: { role: 'button', tabindex: '0' } });
 				row.createSpan({ text: name(path) });
-				row.createSpan({ cls: 'revisit-area-n', text: r ? `read ${r.times}x` : 'new' });
-				setIcon(row.createSpan({ cls: 'revisit-area-go' }), 'chevron-right');
+				row.createSpan({ cls: 'revisit-reread-meta', text: r ? `read ${r.times}x` : 'new' });
+				setIcon(row.createSpan({ cls: 'revisit-reread-go' }), 'chevron-right');
 				row.onclick = () => open(path);
+				row.onkeydown = (e) => e.key === 'Enter' && open(path);
 			}
 		}
 
@@ -231,12 +232,13 @@ export class PanelView extends ItemView {
 			.slice(0, 8);
 		if (later.length) {
 			wrap.createEl('h4', { text: 'Upcoming', cls: 'revisit-sub' });
-			const list = wrap.createDiv({ cls: 'revisit-areas' });
+			const list = wrap.createDiv({ cls: 'revisit-reread-list' });
 			for (const n of later) {
-				const row = list.createDiv({ cls: 'revisit-area' });
+				const row = list.createDiv({ cls: 'revisit-reread-row', attr: { role: 'button', tabindex: '0' } });
 				row.createSpan({ text: name(n.path) });
-				row.createSpan({ cls: 'revisit-area-n', text: new Date(n.r?.due ?? '').toLocaleDateString('en-US', { day: '2-digit', month: 'short' }) });
+				row.createSpan({ cls: 'revisit-reread-meta', text: new Date(n.r?.due ?? '').toLocaleDateString('en-US', { day: '2-digit', month: 'short' }) });
 				row.onclick = () => open(n.path);
+				row.onkeydown = (e) => e.key === 'Enter' && open(n.path);
 			}
 		}
 

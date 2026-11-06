@@ -9,10 +9,13 @@ import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureMod
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
+import { StartModal } from './review/StartModal';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, QueueItem, reviewScopes } from './srs/queue';
+import type { Card as FsrsCard } from 'ts-fsrs';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
+import { nearestChoice, sessionChoices } from './srs/session';
 import { migrateSettings } from './store/migrate';
 import { noteHasTag, Store } from './store/Store';
 import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
@@ -36,7 +39,7 @@ export default class RevisitPlugin extends Plugin {
 		registerCli(this);
 
 		this.addCommand({ id: 'capture', name: 'Add to review', callback: () => void this.capture() });
-		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.review(null) });
+		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.chooseReview(null) });
 		this.addCommand({ id: 'review-scope', name: 'Review this note/folder', callback: () => this.pickScope() });
 		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickScope(true) });
 		this.addCommand({ id: 'reread-toggle', name: 'Reread this note from time to time (toggle)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
@@ -46,7 +49,7 @@ export default class RevisitPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
-				if (file instanceof TFolder) menu.addItem((i) => i.setTitle('Review the cards of this folder').setIcon('layers').onClick(() => void this.review(file.path)));
+				if (file instanceof TFolder) menu.addItem((i) => i.setTitle('Review the cards of this folder').setIcon('layers').onClick(() => void this.chooseReview(file.path)));
 				if (!isSource(file)) return;
 				if (file.extension === 'md')
 					menu.addItem((i) =>
@@ -268,13 +271,41 @@ export default class RevisitPlugin extends Plugin {
 		this.statusEl.setText(`Revisit: ${n} ${n === 1 ? 'card' : 'cards'} today${newCount ? ` · ${newCount} new` : ''}`);
 	}
 
+	/** "How much time do you have?": the start screen, then the session of that length. */
+	async chooseReview(scope: string | null, topic: string | null = null): Promise<void> {
+		await this.reload();
+		const now = new Date();
+		const items = this.items();
+		const base = {
+			now,
+			scope,
+			topic,
+			newAllowed: this.quota(now, items).free,
+			secs: this.secs(),
+			interleave: this.settings.interleave,
+			retrievability: (c: FsrsCard, n: Date) => this.scheduler.retrievability(c, n),
+			gradedToday: this.gradedToday(now),
+		};
+		const choices = sessionChoices(items, base, this.secs());
+		const everything = choices[choices.length - 1];
+		if (!everything?.cards) return void new Notice('Revisit: nothing to review now.');
+		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
+		new StartModal(this.app, {
+			title: topic ?? name ?? 'Review',
+			choices,
+			preselected: nearestChoice(this.settings.budgetMinutes),
+			dueCards: everything.cards,
+			onStart: (minutes) => void this.review(scope, minutes ?? Number.POSITIVE_INFINITY, false, topic),
+		}).open();
+	}
+
 	async review(scope: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
 		await this.reload();
 		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
-		await this.startReview(this.session(scope, minutes, extra, topic), topic ?? name ?? 'All', extra);
+		await this.startReview(this.session(scope, minutes, extra, topic), topic ?? name ?? 'All', extra, minutes);
 	}
 
-	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
+	async startReview(queue: QueueItem[], label: string, extra: boolean, minutes?: number): Promise<void> {
 		if (!queue.length) {
 			new Notice('Revisit: nothing to review now.');
 			return;
@@ -286,7 +317,7 @@ export default class RevisitPlugin extends Plugin {
 		}
 		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view;
-		if (view instanceof ReviewView) view.start(queue, label, extra);
+		if (view instanceof ReviewView) view.start(queue, label, extra, minutes);
 	}
 
 	private pickScope(extra = false): void {
@@ -493,7 +524,7 @@ export default class RevisitPlugin extends Plugin {
 		const notice = new Notice(frag, 0);
 		btn.addEventListener('click', () => {
 			notice.hide();
-			void this.review(null);
+			void this.chooseReview(null);
 		});
 	}
 
@@ -558,6 +589,7 @@ class ScopeModal extends SuggestModal<string> {
 		el.setText(`${scope} · ${this.plugin.session(scope, undefined, this.extra).length}`);
 	}
 	onChooseSuggestion(scope: string): void {
-		void this.plugin.review(scope, undefined, this.extra);
+		if (this.extra) void this.plugin.review(scope, undefined, true);
+		else void this.plugin.chooseReview(scope);
 	}
 }

@@ -5,7 +5,9 @@ import { clozes, hideCloze } from '../cards/cloze';
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type RevisitPlugin from '../main';
-import { estimateMinutes, QueueItem, sessionRequeue, sourceName } from '../srs/queue';
+import { dueReviews, estimateMinutes, QueueItem, sessionRequeue, sourceName } from '../srs/queue';
+import { dueCounts, forecastMinutes } from '../srs/forecast';
+import { summarizeSession, toForecastCards } from '../srs/session';
 import { checkCloze, hintWords } from './answer';
 import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Grade, GRADES, toStored } from '../srs/scheduler';
@@ -44,6 +46,8 @@ export class ReviewView extends ItemView {
 	/** words of the back shown as a hint on a Reference front */
 	private hint = 0;
 	private render = new Component();
+	/** minutes the person asked for on the start screen; null for everything due */
+	private planned: number | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -95,8 +99,9 @@ export class ReviewView extends ItemView {
 	}
 
 	/** Starts a session with the given items. */
-	start(queue: QueueItem[], label: string, extra = false): void {
+	start(queue: QueueItem[], label: string, extra = false, minutes?: number): void {
 		this.queue = queue;
+		this.planned = minutes !== undefined && Number.isFinite(minutes) ? minutes : null;
 		this.extra = extra;
 		this.label = label;
 		this.index = 0;
@@ -152,15 +157,15 @@ export class ReviewView extends ItemView {
 		const home = headLeft.createEl('button', { cls: 'revisit-back-btn revisit-home', attr: { 'aria-label': 'Back to the panel' } });
 		setIcon(home, 'layout-dashboard');
 		home.onclick = () => void this.plugin.openPanel();
-		const prevBtn = headLeft.createEl('button', { text: 'Previous', cls: 'revisit-back-btn', attr: { title: 'Goes back to the previous card and undoes its grade (← or Ctrl+Z)' } });
+		const prevBtn = headLeft.createEl('button', { text: 'Previous', cls: 'revisit-back-btn', attr: { title: 'Goes back to the previous card and undoes its grade (← or Ctrl+Z)', 'aria-label': 'Previous card, undoes its grade' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
-		const nextBtn = headLeft.createEl('button', { text: 'Next', cls: 'revisit-back-btn', attr: { title: 'Moves on again with the same grade (→)' } });
+		const nextBtn = headLeft.createEl('button', { text: 'Next', cls: 'revisit-back-btn', attr: { title: 'Moves on again with the same grade (→)', 'aria-label': 'Next card, with the same grade' } });
 		nextBtn.disabled = !this.redo.length;
 		nextBtn.onclick = () => void this.redoNext();
 		headLeft.createSpan({ text: this.extra ? `${this.label} · extra, does not change the schedule` : this.label });
 		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
-		head.createSpan({ text: `${this.index + 1} de ${this.queue.length} · ~${Math.max(1, left)} min` });
+		head.createSpan({ text: `${this.index + 1} of ${this.queue.length} · ~${Math.max(1, left)} min left` });
 		const bar = root.createDiv({ cls: 'revisit-bar' });
 		bar.createEl('i').style.width = `${(this.index / this.queue.length) * 100}%`;
 
@@ -197,7 +202,7 @@ export class ReviewView extends ItemView {
 				this.moreHint();
 			};
 		}
-		front.createDiv({ cls: 'revisit-flip-hint', text: typeCloze ? 'Enter checks and flips' : 'Click or Space to flip' });
+		front.createDiv({ cls: 'revisit-flip-hint', text: typeCloze ? 'Enter checks and flips' : 'Tap the card or press Space to flip' });
 
 		const back = card.createDiv({ cls: 'revisit-face revisit-back' });
 		back.createDiv({ cls: 'revisit-tag', text: tag });
@@ -219,14 +224,6 @@ export class ReviewView extends ItemView {
 			this.flip();
 		};
 
-		const grades = root.createDiv({ cls: 'revisit-grades' + (this.revealed ? ' is-on' : '') });
-		const preview = this.previewOf(item);
-		for (const { grade, name } of GRADES) {
-			const b = grades.createEl('button', { cls: `revisit-g${grade}` });
-			b.createEl('b', { text: name });
-			b.createEl('small', { text: preview[grade].label });
-			b.onclick = () => void this.grade(grade);
-		}
 		const tools = root.createDiv({ cls: 'revisit-tools' });
 		const skipBtn = tools.createEl('button', { text: 'Skip', attr: { 'aria-label': 'Sends the card to the end of the session, without grading' } });
 		skipBtn.disabled = this.index >= this.queue.length - 1;
@@ -235,6 +232,8 @@ export class ReviewView extends ItemView {
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
 		root.createDiv({ cls: 'revisit-keys', text: 'Space flips · 1 to 4 grade · D hint · E edits · Q ends' });
+		this.dock = root.createDiv({ cls: 'revisit-dock' });
+		this.drawDock();
 
 		// links in the rendered card open the source next to the session
 		root.querySelectorAll('a.internal-link').forEach((el) =>
@@ -247,28 +246,79 @@ export class ReviewView extends ItemView {
 		this.shownAt = Date.now();
 	}
 
+	private dock: HTMLElement | null = null;
+
+	/** The bar fixed at the bottom: Show answer first, the four grades once the back was seen. */
+	private drawDock(): void {
+		const item = this.current();
+		if (!this.dock || !item) return;
+		this.dock.empty();
+		if (!this.revealed) {
+			const show = this.dock.createEl('button', { text: 'Show answer', cls: 'mod-cta revisit-show' });
+			show.onclick = () => this.flip();
+			return;
+		}
+		const grades = this.dock.createDiv({ cls: 'revisit-grades', attr: { role: 'group', 'aria-label': 'Grade the answer' } });
+		const preview = this.previewOf(item);
+		for (const { grade, name } of GRADES) {
+			const b = grades.createEl('button', { cls: `revisit-g${grade}`, attr: { 'aria-label': `${name}, back in ${preview[grade].label}` } });
+			b.createEl('b', { text: name });
+			b.createEl('small', { text: preview[grade].label });
+			b.onclick = () => void this.grade(grade);
+		}
+	}
+
 	private drawEnd(): void {
 		const root = this.contentEl;
 		const box = root.createDiv({ cls: 'revisit-end' });
+		const sum = summarizeSession(this.results, this.startedAt, Date.now());
 		box.createEl('h2', { text: 'Session finished' });
-		const done = this.results[1] + this.results[2] + this.results[3] + this.results[4];
-		const ok = done - this.results[1];
-		const min = Math.max(1, Math.round((Date.now() - this.startedAt) / 60000));
-		box.createEl('p', { text: `${done} cards · ${ok} remembered · ${this.results[1]} to revisit · ${min} min`, cls: 'revisit-muted' });
-		box.createEl('p', { text: 'What did not fit shows up tomorrow.', cls: 'revisit-muted' });
+		box.createEl('p', {
+			text: sum.cards ? `${sum.minutes} min: ${sum.cards} ${sum.cards === 1 ? 'card' : 'cards'}, ${sum.percentRight}% right` : 'No cards answered',
+			cls: 'revisit-muted',
+		});
+		const stats = box.createDiv({ cls: 'revisit-stats' });
+		const stat = (v: string, label: string) => {
+			const d = stats.createDiv();
+			d.createDiv({ cls: 'revisit-stat-v', text: v });
+			d.createDiv({ cls: 'revisit-muted', text: label });
+		};
+		stat(String(sum.cards), sum.cards === 1 ? 'card' : 'cards');
+		stat(sum.percentRight === null ? '-' : `${sum.percentRight}%`, 'right');
+
+		// tomorrow, from the schedule as it stands after this session
+		const now = new Date();
+		const items = this.plugin.items();
+		const cards = toForecastCards(items);
+		const f = forecastMinutes(cards, this.plugin.secs(), now, 8);
+		const tomorrowCards = dueCounts(cards, now, 8)[1] ?? 0;
+		const later = dueReviews(items, now).length;
+		const rows = box.createDiv({ cls: 'revisit-sum' });
+		const row = (icon: string, title: string, sub: string, value: string) => {
+			const r = rows.createDiv({ cls: 'revisit-sum-row' });
+			setIcon(r.createSpan({ cls: 'revisit-sum-icon' }), icon);
+			const t = r.createSpan({ cls: 'revisit-sum-text' });
+			t.createEl('b', { text: title });
+			t.createSpan({ cls: 'revisit-muted', text: sub });
+			r.createSpan({ cls: 'revisit-sum-value', text: value });
+		};
+		row('clock', 'Tomorrow', `${tomorrowCards} ${tomorrowCards === 1 ? 'card is' : 'cards are'} due`, `~${Math.max(tomorrowCards ? 1 : 0, Math.round(f.tomorrow))} min`);
+		row('bar-chart-2', 'Next 7 days', 'average per day', `~${Math.round(f.perDay.slice(1, 8).reduce((a, b) => a + b, 0) / 7)} min`);
+		if (later) row('plus', 'Backlog', `${later} ${later === 1 ? 'card' : 'cards'} left for later`, String(later));
+
 		if (this.wrong.length) {
 			const list = box.createDiv({ cls: 'revisit-wrong' });
-			list.createEl('h4', { text: 'Errados hoje' });
+			list.createEl('h4', { text: 'Missed today' });
 			for (const it of this.wrong) {
-				const row = list.createDiv({ cls: 'revisit-wrong-row' });
-				row.createSpan({ text: it.card.front.replace(/\s+/g, ' ').slice(0, 90) });
-				row.createEl('button', { text: 'Editar' }).onclick = () => this.plugin.editCard(it.card);
+				const r = list.createDiv({ cls: 'revisit-wrong-row' });
+				r.createSpan({ text: it.card.front.replace(/\s+/g, ' ').slice(0, 90) });
+				r.createEl('button', { text: 'Edit' }).onclick = () => this.plugin.editCard(it.card);
 			}
 		}
 		const btns = box.createDiv({ cls: 'revisit-buttons' });
+		btns.createEl('button', { text: 'Close', cls: 'mod-cta' }).onclick = () => void this.plugin.openPanel();
+		if (later && !this.extra) btns.createEl('button', { text: `Continue for ${this.planned && this.planned < 10 ? 5 : 10} more min` }).onclick = () => void this.plugin.review(null, this.planned && this.planned < 10 ? 5 : 10);
 		if (this.undo.length) btns.createEl('button', { text: 'Back to the last card' }).onclick = () => void this.undoLast();
-		btns.createEl('button', { text: 'Back to the panel' }).onclick = () => void this.plugin.openPanel();
-		btns.createEl('button', { text: 'Another 5 minutes', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
 	}
 
 	/** A Reference asked from the reference: the first words of the text can be revealed. */
@@ -294,7 +344,7 @@ export class ReviewView extends ItemView {
 			return;
 		}
 		this.contentEl.querySelector('.revisit-card')?.toggleClass('is-flipped', this.flipped);
-		if (this.revealed) this.contentEl.querySelector('.revisit-grades')?.addClass('is-on');
+		this.drawDock();
 	}
 
 	private async grade(grade: Grade, fromRedo = false): Promise<void> {
