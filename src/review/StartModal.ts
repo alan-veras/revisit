@@ -54,6 +54,20 @@ export class StartModal extends Modal {
 				cu.onStart();
 			};
 		}
+		// one length survived: no choice to make, so no list, no check, no repeated line
+		const single = this.rows.length === 1 ? (this.rows[0] ?? null) : null;
+		if (single) {
+			const box = root.createDiv({ cls: 'revisit-start-single' });
+			box.createDiv({ cls: 'revisit-start-hero', text: single.minutes === null ? `~${Math.max(1, single.estimate)} min` : `${single.minutes} min` });
+			box.createDiv({ cls: 'revisit-muted', text: `${single.cards} ${single.cards === 1 ? 'card' : 'cards'}${single.minutes === null ? ' due today' : ' fit this length'}` });
+			const go = root.createEl('button', { text: 'Start reviewing', cls: 'mod-cta revisit-start-go' });
+			go.disabled = single.cards === 0;
+			go.onclick = () => {
+				this.close();
+				this.o.onStart(single.minutes);
+			};
+			return;
+		}
 		root.createEl('p', { text: 'How much time do you have now?', cls: 'revisit-muted revisit-start-ask' });
 		const group = root.createDiv({ cls: 'revisit-choices', attr: { role: 'radiogroup', 'aria-label': 'Session length' } });
 		this.rows.forEach((c, i) => {

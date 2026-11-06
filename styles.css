@@ -250,6 +250,8 @@
 .revisit-choice-check svg { width: 18px; height: 18px; }
 .revisit-start-note { margin: 14px 8px 0; }
 .revisit-start-go { width: 100%; height: auto; min-height: 48px; margin-top: 16px; font-weight: 600; border-radius: 10px; }
+.revisit-start-single { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0 2px; text-align: center; }
+.revisit-start-hero { font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 
 /* end of session */
 .revisit-end { text-align: left; }
