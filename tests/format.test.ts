@@ -236,3 +236,22 @@ describe('rewriteTopics', () => {
 		expect(r.text).not.toContain('Topic:');
 	});
 });
+
+describe('rewriteTopics com vários cartões no mesmo arquivo', () => {
+	it('two cards changing at once keep the ids and the untouched block', () => {
+		const text = 'Front: A\nBack: a\nTopic: Kubernetes > Workloads\n---\n\nFront: B\nBack: b\nTopic: Kubernetes\n---\n\nFront: C\nBack: c\nTopic: CKA\n';
+		const r = rewriteTopics(text, (card) => (card.topics.some((t) => t === 'Kubernetes' || t.startsWith('Kubernetes > ')) ? retagTopics(card.topics, 'Kubernetes', 'K8s') : null));
+		expect(r.changed).toBe(2);
+		const cards = parseCardFile(r.text);
+		expect(cards[0]?.topics).toEqual(['K8s > Workloads']);
+		expect(cards[1]?.topics).toEqual(['K8s']);
+		expect(cards[2]?.topics).toEqual(['CKA']);
+		expect(cards.map((c) => c.id)).toEqual([null, null, null]);
+	});
+});
+
+describe('retagTopics renomeando para dentro de si mesmo', () => {
+	it('A -> A > B nests without duplicating the pre-existing child', () => {
+		expect(retagTopics(['A', 'A > B'], 'A', 'A > B')).toEqual(['A > B', 'A > B > B']);
+	});
+});

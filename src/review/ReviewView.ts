@@ -479,6 +479,9 @@ export class ReviewView extends ItemView {
 		const cid = item.card.id;
 		await this.plugin.deleteCard(item.card);
 		this.queue = this.queue.filter((it, i) => i < this.index || it.card.id !== cid);
+		// a deleted card cannot come back: its past grades and its "missed" line go with it
+		this.undo = this.undo.filter((u) => !(u.id === cid || u.id.startsWith(cid + '-')));
+		this.wrong = this.wrong.filter((w) => w.card.id !== cid);
 		this.flipped = false;
 		this.revealed = false;
 		this.typed = '';

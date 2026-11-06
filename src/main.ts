@@ -608,7 +608,11 @@ export default class RevisitPlugin extends Plugin {
 	/** Removes a card and its schedule; the UI confirms first. */
 	async deleteCard(card: Card): Promise<void> {
 		if (card.inline) return void new Notice('Revisit: this card is written in the note; delete it there.');
-		await this.store.deleteCard(card);
+		try {
+			await this.store.deleteCard(card);
+		} catch (e) {
+			return void new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)})`);
+		}
 		this.updateStatus();
 		new Notice('Revisit: card deleted');
 	}

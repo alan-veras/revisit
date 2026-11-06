@@ -12,7 +12,7 @@ import { matchesCard } from './search';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { TopicModal } from '../ui/TopicModal';
 import type RevisitPlugin from '../main';
-import { estimateMinutes, inScope, matchesFilter, QueueItem, scopeOf, sourceName } from '../srs/queue';
+import { estimateMinutes, inScope, matchesFilter, NO_SOURCE, QueueItem, scopeOf, sourceName } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PANEL = 'revisit-panel';
@@ -177,7 +177,7 @@ export class PanelView extends ItemView {
 					e.stopPropagation();
 					this.topicMenu(e, node);
 				};
-			} else if (!kids && node.scope) {
+			} else if (!kids && node.scope && node.scope !== NO_SOURCE) {
 				const acts = r.createSpan({ cls: 'revisit-li-go' });
 				setIcon(acts, 'plus');
 				setTooltip(acts, 'New card from this note');
@@ -321,15 +321,21 @@ export class PanelView extends ItemView {
 		const countLine = wrap.createDiv({ cls: 'revisit-muted revisit-small revisit-count' });
 		countLine.createSpan({ text: `${rows.length} ${rows.length === 1 ? 'card' : 'cards'}${dueNow ? ` · ${dueNow} due today` : ''}` });
 		const unique = [...new Map(rows.map((r) => [r.id, r.item.card])).values()];
-		const bulk = countLine.createEl('button', { text: `Change topic of ${unique.length}…`, cls: 'revisit-link' });
-		setTooltip(bulk, 'Sets one topic on every card matching the search and the filters');
-		bulk.onclick = () => {
-			new TopicModal(p.app, '', p.topics(), `Topic of ${unique.length} ${unique.length === 1 ? 'card' : 'cards'}`, 'Topic > subtopic; empty removes the topic', (topics) =>
-				new ConfirmModal(p.app, 'Change topic', `Sets "${topics.join('; ') || 'no topic'}" as the only topic of ${unique.length} ${unique.length === 1 ? 'card' : 'cards'}.`, 'Change', () =>
-					void p.setCardsTopics(unique, topics).then(() => this.draw()),
-				),
-			);
-		};
+		const bulkCards = unique.filter((c) => !c.inline);
+		const skippedInline = unique.length - bulkCards.length;
+		if (bulkCards.length) {
+			const bulk = countLine.createEl('button', { text: `Change topic of ${bulkCards.length}…`, cls: 'revisit-link' });
+			setTooltip(bulk, 'Sets one topic on every card matching the search and the filters');
+			bulk.onclick = () => {
+				const n = bulkCards.length;
+				const skipNote = skippedInline ? ` ${skippedInline} card${skippedInline === 1 ? '' : 's'} written inside notes keep their place (change it there).` : '';
+				new TopicModal(p.app, '', p.topics(), `Topic of ${n} ${n === 1 ? 'card' : 'cards'}`, 'Topic > subtopic; empty removes the topic', (topics) =>
+					new ConfirmModal(p.app, 'Change topic', `Sets "${topics.join('; ') || 'no topic'}" as the only topic of ${n} ${n === 1 ? 'card' : 'cards'}.${skipNote}`, 'Change', () =>
+						void p.setCardsTopics(bulkCards, topics).then(() => this.draw()),
+					),
+				);
+			};
+		}
 		if (!rows.length) {
 			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'No cards with these filters.' });
 			return;

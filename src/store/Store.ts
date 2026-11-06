@@ -242,9 +242,12 @@ export class Store {
 	/** Renames a topic (and every `from > …` under it) on all card files; an empty `to` removes the topic. */
 	async renameTopic(from: string, to: string): Promise<number> {
 		let changed = 0;
+		const needle = from.toLowerCase();
 		for (const file of this.cardFiles()) {
-			await this.app.vault.process(file, (text) => {
-				const r = rewriteTopics(text, (card) => retagTopics(card.topics, from, to));
+			const text = await this.app.vault.cachedRead(file);
+			if (!text.toLowerCase().includes(needle)) continue;
+			await this.app.vault.process(file, (t) => {
+				const r = rewriteTopics(t, (card) => retagTopics(card.topics, from, to));
 				changed += r.changed;
 				return r.text;
 			});
@@ -255,10 +258,20 @@ export class Store {
 
 	/** Sets the topics of specific cards (mirror-file cards only), one write per card file. */
 	async setTopics(cards: Card[], topics: string[]): Promise<number> {
-		const ids = new Set(cards.filter((c) => !c.inline && c.id).map((c) => c.id as string));
-		if (!ids.size) return 0;
+		const target = cards.filter((c) => !c.inline && c.id);
+		if (!target.length) return 0;
+		const ids = new Set(target.map((c) => c.id as string));
+		const byPath = new Map<string, Card[]>();
+		for (const c of target) {
+			if (!c.file) continue;
+			const g = byPath.get(c.file);
+			if (g) g.push(c);
+			else byPath.set(c.file, [c]);
+		}
 		let changed = 0;
-		for (const file of this.cardFiles()) {
+		for (const path of byPath.keys()) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (!(file instanceof TFile)) continue;
 			await this.app.vault.process(file, (text) => {
 				const r = rewriteTopics(text, (card) => (card.id && ids.has(card.id) ? topics : null));
 				changed += r.changed;
