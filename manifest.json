@@ -5,5 +5,6 @@
 	"minAppVersion": "1.13.0",
 	"description": "Spaced repetition flashcards with FSRS. Pick 10, 20 or 30 minutes and get exactly that, with a forecast of tomorrow's workload.",
 	"author": "Alan Veras",
+	"fundingUrl": "https://www.buymeacoffee.com/alanveras",
 	"isDesktopOnly": false
 }
