@@ -3,6 +3,9 @@ import { ItemView, Menu, Notice, setIcon, setTooltip, TFile, WorkspaceLeaf } fro
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
 import { sourceTree, topicTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
+import { averageAhead, forecastMinutes, sustainability } from '../srs/forecast';
+import { toForecastCards } from '../srs/session';
+import { drawForecastBars, drawHeatmap } from './charts';
 import { cardRow, CardStatus, statusOf, rowOrder } from '../srs/rows';
 import { cardStats, folderGroup, retentionBy, reviewsPerDay, topGroups } from '../srs/stats';
 import { matchesCard } from './search';
@@ -365,6 +368,57 @@ export class PanelView extends ItemView {
 		menu.showAtMouseEvent(e);
 	}
 
+	/** Workload ahead: tomorrow, the week, the peak, 30 days of bars against the budget, and the 90-day heatmap. */
+	private drawLoad(wrap: HTMLElement, now: Date): void {
+		const p = this.plugin;
+		const items = p.items();
+		const cards = toForecastCards(items);
+		const budget = p.settings.budgetMinutes;
+		const f = forecastMinutes(cards, p.secs(), now, 30);
+		const EXTRA_NEW = 5;
+		const sus = sustainability(cards, p.secs(), { newPerDay: p.settings.newPerDay, extraNew: EXTRA_NEW, budgetMinutes: budget });
+
+		const section = wrap.createDiv({ cls: 'revisit-load' });
+		const head = section.createDiv({ cls: 'revisit-load-head' });
+		const title = head.createDiv();
+		title.createEl('h3', { text: 'Workload' });
+		title.createDiv({ cls: 'revisit-muted', text: 'Forecast for the next 30 days' });
+		const badge = head.createSpan({ cls: `revisit-badge is-${sus.label.toLowerCase()}` });
+		setIcon(badge.createSpan(), sus.label === 'Heavy' ? 'alert-triangle' : 'check');
+		badge.createSpan({ text: sus.label });
+		setTooltip(badge, `About ${Math.round(sus.currentMinutes)} min a day in the long run at ${p.settings.newPerDay} new cards a day, against a budget of ${budget} min`);
+
+		const stats = section.createDiv({ cls: 'revisit-load-stats' });
+		const stat = (v: number, label: string) => {
+			const d = stats.createDiv();
+			const big = d.createDiv({ cls: 'revisit-stat-v', text: String(Math.round(v)) });
+			big.createSpan({ cls: 'revisit-stat-u', text: ' min' });
+			d.createDiv({ cls: 'revisit-muted', text: label });
+		};
+		stat(f.tomorrow, 'tomorrow');
+		stat(averageAhead(f), '7-day average');
+		stat(f.peak.minutes, 'peak');
+
+		const day = (i: number) => (i === 0 ? 'Today' : new Date(now.getTime() + i * 86400000).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }));
+		drawForecastBars(section, f.perDay, budget, day);
+		const legend = section.createDiv({ cls: 'revisit-legend' });
+		legend.createSpan({ cls: 'revisit-legend-key', text: 'Minutes per day' });
+		legend.createSpan({ text: `Light under ${Math.round(budget * 0.6)} · Sustainable ${Math.round(budget * 0.6)}-${budget} · Heavy over ${budget} min a day` });
+		section.createDiv({
+			cls: 'revisit-muted revisit-load-note',
+			text: `With ${EXTRA_NEW} more new cards a day: about ${Math.round(sus.whatIfMinutes)} min a day in the long run, ${sus.whatIfLabel === 'Heavy' ? 'over your budget' : sus.whatIfLabel === 'Light' ? 'still light' : 'still sustainable'}.`,
+		});
+
+		section.createEl('h4', { text: 'Reviews, 90 days', cls: 'revisit-sub' });
+		const counts = reviewsPerDay(p.store.log, now, 90);
+		const grid = section.createDiv({ cls: 'revisit-heat' });
+		drawHeatmap(grid, counts, now, (d, n) => `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${n ? `${n} ${n === 1 ? 'review' : 'reviews'}` : 'no reviews'}`);
+		const key = section.createDiv({ cls: 'revisit-legend revisit-heat-key' });
+		key.createSpan({ text: 'Less' });
+		for (let l = 0; l <= 4; l++) key.createSpan({ cls: `revisit-swatch is-l${l}` });
+		key.createSpan({ text: 'More' });
+	}
+
 	private drawProgress(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const now = new Date();
@@ -378,6 +432,8 @@ export class PanelView extends ItemView {
 		});
 		const all = [...ret.values()].reduce((a, r) => ({ ok: a.ok + r.ok, total: a.total + r.total }), { ok: 0, total: 0 });
 		const past = reviewsPerDay(log, now, 30);
+
+		this.drawLoad(wrap, now);
 
 		const kpis = wrap.createDiv({ cls: 'revisit-kpis' });
 		const kpi = (v: string, label: string, small?: string) => {
@@ -442,14 +498,6 @@ export class PanelView extends ItemView {
 			t.createDiv({ cls: 'revisit-muted revisit-small', text: [sourceName(it), topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Edit' }).onclick = () => p.editCard(it.card, () => this.draw());
 		}
-		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);
-		cols(
-			chart('Last 30 days', `${past.reduce((a, b) => a + b, 0)} reviews; days without a bar had no session`),
-			past,
-			past.map((_, i) => (i % 7 === 1 || i === 29 ? String(day(i).getDate()) : '')),
-			past.map((v, i) => `${day(i).getDate()}/${day(i).getMonth() + 1} · ${v ? `${v} reviews` : 'no session'}`),
-		);
-
 		const bars = (title: string, groups: [string, { ok: number; total: number }][]) => {
 			const hb = chart(title, `Cards seen 7 or more days ago; the line is the target of ${meta}%`).createDiv({ cls: 'revisit-hbars' });
 			for (const [name, r] of groups) {
@@ -463,9 +511,9 @@ export class PanelView extends ItemView {
 				row.createSpan({ cls: 'revisit-hb-val', text: `${pct}%` });
 			}
 		};
-		if (ret.size) bars('Accuracy by folder', topGroups(ret));
+		if (ret.size) bars('Retention by folder', topGroups(ret));
 		const retTopic = retentionBy(log, (id) => byKey.get(id)?.card.topics[0]?.split(' > ')[0] ?? null);
-		if (retTopic.size) bars('Accuracy by topic', topGroups(retTopic));
+		if (retTopic.size) bars('Retention by topic', topGroups(retTopic));
 	}
 }
 

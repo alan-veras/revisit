@@ -260,3 +260,41 @@
 .revisit-end .revisit-buttons { flex-direction: column-reverse; align-items: stretch; }
 .revisit-end .revisit-buttons button { height: auto; min-height: 48px; font-weight: 600; border-radius: 10px; }
 @media (max-width: 480px) { .revisit-stat-v { font-size: 38px; } }
+
+/* workload: forecast bars and heatmap. Colors follow the dataviz palette (one blue, a 5-step ramp), light and dark. */
+.revisit-panel {
+	--rv-series: #2a78d6; --rv-grid: #e1e0d9; --rv-good: #006300; --rv-bad: #b02a2a; --rv-info: #2a78d6;
+	--rv-r0: #e1e0d9; --rv-r1: #9ec5f4; --rv-r2: #5598e7; --rv-r3: #256abf; --rv-r4: #104281;
+}
+.theme-dark .revisit-panel {
+	--rv-series: #3987e5; --rv-grid: #2c2c2a; --rv-good: #0ca30c; --rv-bad: #e66767; --rv-info: #3987e5;
+	--rv-r0: #2c2c2a; --rv-r1: #1c5cab; --rv-r2: #3987e5; --rv-r3: #86b6ef; --rv-r4: #cde2fb;
+}
+.revisit-load { margin-bottom: 28px; }
+.revisit-load-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.revisit-load-head h3 { margin: 0 0 2px; font-size: var(--font-ui-large); }
+.revisit-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid currentColor; border-radius: 999px; font-size: var(--font-ui-smaller); font-weight: 600; white-space: nowrap; }
+.revisit-badge svg { width: 14px; height: 14px; }
+.revisit-badge.is-sustainable { color: var(--rv-good); }
+.revisit-badge.is-light { color: var(--rv-info); }
+.revisit-badge.is-heavy { color: var(--rv-bad); }
+.revisit-load-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 12px; }
+.revisit-stat-u { font-size: 16px; font-weight: 400; letter-spacing: 0; }
+.revisit-svg { display: block; overflow: visible; }
+.revisit-svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font-interface); }
+.revisit-svg text.revisit-label-strong { fill: var(--text-normal); paint-order: stroke; stroke: var(--background-primary); stroke-width: 3px; }
+.revisit-grid { stroke: var(--rv-grid); }
+.revisit-bar-fill { fill: var(--rv-series); }
+.revisit-budget-line { stroke: var(--text-muted); stroke-dasharray: 4 3; }
+.revisit-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.revisit-legend-key::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; background: var(--rv-series); }
+.revisit-load-note { margin-top: 10px; }
+.revisit-heat .revisit-heatmap { width: 100%; max-width: 440px; }
+.revisit-cell.is-l0, .revisit-swatch.is-l0 { fill: var(--rv-r0); background: var(--rv-r0); }
+.revisit-cell.is-l1, .revisit-swatch.is-l1 { fill: var(--rv-r1); background: var(--rv-r1); }
+.revisit-cell.is-l2, .revisit-swatch.is-l2 { fill: var(--rv-r2); background: var(--rv-r2); }
+.revisit-cell.is-l3, .revisit-swatch.is-l3 { fill: var(--rv-r3); background: var(--rv-r3); }
+.revisit-cell.is-l4, .revisit-swatch.is-l4 { fill: var(--rv-r4); background: var(--rv-r4); }
+.revisit-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.revisit-swatch.is-l0 { fill: none; }
+.revisit-col i, .revisit-hb-track i { background: var(--rv-series); }

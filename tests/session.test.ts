@@ -88,3 +88,13 @@ describe('tomorrow and heat helpers', () => {
 		expect(Math.min(...lv.slice(1))).toBe(1);
 	});
 });
+
+describe('niceMax', () => {
+	it('rounds the chart top up to a readable step', async () => {
+		const { niceMax } = await import('../src/view/charts');
+		expect(niceMax(0)).toBe(10);
+		expect(niceMax(27.3)).toBe(30);
+		expect(niceMax(31)).toBe(40);
+		expect(niceMax(1200)).toBe(1200);
+	});
+});
