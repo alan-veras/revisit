@@ -298,3 +298,5 @@
 .revisit-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 .revisit-swatch.is-l0 { fill: none; }
 .revisit-col i, .revisit-hb-track i { background: var(--rv-series); }
+.revisit-svg.revisit-heatmap text { font-size: 8px; }
+@media (max-width: 480px) { .revisit-svg:not(.revisit-heatmap) text { font-size: 20px; } }

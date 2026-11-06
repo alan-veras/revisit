@@ -48,7 +48,7 @@ export function drawForecastBars(parent: HTMLElement, perDay: number[], budget: 
 	svgText(svg, 'text', `budget ${budget} min`, { x: PLOT.right, y: y(budget) - 4, 'text-anchor': 'end' }, 'revisit-label-strong');
 	if ((perDay[peak] ?? 0) > 0) {
 		const px = PLOT.left + peak * slot + slot / 2;
-		svgText(svg, 'text', `peak ${Math.round(perDay[peak] ?? 0)}`, { x: Math.min(Math.max(px, PLOT.left + 20), PLOT.right - 60), y: y(perDay[peak] ?? 0) - 4, 'text-anchor': 'middle' }, 'revisit-label-strong');
+		svgText(svg, 'text', `peak ${Math.round(perDay[peak] ?? 0)}`, { x: Math.min(Math.max(px, PLOT.left + 38), PLOT.right - 60), y: y(perDay[peak] ?? 0) - 4, 'text-anchor': 'middle' }, 'revisit-label-strong');
 	}
 	for (const i of [0, 9, 19, perDay.length - 1]) {
 		if (i >= perDay.length) continue;
