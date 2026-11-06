@@ -1,4 +1,5 @@
 import { App, Modal, setIcon } from 'obsidian';
+import { CatchUpOffer, planDaysText } from '../srs/forecast';
 import { SessionChoice } from '../srs/session';
 
 const NOTES: Record<number, string> = { 5: 'Fits a coffee break', 10: 'Short', 20: 'A solid session', 30: 'Long' };
@@ -17,6 +18,8 @@ export class StartModal extends Modal {
 			/** cards due today, for the line under the list */
 			dueCards: number;
 			onStart: (minutes: number | null) => void;
+			/** large overdue backlog: offer to work through it gradually */
+			catchUp?: { offer: CatchUpOffer; onStart: () => void };
 		},
 	) {
 		super(app);
@@ -33,6 +36,19 @@ export class StartModal extends Modal {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass('revisit-start');
+		const cu = this.o.catchUp;
+		if (cu) {
+			const b = root.createDiv({ cls: 'revisit-catchup', attr: { role: 'region', 'aria-label': 'Catch up' } });
+			const head = b.createDiv({ cls: 'revisit-catchup-text' });
+			setIcon(head.createSpan({ cls: 'revisit-catchup-icon' }), 'alert-triangle');
+			head.createSpan({ text: `You have ${cu.offer.overdue} overdue ${cu.offer.overdue === 1 ? 'card' : 'cards'} (about ${Math.round(cu.offer.overdueMinutes)} min). Catch up gradually?` });
+			b.createDiv({ cls: 'revisit-muted revisit-catchup-plan', text: `Today: ${cu.offer.todayKeys.length} ${cu.offer.todayKeys.length === 1 ? 'card' : 'cards'}, about ${Math.max(1, Math.round(cu.offer.todayMinutes))} min. The plan takes ${planDaysText(cu.offer)}.` });
+			const btn = b.createEl('button', { text: "Start today's catch-up", cls: 'revisit-catchup-go' });
+			btn.onclick = () => {
+				this.close();
+				cu.onStart();
+			};
+		}
 		root.createEl('p', { text: 'How much time do you have now?', cls: 'revisit-muted revisit-start-ask' });
 		const group = root.createDiv({ cls: 'revisit-choices', attr: { role: 'radiogroup', 'aria-label': 'Session length' } });
 		for (const c of this.o.choices) {

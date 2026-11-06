@@ -300,3 +300,11 @@
 .revisit-col i, .revisit-hb-track i { background: var(--rv-series); }
 .revisit-svg.revisit-heatmap text { font-size: 8px; }
 @media (max-width: 480px) { .revisit-svg:not(.revisit-heatmap) text { font-size: 20px; } }
+
+/* Catch-up banner (start screen) and line (panel) */
+.revisit-catchup { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--background-modifier-border); border-left: 3px solid var(--color-orange, var(--interactive-accent)); border-radius: 10px; background: var(--background-secondary); }
+.revisit-catchup-text { display: flex; align-items: flex-start; gap: 8px; font-weight: 500; }
+.revisit-catchup-icon { display: inline-flex; flex: none; color: var(--color-orange, var(--text-accent)); }
+.revisit-catchup-go { align-self: flex-start; min-height: 36px; }
+.revisit-catchup-panel { margin: 10px 0 0; }
+@media (max-width: 480px) { .revisit-catchup-go { align-self: stretch; min-height: 44px; } }

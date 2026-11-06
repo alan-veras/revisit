@@ -3,7 +3,7 @@ import { ItemView, Menu, Notice, setIcon, setTooltip, TFile, WorkspaceLeaf } fro
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
 import { sourceTree, topicTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
-import { averageAhead, forecastMinutes, sustainability } from '../srs/forecast';
+import { averageAhead, forecastMinutes, planDaysText, sustainability } from '../srs/forecast';
 import { toForecastCards } from '../srs/session';
 import { drawForecastBars, drawHeatmap } from './charts';
 import { cardRow, CardStatus, statusOf, rowOrder } from '../srs/rows';
@@ -404,6 +404,15 @@ export class PanelView extends ItemView {
 		const legend = section.createDiv({ cls: 'revisit-legend' });
 		legend.createSpan({ cls: 'revisit-legend-key', text: 'Minutes per day' });
 		legend.createSpan({ text: `Light under ${Math.round(budget * 0.6)} · Sustainable ${Math.round(budget * 0.6)}-${budget} · Heavy over ${budget} min a day` });
+		const cu = p.catchUp(now, items);
+		if (cu) {
+			const line = section.createDiv({ cls: 'revisit-catchup revisit-catchup-panel' });
+			line.createDiv({
+				cls: 'revisit-catchup-text',
+				text: `Catch-up plan: ${cu.offer.overdue} overdue ${cu.offer.overdue === 1 ? 'card' : 'cards'} (about ${Math.round(cu.offer.overdueMinutes)} min) spread over ${planDaysText(cu.offer)}, about ${Math.max(1, Math.round(cu.offer.todayMinutes))} min today.`,
+			});
+			line.createEl('button', { text: "Start today's catch-up", cls: 'revisit-catchup-go' }).onclick = () => void p.startCatchUp();
+		}
 		section.createDiv({
 			cls: 'revisit-muted revisit-load-note',
 			text: `With ${EXTRA_NEW} more new cards a day: about ${Math.round(sus.whatIfMinutes)} min a day in the long run, ${sus.whatIfLabel === 'Heavy' ? 'over your budget' : sus.whatIfLabel === 'Light' ? 'still light' : 'still sustainable'}.`,

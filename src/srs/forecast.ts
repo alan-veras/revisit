@@ -155,6 +155,8 @@ export interface CatchUpDay {
 export interface CatchUpPlan {
 	days: CatchUpDay[];
 	overdue: number;
+	/** minutes the whole backlog would take */
+	overdueMinutes: number;
 	/** backlog cards that did not fit in the horizon */
 	unplaced: string[];
 }
@@ -212,5 +214,41 @@ export function catchUpPlan(
 		d.minutes += s / 60;
 	}
 	for (const d of days) d.minutes = round1(d.minutes);
-	return { days: days.filter((d) => d.keys.length > 0), overdue: backlog.length, unplaced };
+	const overdueMinutes = round1(backlog.reduce((a, b) => a + secsOf(b.c, secs), 0) / 60);
+	return { days: days.filter((d) => d.keys.length > 0), overdue: backlog.length, overdueMinutes, unplaced };
+}
+
+/** The backlog is "large" once clearing it would take more than this many daily budgets. */
+export const CATCH_UP_FACTOR = 2;
+
+export interface CatchUpOffer {
+	overdue: number;
+	overdueMinutes: number;
+	/** keys of today's slice, in review order */
+	todayKeys: string[];
+	todayMinutes: number;
+	/** days the plan takes, counting today */
+	planDays: number;
+	/** part of the backlog did not fit in the horizon, so the plan runs longer than `planDays` */
+	open: boolean;
+}
+
+/** Null while the overdue backlog is under CATCH_UP_FACTOR x the daily budget. */
+export function catchUpOffer(plan: CatchUpPlan, budgetMinutes: number): CatchUpOffer | null {
+	if (plan.overdue === 0 || plan.overdueMinutes <= CATCH_UP_FACTOR * budgetMinutes) return null;
+	const today = plan.days[0]?.day === 0 ? plan.days[0] : undefined;
+	const last = plan.days[plan.days.length - 1];
+	return {
+		overdue: plan.overdue,
+		overdueMinutes: plan.overdueMinutes,
+		todayKeys: today?.keys ?? [],
+		todayMinutes: today?.minutes ?? 0,
+		planDays: last ? last.day + 1 : 0,
+		open: plan.unplaced.length > 0,
+	};
+}
+
+/** "about 6 days" / "more than 30 days" */
+export function planDaysText(o: Pick<CatchUpOffer, 'planDays' | 'open'>): string {
+	return o.open ? `more than ${o.planDays} days` : `${o.planDays} ${o.planDays === 1 ? 'day' : 'days'}`;
 }

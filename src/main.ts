@@ -15,7 +15,8 @@ import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, QueueItem, reviewScopes } from './srs/queue';
 import type { Card as FsrsCard } from 'ts-fsrs';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
-import { nearestChoice, sessionChoices } from './srs/session';
+import { nearestChoice, sessionChoices, toForecastCards } from './srs/session';
+import { CatchUpOffer, catchUpOffer, catchUpPlan } from './srs/forecast';
 import { migrateSettings } from './store/migrate';
 import { noteHasTag, Store } from './store/Store';
 import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
@@ -230,6 +231,28 @@ export default class RevisitPlugin extends Plugin {
 		});
 	}
 
+	/** The catch-up plan for the overdue backlog, or null while the backlog is small. */
+	catchUp(now = new Date(), items = this.items()): { offer: CatchUpOffer; queue: QueueItem[] } | null {
+		const plan = catchUpPlan(toForecastCards(items), this.secs(), {
+			now,
+			budgetMinutes: this.settings.budgetMinutes,
+			retrievability: (c, n) => this.scheduler.retrievability(c, n),
+		});
+		const offer = catchUpOffer(plan, this.settings.budgetMinutes);
+		if (!offer) return null;
+		const byKey = new Map(items.map((it) => [it.key, it]));
+		const queue = offer.todayKeys.map((k) => byKey.get(k)).filter((it): it is QueueItem => !!it);
+		return { offer, queue };
+	}
+
+	/** Starts today's slice of the catch-up plan. */
+	async startCatchUp(): Promise<void> {
+		await this.reload();
+		const plan = this.catchUp();
+		if (!plan) return void new Notice('Revisit: no backlog to catch up on.');
+		await this.startReview(plan.queue, 'Catch-up', false, this.settings.budgetMinutes);
+	}
+
 	/** New cards left today, out of the one daily quota. */
 	quota(now = new Date(), items = this.items()): QuotaStatus {
 		return quotaStatus({
@@ -289,12 +312,14 @@ export default class RevisitPlugin extends Plugin {
 		const choices = sessionChoices(items, base, this.secs());
 		const everything = choices[choices.length - 1];
 		if (!everything?.cards) return void new Notice('Revisit: nothing to review now.');
+		const catchUp = scope === null && topic === null ? this.catchUp(now, items) : null;
 		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
 		new StartModal(this.app, {
 			title: topic ?? name ?? 'Review',
 			choices,
 			preselected: nearestChoice(this.settings.budgetMinutes),
 			dueCards: everything.cards,
+			...(catchUp ? { catchUp: { offer: catchUp.offer, onStart: () => void this.startCatchUp() } } : {}),
 			onStart: (minutes) => void this.review(scope, minutes ?? Number.POSITIVE_INFINITY, false, topic),
 		}).open();
 	}

@@ -1,6 +1,6 @@
 import { createEmptyCard, State } from 'ts-fsrs';
 import { describe, expect, it } from 'vitest';
-import { catchUpPlan, forecastMinutes, ForecastCard, sustainability } from '../src/srs/forecast';
+import { catchUpOffer, catchUpPlan, planDaysText, forecastMinutes, ForecastCard, sustainability } from '../src/srs/forecast';
 
 const NOW = new Date(2026, 10, 5, 10, 0, 0);
 const SECS = { Q: 60, A: 10 };
@@ -86,5 +86,34 @@ describe('catchUpPlan', () => {
 	it('still places one card on a day when a single card exceeds the budget', () => {
 		const plan = catchUpPlan([card('big', 'Q', -2)], SECS, { now: NOW, budgetMinutes: 0.5 });
 		expect(plan.days[0]?.keys).toEqual(['big']);
+	});
+});
+
+describe('catchUpOffer', () => {
+	const many = (n: number) => Array.from({ length: n }, (_, i) => card(`c${i}`, 'A', -3));
+
+	it('stays quiet while the backlog is within 2x the budget', () => {
+		// 12 cards x 10 s = 2 min; budget 1 min -> exactly 2x, not more
+		expect(catchUpOffer(catchUpPlan(many(12), SECS, { now: NOW, budgetMinutes: 1 }), 1)).toBeNull();
+		expect(catchUpOffer(catchUpPlan([], SECS, { now: NOW, budgetMinutes: 1 }), 1)).toBeNull();
+	});
+
+	it('offers a plan past 2x: today slice, days and minutes', () => {
+		const plan = catchUpPlan(many(30), SECS, { now: NOW, budgetMinutes: 1 });
+		const offer = catchUpOffer(plan, 1);
+		expect(offer?.overdue).toBe(30);
+		expect(offer?.overdueMinutes).toBe(5);
+		expect(offer?.todayKeys).toHaveLength(6);
+		expect(offer?.todayMinutes).toBe(1);
+		expect(offer?.planDays).toBe(5);
+		expect(offer?.open).toBe(false);
+		expect(planDaysText(offer as NonNullable<typeof offer>)).toBe('5 days');
+	});
+
+	it('says more than the horizon when cards do not fit', () => {
+		const plan = catchUpPlan(many(30), SECS, { now: NOW, budgetMinutes: 1, horizonDays: 2 });
+		const offer = catchUpOffer(plan, 1);
+		expect(offer?.open).toBe(true);
+		expect(planDaysText(offer as NonNullable<typeof offer>)).toBe('more than 2 days');
 	});
 });

@@ -10,6 +10,7 @@
 - **Study for the time you have.** Pick 5, 10, 20 or 30 minutes (or everything due). Each choice shows how many cards fit, and the session holds exactly that many, the most forgotten first.
 - **Know tomorrow's workload.** The panel forecasts the next 30 days in minutes against your daily budget and tells you whether the load is Light, Sustainable or Heavy. When a session ends you see tomorrow's minutes too.
 - **A backlog never becomes a wall.** What does not fit in today's session simply waits; nothing is rescheduled or lost.
+- **Catch-up mode when you fall behind.** A big backlog is spread over the coming days within your budget.
 - **Your source note stays untouched.** Cards live in their own files. Creating a card never adds a mark, link or change to the note you took it from.
 - **Works on mobile.** Large Again, Hard, Good and Easy buttons stay at the bottom of the screen, and a tap on the card flips it.
 
