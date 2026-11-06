@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { visibleChoices } from '../src/review/StartModal';
-import type { SessionChoice } from '../src/srs/session';
+import { SessionChoice, visibleChoices } from '../src/srs/session';
 
 const c = (minutes: number | null, cards: number, estimate = 1): SessionChoice => ({ minutes, cards, estimate });
 

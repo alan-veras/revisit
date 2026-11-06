@@ -1,27 +1,10 @@
 import { App, Modal, setIcon } from 'obsidian';
 import { CatchUpOffer, planDaysText } from '../srs/forecast';
-import { SessionChoice } from '../srs/session';
+import { SessionChoice, visibleChoices } from '../srs/session';
 
 const NOTES: Record<number, string> = { 5: 'Fits a coffee break', 10: 'Short', 20: 'A solid session', 30: 'Long' };
 /** One colour per row, by position, so the lengths read at a glance. */
 const TONES = ['green', 'cyan', 'blue', 'purple', 'orange'];
-
-/**
- * The rows worth showing: a length only appears while it holds more cards than the
- * shorter one before it and fewer than "everything due"; the last row is always there.
- */
-export function visibleChoices(choices: SessionChoice[]): SessionChoice[] {
-	const everything = choices.find((c) => c.minutes === null);
-	if (!everything) return choices;
-	const out: SessionChoice[] = [];
-	let seen = 0;
-	for (const c of choices) {
-		if (c.minutes === null || c.cards <= seen || c.cards >= everything.cards) continue;
-		out.push(c);
-		seen = c.cards;
-	}
-	return [...out, everything];
-}
 
 /** "How much time do you have?": one row per length that changes the outcome, then Start. */
 export class StartModal extends Modal {

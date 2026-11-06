@@ -27,6 +27,23 @@ export function sessionChoices(items: QueueItem[], base: Omit<QueueOptions, 'bud
 	return [...minutes.map(fit), fit(null)];
 }
 
+/**
+ * The rows worth showing: a length only appears while it holds more cards than the
+ * shorter one before it and fewer than "everything due"; the last row is always there.
+ */
+export function visibleChoices(choices: SessionChoice[]): SessionChoice[] {
+	const everything = choices.find((c) => c.minutes === null);
+	if (!everything) return choices;
+	const out: SessionChoice[] = [];
+	let seen = 0;
+	for (const c of choices) {
+		if (c.minutes === null || c.cards <= seen || c.cards >= everything.cards) continue;
+		out.push(c);
+		seen = c.cards;
+	}
+	return [...out, everything];
+}
+
 /** The offered length closest to the daily budget (the lower one on a tie): preselected on the start screen. */
 export function nearestChoice(budget: number, minutes: readonly number[] = SESSION_MINUTES): number {
 	let best = minutes[0] as number;
