@@ -129,6 +129,10 @@ Spaced Repetition is the established, widely used plugin with its own card synta
 
 Revisit stores your cards, schedule (`state.json`) and review history (`review-log.jsonl`) inside your vault. Nothing is sent to a server, and there is no account to create.
 
+## Install
+
+Manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Once the catalog review is through, it also shows up in Obsidian's Community plugins search.
+
 ## Support
 
 If Revisit helps you study, you can support its development:
