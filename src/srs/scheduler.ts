@@ -8,7 +8,7 @@ export const GRADES: { grade: Grade; name: string }[] = [
 	{ grade: 4, name: 'Easy' },
 ];
 
-/** FSRS card as stored in estado.json (dates as ISO strings). */
+/** FSRS card as stored in the state file (dates as ISO strings). */
 export type StoredFsrs = Omit<FsrsCard, 'due' | 'last_review' | 'state'> & { due: string; last_review?: string; state: number };
 
 export function toStored(card: FsrsCard): StoredFsrs {

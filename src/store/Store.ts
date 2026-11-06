@@ -5,7 +5,7 @@ import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
 import { Reread } from '../notes/reread';
-import { migrateCardFiles } from './migrate';
+import { DATA_FILES, migrateCardFiles, migrateDataFiles } from './migrate';
 import { parseStateText, parseLogLines } from './parse';
 
 export type Status = 'active' | 'suspended';
@@ -45,13 +45,13 @@ export class Store {
 		return normalizePath(this.folder());
 	}
 	private get statePath(): string {
-		return `${this.base}/estado.json`;
+		return `${this.base}/${DATA_FILES.state}`;
 	}
 	private get backupPath(): string {
-		return `${this.base}/estado.backup.json`;
+		return `${this.base}/${DATA_FILES.stateBackup}`;
 	}
 	private get logPath(): string {
-		return `${this.base}/revisoes.jsonl`;
+		return `${this.base}/${DATA_FILES.log}`;
 	}
 
 	cardFiles(): TFile[] {
@@ -59,10 +59,10 @@ export class Store {
 	}
 
 	private get migrationBackupPath(): string {
-		return `${this.base}/estado.json.backup-pre-migration`;
+		return `${this.statePath}.backup-pre-migration`;
 	}
 
-	/** estado.json first; when it is unreadable, the last good copy written before it. The old Portuguese schema is migrated: backed up once, then persisted in English right away. */
+	/** The state file first; when it is unreadable, the last good copy written before it. The old Portuguese schema is migrated: backed up once, then persisted in English right away. */
 	private async readState(): Promise<Record<string, CardState>> {
 		for (const path of [this.statePath, this.backupPath]) {
 			try {
@@ -82,8 +82,25 @@ export class Store {
 		return {};
 	}
 
+	/** Files named the way older versions did move to the current names, once; nothing happens in a vault that never had them. */
+	private async migrateDataFiles(): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		try {
+			const moved = await migrateDataFiles(this.base, {
+				read: (path) => adapter.read(path),
+				exists: (path) => adapter.exists(path),
+				write: (path, text) => adapter.write(path, text),
+				rename: (from, to) => adapter.rename(from, to),
+			});
+			if (moved.length) new Notice(`Revisit: ${moved.length} data ${moved.length === 1 ? 'file' : 'files'} renamed; the originals are kept beside them as .backup-pre-migration.`);
+		} catch (e) {
+			new Notice(`Revisit: could not rename the data files (${e instanceof Error ? e.message : String(e)}). The old ones are untouched.`);
+		}
+	}
+
 	async load(): Promise<void> {
 		const adapter = this.app.vault.adapter;
+		await this.migrateDataFiles();
 		this.state = await this.readState();
 		this.lastSavedState = JSON.stringify(this.state);
 		this.log = [];
@@ -92,7 +109,7 @@ export class Store {
 			const parsed = parseLogLines(await adapter.read(this.logPath));
 			this.log = parsed.entries;
 			this.rawLog = parsed.lines;
-			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in revisoes.jsonl.`);
+			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in ${DATA_FILES.log}.`);
 		}
 		const files = this.cardFiles();
 		await this.migrateCards(files);

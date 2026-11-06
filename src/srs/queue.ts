@@ -3,7 +3,7 @@ import { Card, isImportant, CardType } from '../cards/types';
 import { isNew } from './scheduler';
 
 export interface QueueItem {
-	/** key in estado.json and the log: the card id, plus `-r` for the reverse */
+	/** key in the state file and the log: the card id, plus `-r` for the reverse */
 	key: string;
 	reverse: boolean;
 	/** which `==highlight==` of a Cloze this item asks, when the front has them */

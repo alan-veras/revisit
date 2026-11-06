@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCardFile } from '../src/cards/format';
-import { MigrationIO, migrateCardFiles, migrateCardText, migrateEstado, migrateLogEntry, migrateSettings } from '../src/store/migrate';
+import { MigrationIO, migrateCardFiles, migrateCardText, migrateDataFiles, migrateEstado, migrateLogEntry, migrateSettings } from '../src/store/migrate';
+import { parseLogLines } from '../src/store/parse';
 
 const OLD = `---
 tags: [cards]
@@ -211,5 +212,76 @@ describe('migrateLogEntry (revisoes.jsonl)', () => {
 	it('a line without the optional state stays without it', () => {
 		const e = migrateLogEntry(JSON.parse('{"id":"x","t":"t","nota":1,"segundos":1,"tipo":"Lacuna","novo":true,"extra":true}'));
 		expect('state' in e).toBe(false);
+	});
+});
+
+describe('migrateDataFiles (data files renamed)', () => {
+	/** an in-memory folder that behaves like the vault adapter */
+	function folder(files: Record<string, string>) {
+		const fs = { ...files };
+		const io = {
+			read: async (p: string) => fs[p] as string,
+			exists: async (p: string) => p in fs,
+			write: async (p: string, t: string) => void (fs[p] = t),
+			rename: async (a: string, b: string) => {
+				fs[b] = fs[a] as string;
+				delete fs[a];
+			},
+		};
+		return { fs, io };
+	}
+	const OLD = { 'R/estado.json': '{"a":1}', 'R/estado.backup.json': '{"a":0}', 'R/revisoes.jsonl': '{"id":"a"}\n{"id":"b"}\n' };
+
+	it('copies to the new names and keeps the old files as backups', async () => {
+		const { fs, io } = folder(OLD);
+		expect(await migrateDataFiles('R', io)).toEqual(['estado.json', 'estado.backup.json', 'revisoes.jsonl']);
+		expect(fs['R/state.json']).toBe('{"a":1}');
+		expect(fs['R/state.backup.json']).toBe('{"a":0}');
+		expect(fs['R/review-log.jsonl']).toBe('{"id":"a"}\n{"id":"b"}\n');
+		expect(fs['R/estado.json.backup-pre-migration']).toBe('{"a":1}');
+		expect(fs['R/revisoes.jsonl.backup-pre-migration']).toBe('{"id":"a"}\n{"id":"b"}\n');
+		expect(Object.keys(fs).some((k) => k.endsWith('.migrating'))).toBe(false);
+		expect('R/estado.json' in fs).toBe(false);
+	});
+
+	it('is idempotent: a second run changes nothing', async () => {
+		const { fs, io } = folder(OLD);
+		await migrateDataFiles('R', io);
+		const snapshot = { ...fs };
+		expect(await migrateDataFiles('R', io)).toEqual([]);
+		expect(fs).toEqual(snapshot);
+	});
+
+	it('never overwrites a file that already has the new name', async () => {
+		const { fs, io } = folder({ ...OLD, 'R/state.json': '{"new":true}' });
+		expect(await migrateDataFiles('R', io)).toEqual(['estado.backup.json', 'revisoes.jsonl']);
+		expect(fs['R/state.json']).toBe('{"new":true}');
+		expect(fs['R/estado.json']).toBe('{"a":1}');
+	});
+
+	it('keeps an existing backup and numbers the next one', async () => {
+		const { fs, io } = folder({ 'R/estado.json': '{"a":1}', 'R/estado.json.backup-pre-migration': 'older' });
+		await migrateDataFiles('R', io);
+		expect(fs['R/estado.json.backup-pre-migration']).toBe('older');
+		expect(fs['R/estado.json.backup-pre-migration.1']).toBe('{"a":1}');
+	});
+
+	it('does nothing in a vault with no old files', async () => {
+		const { fs, io } = folder({ 'R/state.json': '{}' });
+		expect(await migrateDataFiles('R', io)).toEqual([]);
+		expect(fs).toEqual({ 'R/state.json': '{}' });
+	});
+
+	it('recovers from a crash after the temporary write', async () => {
+		const { fs, io } = folder({ ...OLD, 'R/state.json.migrating': 'half' });
+		await migrateDataFiles('R', io);
+		expect(fs['R/state.json']).toBe('{"a":1}');
+	});
+
+	it('the migrated log is still read, old Portuguese lines included', () => {
+		const text = '{"id":"labcde","t":"2026-11-03T10:00:00Z","nota":2,"segundos":42,"tipo":"Questão","novo":true,"extra":false}\n{"id":"labcde","t":"2026-11-04T10:00:00Z","grade":3,"seconds":9,"type":"Question","new":false,"extra":false}\n';
+		const { entries, bad } = parseLogLines(text);
+		expect(bad).toBe(0);
+		expect(entries.map((e) => [e.grade, e.type, e.seconds])).toEqual([[2, 'Problem', 42], [3, 'Question', 9]]);
 	});
 });

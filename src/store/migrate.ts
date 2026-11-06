@@ -117,6 +117,45 @@ export async function migrateCardFiles(paths: string[], io: MigrationIO): Promis
 	return done;
 }
 
+/** The data files Revisit keeps in its folder. */
+export const DATA_FILES = { state: 'state.json', stateBackup: 'state.backup.json', log: 'review-log.jsonl' } as const;
+
+/** Names the same files had in older versions, and what each became. */
+const LEGACY_DATA_FILES: readonly (readonly [old: string, now: string])[] = [
+	['estado.json', DATA_FILES.state],
+	['estado.backup.json', DATA_FILES.stateBackup],
+	['revisoes.jsonl', DATA_FILES.log],
+];
+
+export interface DataFilesIO extends Pick<MigrationIO, 'read' | 'exists' | 'write'> {
+	rename: (from: string, to: string) => Promise<void>;
+}
+
+/**
+ * Moves the data files of older versions to their current names, inside `base`.
+ * Safe to run on every start: a file moves only when the new name is absent;
+ * the old one is kept beside it as `<old>.backup-pre-migration` (a number is
+ * added when that name is taken); when both exist nothing is touched. The new
+ * file is written under a temporary name and renamed, so a crash halfway leaves
+ * the old file in place and the next start does it again. Returns the old names moved.
+ */
+export async function migrateDataFiles(base: string, io: DataFilesIO): Promise<string[]> {
+	const moved: string[] = [];
+	for (const [old, now] of LEGACY_DATA_FILES) {
+		const from = `${base}/${old}`;
+		const to = `${base}/${now}`;
+		if (!(await io.exists(from)) || (await io.exists(to))) continue;
+		const tmp = `${to}.migrating`;
+		await io.write(tmp, await io.read(from));
+		await io.rename(tmp, to);
+		let backup = `${from}.backup-pre-migration`;
+		for (let n = 1; await io.exists(backup); n++) backup = `${from}.backup-pre-migration.${n}`;
+		await io.rename(from, backup);
+		moved.push(old);
+	}
+	return moved;
+}
+
 /** Old Portuguese suspension values onto the English ones. */
 const STATUS_MAP: Record<string, Status> = { ativo: 'active', suspenso: 'suspended' };
 
@@ -142,7 +181,7 @@ function migrateRereadFields(r: Record<string, unknown>): boolean {
 }
 
 /**
- * estado.json: keys `nota:<path>` become `note:<path>`, `st: 'ativo'|'suspenso'`
+ * The state file (`estado.json` in old versions): keys `nota:<path>` become `note:<path>`, `st: 'ativo'|'suspenso'`
  * becomes `'active'|'suspended'` and the `releitura` schedule becomes `reread`
  * with English fields. English input passes through unchanged; `changed` says
  * whether anything was rewritten, so the caller only backs up and persists when
@@ -212,7 +251,7 @@ export function migrateSettings(raw: Record<string, unknown> | null | undefined)
 }
 
 /**
- * One revisoes.jsonl line: accepts the old Portuguese field names
+ * One line of the review log (`revisoes.jsonl` in old versions): accepts the old Portuguese field names
  * (`nota`, `segundos`, `tipo`, `novo`, `estado`) and card types beside the
  * English ones forever, so the file itself is never rewritten.
  */
