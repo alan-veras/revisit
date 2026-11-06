@@ -315,7 +315,7 @@ export default class RevisitPlugin extends Plugin {
 		const catchUp = scope === null && topic === null ? this.catchUp(now, items) : null;
 		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
 		new StartModal(this.app, {
-			title: topic ?? name ?? 'Review',
+			title: topic ?? name ? `Review: ${topic ?? name}` : 'Review',
 			choices,
 			preselected: nearestChoice(this.settings.budgetMinutes),
 			dueCards: everything.cards,

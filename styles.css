@@ -233,13 +233,19 @@
 .revisit-choices { display: flex; flex-direction: column; gap: 4px; }
 .revisit-choice { display: flex; align-items: center; gap: 12px; width: 100%; height: auto; min-height: 56px; padding: 10px 12px; text-align: left; background: none; box-shadow: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
 .revisit-choice:hover { background: var(--background-modifier-hover); }
-.revisit-choice.is-on { border-color: var(--interactive-accent); background: var(--background-modifier-hover); }
+.revisit-choice { --tone: var(--interactive-accent); --tone-rgb: var(--color-accent-rgb); }
+.revisit-choice.tone-green { --tone: var(--color-green); --tone-rgb: var(--color-green-rgb); }
+.revisit-choice.tone-cyan { --tone: var(--color-cyan); --tone-rgb: var(--color-cyan-rgb); }
+.revisit-choice.tone-blue { --tone: var(--color-blue); --tone-rgb: var(--color-blue-rgb); }
+.revisit-choice.tone-purple { --tone: var(--color-purple); --tone-rgb: var(--color-purple-rgb); }
+.revisit-choice.tone-orange { --tone: var(--color-orange); --tone-rgb: var(--color-orange-rgb); }
+.revisit-choice .revisit-choice-icon { background: rgba(var(--tone-rgb), 0.16); color: var(--tone); }
+.revisit-choice.is-on { border-color: var(--tone); background: rgba(var(--tone-rgb), 0.08); }
+.revisit-choice-check { color: var(--tone); }
 .revisit-choice-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--background-secondary); display: grid; place-items: center; color: var(--text-muted); }
 .revisit-choice-icon svg { width: 18px; height: 18px; }
 .revisit-choice-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.revisit-choice-n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.revisit-choice-n .revisit-muted { font-size: var(--font-ui-smaller); font-weight: 400; }
-.revisit-choice-check { flex: none; width: 18px; height: 18px; visibility: hidden; color: var(--interactive-accent); }
+.revisit-choice-check { flex: none; width: 18px; height: 18px; visibility: hidden; }
 .revisit-choice.is-on .revisit-choice-check { visibility: visible; }
 .revisit-choice-check svg { width: 18px; height: 18px; }
 .revisit-start-note { margin: 14px 8px 0; }
