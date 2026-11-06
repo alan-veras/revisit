@@ -1,6 +1,6 @@
 {
 	"name": "revisit",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Spaced repetition flashcards with FSRS. Pick 10, 20 or 30 minutes and get exactly that, with a forecast of tomorrow's workload.",
 	"main": "main.js",
 	"type": "module",

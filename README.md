@@ -22,6 +22,22 @@
 
 That's it. There is nothing else to configure to get started.
 
+## Cards beyond the selection
+
+You never need an open editor to work on cards:
+
+- **New card** buttons live in the panel (Today and Search), in *Cards of this note*, and in the empty review session. The source note and your last topic come prefilled. Right-click any note or PDF in the file explorer and choose **New card from this file**.
+- **Delete** a card from the Search row menu, from *Cards of this note*, or from the session toolbar. Every delete asks first, and removes the card's schedule with it.
+- The capture window points at what it is missing: an empty answer focuses the Back field, and a long excerpt asks for the question instead of failing with nowhere to look.
+
+## Topics are born with the cards
+
+There are no decks to configure. A card carries an optional `Topic:` (`Kubernetes > Workloads`), and the panel builds a tree from them:
+
+- **Rename** a topic from its row menu and every card under it follows, children included, in one pass.
+- **Retire** a topic to suspend all its cards at once (an exam that passed, a course that ended) and **wake it up** later; nothing is deleted.
+- **Change topic** from a card's menu, or in bulk: filter the Search tab and press *Change topic of N…*.
+
 ## Card format
 
 A card is plain text inside a file in your vault. Each card uses these fields:
