@@ -3,7 +3,7 @@
 	"name": "Revisit",
 	"version": "0.2.0",
 	"minAppVersion": "1.13.0",
-	"description": "Flashcards made from your notes, scheduled with FSRS.",
+	"description": "Spaced repetition flashcards with FSRS. Pick 10, 20 or 30 minutes and get exactly that, with a forecast of tomorrow's workload.",
 	"author": "Alan Veras",
-	"isDesktopOnly": true
+	"isDesktopOnly": false
 }
