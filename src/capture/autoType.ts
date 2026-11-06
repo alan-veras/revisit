@@ -45,20 +45,21 @@ export function clozeFront(context: string, selection: string): string {
 
 /**
  * What a card becomes when saved: an empty front on a short selection turns into
- * a cloze; an empty front on a long one is refused (returns an error message).
+ * a cloze; an empty front on a long one is refused (returns the error message and
+ * which field the capture window should focus).
  */
 export function resolveOnSave(o: { type: CardType; front: string; back: string; context: string }):
 	| { type: CardType; front: string; back: string }
-	| { error: string } {
+	| { error: string; focus: 'front' | 'back' } {
 	const front = o.front.trim();
 	const back = o.back.trim();
 	if (!back && clozes(front).length) return { type: 'Cloze', front, back: '' };
-	if (!back) return { error: 'The back is empty.' };
+	if (!back) return { error: 'The back is empty.', focus: 'back' };
 	if (front) return { type: o.type, front, back };
 	if (wordCount(back) <= CLOZE_MAX_WORDS && o.context.trim()) {
 		return { type: 'Cloze', front: clozeFront(o.context, back), back };
 	}
-	return { error: 'Write the question: a cloze only works for a short excerpt.' };
+	return { error: 'Write the question: a cloze only covers a short excerpt (up to 8 words).', focus: 'front' };
 }
 
 const ALT_RE = /\s*\(([A-Ea-e])\)\s*/g;

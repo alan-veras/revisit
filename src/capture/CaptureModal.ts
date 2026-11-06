@@ -31,6 +31,8 @@ export class CaptureModal extends Modal {
 	private preview: HTMLElement | null = null;
 	private component = new Component();
 	private chips: HTMLButtonElement[] = [];
+	private frontEl: HTMLTextAreaElement | null = null;
+	private backEl: HTMLTextAreaElement | null = null;
 
 	constructor(
 		app: App,
@@ -58,8 +60,8 @@ export class CaptureModal extends Modal {
 		});
 		this.markType();
 
-		const front = this.box(contentEl, 'Front', this.draft.front, 'The question', (v) => (this.draft.front = v));
-		const back = this.box(contentEl, 'Back', this.draft.back, 'The answer', (v) => (this.draft.back = v));
+		this.frontEl = this.box(contentEl, 'Front', this.draft.front, 'The question', (v) => (this.draft.front = v));
+		this.backEl = this.box(contentEl, 'Back', this.draft.back, 'The answer', (v) => (this.draft.back = v));
 
 		const row = contentEl.createDiv({ cls: 'revisit-row' });
 		const topicBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
@@ -104,7 +106,7 @@ export class CaptureModal extends Modal {
 				return false;
 			}),
 		);
-		window.setTimeout(() => (this.focusBack ? back : front).focus(), 30);
+		window.setTimeout(() => (this.focusBack ? this.backEl : this.frontEl)?.focus(), 30);
 	}
 
 	private box(parent: HTMLElement, label: string, value: string, placeholder: string, set: (v: string) => void): HTMLTextAreaElement {
@@ -141,6 +143,7 @@ export class CaptureModal extends Modal {
 		const r = resolveOnSave({ type: this.draft.type, front: this.draft.front, back: this.draft.back, context: this.draft.context });
 		if ('error' in r) {
 			new Notice(r.error);
+			(r.focus === 'front' ? this.frontEl : this.backEl)?.focus();
 			return;
 		}
 		const topics = this.draft.topic

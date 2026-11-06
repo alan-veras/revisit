@@ -65,3 +65,13 @@ describe('splitAlternatives', () => {
 		expect(splitAlternatives('O valor (A) é positivo')).toBe('O valor (A) é positivo');
 	});
 });
+
+describe('resolveOnSave focus', () => {
+	it('an empty back points the cursor at the back, an empty front at the front', () => {
+		const r1 = resolveOnSave({ type: 'Question', front: 'P', back: ' ', context: '' });
+		expect(r1).toEqual({ error: 'The back is empty.', focus: 'back' });
+		const long = 'um dois três quatro cinco seis sete oito nove dez';
+		const r2 = resolveOnSave({ type: 'Question', front: '', back: long, context: long });
+		expect(r2).toEqual({ error: 'Write the question: a cloze only covers a short excerpt (up to 8 words).', focus: 'front' });
+	});
+});
