@@ -9,6 +9,7 @@ import { dueReviews, estimateMinutes, QueueItem, sessionRequeue, sourceName } fr
 import { dueCounts, forecastMinutes } from '../srs/forecast';
 import { summarizeSession, toForecastCards } from '../srs/session';
 import { checkCloze, hintWords } from './answer';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Grade, GRADES, toStored } from '../srs/scheduler';
 import { CardState } from '../store/Store';
@@ -147,6 +148,9 @@ export class ReviewView extends ItemView {
 			const box = root.createDiv({ cls: 'revisit-end' });
 			box.createEl('h2', { text: 'Nothing to review now' });
 			box.createEl('p', { text: 'Create cards with the capture command, or come back tomorrow.', cls: 'revisit-muted' });
+			const btns = box.createDiv({ cls: 'revisit-buttons' });
+			btns.createEl('button', { text: 'New card', cls: 'mod-cta' }).onclick = () => void this.plugin.captureFor(this.plugin.lastSource);
+			btns.createEl('button', { text: 'Open panel' }).onclick = () => void this.plugin.openPanel();
 			return;
 		}
 		const item = this.current();
@@ -231,6 +235,8 @@ export class ReviewView extends ItemView {
 		const resetBtn = tools.createEl('button', { text: 'Reset', attr: { 'aria-label': "Forgets the card's schedule: it comes back as new" } });
 		resetBtn.disabled = !item.fsrs;
 		resetBtn.onclick = () => void this.restart();
+		const delBtn = tools.createEl('button', { text: 'Delete', attr: { 'aria-label': 'Deletes the card after a confirmation' } });
+		delBtn.onclick = () => this.askDelete();
 		root.createDiv({ cls: 'revisit-keys', text: 'Space flips · 1 to 4 grade · D hint · E edits · Q ends' });
 		this.dock = root.createDiv({ cls: 'revisit-dock' });
 		this.drawDock();
@@ -455,6 +461,29 @@ export class ReviewView extends ItemView {
 		if (this.ended || !item?.fsrs) return;
 		await this.plugin.resetCard(item.card);
 		for (const it of this.queue) if (it.card.id === item.card.id) delete it.fsrs;
+		this.draw();
+	}
+
+	/** Confirm window for deleting the current card; the session moves on right after. */
+	private askDelete(): void {
+		const item = this.current();
+		if (this.ended || !item?.card.id) return;
+		if (item.card.inline) return void new Notice('Revisit: this card is written in the note; delete it there.');
+		new ConfirmModal(this.app, 'Delete card', item.card.front.replace(/\s+/g, ' ').slice(0, 140), 'Delete', () => void this.removeCurrent());
+	}
+
+	/** Deletes the current card (and its reverse, clozes and schedule) and shows the next one. */
+	private async removeCurrent(): Promise<void> {
+		const item = this.current();
+		if (!item?.card.id) return;
+		const cid = item.card.id;
+		await this.plugin.deleteCard(item.card);
+		this.queue = this.queue.filter((it, i) => i < this.index || it.card.id !== cid);
+		this.flipped = false;
+		this.revealed = false;
+		this.typed = '';
+		this.hint = 0;
+		if (!this.queue.length) this.ended = true;
 		this.draw();
 	}
 

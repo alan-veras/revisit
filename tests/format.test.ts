@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, appendCards, ensureIds, groupBy, normalizeTopic, parseCardFile, removeCard, renameSource, renameSourceFolder, replaceCard, serializeCard } from '../src/cards/format';
+import { appendCard, appendCards, ensureIds, groupBy, normalizeTopic, parseCardFile, removeCard, renameSource, renameSourceFolder, replaceCard, retagTopics, rewriteTopics, serializeCard } from '../src/cards/format';
 
 const FILE = `Front: Como desfazer o último rollout de um deployment?
 Back:
@@ -198,4 +198,41 @@ describe('label-shaped text', () => {
 it('topicsLabel mostra só o último nível', async () => {
 	const { topicsLabel } = await import('../src/cards/format');
 	expect(topicsLabel(['Sustento > Perseguição', 'Kubernetes'])).toBe('Perseguição; Kubernetes');
+});
+
+describe('retagTopics', () => {
+	it('renames a topic and every child under it, keeping the rest of the path', () => {
+		expect(retagTopics(['Kubernetes', 'Kubernetes > Workloads'], 'Kubernetes', 'K8s')).toEqual(['K8s', 'K8s > Workloads']);
+		expect(retagTopics(['A > B > C'], 'A > B', 'X')).toEqual(['X > C']);
+	});
+	it('matches without case and dedupes the result', () => {
+		expect(retagTopics(['kubernetes > workloads'], 'Kubernetes', 'K8s')).toEqual(['K8s > workloads']);
+		expect(retagTopics(['A', 'a'], 'a', 'B')).toEqual(['B']);
+	});
+	it('an empty new name removes the topic', () => {
+		expect(retagTopics(['Kubernetes > Workloads', 'CKA'], 'Kubernetes', '')).toEqual(['CKA']);
+	});
+	it('leaves unrelated topics alone', () => {
+		expect(retagTopics(['Kubernetesx', 'AK > B'], 'Kubernetes', 'K8s')).toEqual(['Kubernetesx', 'AK > B']);
+	});
+});
+
+describe('rewriteTopics', () => {
+	it('rewrites only the cards the pick changes, bottom-up, in one pass', () => {
+		const r = rewriteTopics(FILE, (card) => (card.topics.some((t) => t === 'Kubernetes' || t.startsWith('Kubernetes > ')) ? retagTopics(card.topics, 'Kubernetes', 'K8s') : null));
+		expect(r.changed).toBe(1);
+		const cards = parseCardFile(r.text);
+		expect(cards[0]?.topics).toEqual(['K8s > Workloads', 'CKA']);
+		expect(cards[1]?.topics).toEqual([]);
+		expect(cards[0]?.id).toBe('lk7q2a');
+		expect(cards[1]?.id).toBe('lab12c');
+	});
+	it('a full replacement keeps ids and removes the Topic line when empty', () => {
+		const r = rewriteTopics(FILE, (card) => (card.id === 'lk7q2a' ? [] : null));
+		expect(r.changed).toBe(1);
+		const [a] = parseCardFile(r.text);
+		expect(a?.topics).toEqual([]);
+		expect(a?.id).toBe('lk7q2a');
+		expect(r.text).not.toContain('Topic:');
+	});
 });

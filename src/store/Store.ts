@@ -1,5 +1,5 @@
 import { App, getAllTags, normalizePath, Notice, TFile } from 'obsidian';
-import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../cards/format';
+import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, retagTopics, rewriteTopics, serializeCard } from '../cards/format';
 import { parseInlineCards } from '../cards/inline';
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
@@ -232,8 +232,41 @@ export class Store {
 
 	async deleteCard(card: Card): Promise<void> {
 		await this.withCardFile(card, (text, fresh) => removeCard(text, fresh));
-		if (card.id) delete this.state[card.id];
+		// the card and its siblings (reverse, other highlights) lose their schedule
+		if (card.id)
+			for (const k of Object.keys(this.state))
+				if (k === card.id || k.startsWith(card.id + '-')) delete this.state[k];
 		await this.saveState();
+	}
+
+	/** Renames a topic (and every `from > …` under it) on all card files; an empty `to` removes the topic. */
+	async renameTopic(from: string, to: string): Promise<number> {
+		let changed = 0;
+		for (const file of this.cardFiles()) {
+			await this.app.vault.process(file, (text) => {
+				const r = rewriteTopics(text, (card) => retagTopics(card.topics, from, to));
+				changed += r.changed;
+				return r.text;
+			});
+		}
+		if (changed) await this.load();
+		return changed;
+	}
+
+	/** Sets the topics of specific cards (mirror-file cards only), one write per card file. */
+	async setTopics(cards: Card[], topics: string[]): Promise<number> {
+		const ids = new Set(cards.filter((c) => !c.inline && c.id).map((c) => c.id as string));
+		if (!ids.size) return 0;
+		let changed = 0;
+		for (const file of this.cardFiles()) {
+			await this.app.vault.process(file, (text) => {
+				const r = rewriteTopics(text, (card) => (card.id && ids.has(card.id) ? topics : null));
+				changed += r.changed;
+				return r.text;
+			});
+		}
+		if (changed) await this.load();
+		return changed;
 	}
 
 	async saveState(): Promise<void> {

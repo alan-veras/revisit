@@ -297,3 +297,41 @@ export function renameSourceFolder(text: string, fromFolder: string, toFolder: s
 export function topicsLabel(topics: string[]): string {
 	return topics.map((a) => a.split(' > ').pop() ?? a).join('; ');
 }
+
+/**
+ * Rewrites the topics of one card that carry the `from` prefix: `from` itself and
+ * every `from > …` move under `to`; an empty `to` removes them. Matching ignores
+ * case, the rest of the path is kept (`A > B` from `A` to `K` becomes `K > B`).
+ */
+export function retagTopics(topics: string[], from: string, to: string): string[] {
+	const a = normalizeTopic(from).toLowerCase();
+	const b = to.trim() ? normalizeTopic(to) : null;
+	const out: string[] = [];
+	for (const t of topics) {
+		const low = t.toLowerCase();
+		let next: string;
+		if (low === a) next = b ?? '';
+		else if (low.startsWith(a + ' > ')) next = b ? normalizeTopic(b + t.slice(a.length)) : '';
+		else next = t;
+		if (next && !out.includes(next)) out.push(next);
+	}
+	return out;
+}
+
+/**
+ * Rewrites the Topic of cards inside one card file: `pick` returns the new topics
+ * of a card, or null to keep it. Blocks are replaced bottom-up, so the positions
+ * parsed once stay valid. Returns the new text and how many cards changed.
+ */
+export function rewriteTopics(text: string, pick: (card: Card) => string[] | null): { text: string; changed: number } {
+	let next = text;
+	let changed = 0;
+	for (const card of [...parseCardFile(text)].reverse()) {
+		const topics = pick(card);
+		if (!topics || topics.join('; ') === card.topics.join('; ')) continue;
+		const { start: _s, end: _e, file: _f, ...rest } = card;
+		next = replaceCard(next, card, serializeCard({ ...rest, topics, id: card.id }));
+		changed++;
+	}
+	return { text: next, changed };
+}

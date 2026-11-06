@@ -1,5 +1,6 @@
 import { topicsLabel } from '../cards/format';
 import { ItemView, TFile, WorkspaceLeaf } from 'obsidian';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import type RevisitPlugin from '../main';
 
 export const VIEW_TYPE_NOTE = 'revisit-note';
@@ -37,6 +38,7 @@ export class NoteCardsView extends ItemView {
 		const cards = this.plugin.cardsOf(file);
 		const head = root.createDiv({ cls: 'revisit-note-head' });
 		head.createEl('h4', { text: file.basename });
+		head.createEl('button', { text: 'New card' }).onclick = () => void this.plugin.captureFor(file);
 		if (!cards.length) {
 			root.createEl('p', { cls: 'revisit-muted', text: 'No cards from this note yet.' });
 			return;
@@ -51,6 +53,9 @@ export class NoteCardsView extends ItemView {
 			b.createEl('button', { text: 'Edit' }).onclick = () => this.plugin.editCard(c, () => this.draw());
 			const st = c.id ? this.plugin.store.state[c.id] : undefined;
 			if (st?.fsrs) b.createEl('button', { text: 'Reset', attr: { title: "Forgets the schedule: the card comes back as new" } }).onclick = () => void this.plugin.resetCard(c);
+			if (!c.inline)
+				b.createEl('button', { text: 'Delete', attr: { title: 'Deletes the card after a confirmation' } }).onclick = () =>
+					new ConfirmModal(this.plugin.app, 'Delete card', c.front.replace(/\s+/g, ' ').slice(0, 140), 'Delete', () => void this.plugin.deleteCard(c).then(() => this.draw()));
 		}
 	}
 }

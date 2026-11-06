@@ -5,14 +5,14 @@ import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
 import { mirrorPath } from './cards/mirror';
 import { Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
-import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
+import { CaptureDraft, CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
-import { renameSource, renameSourceFolder } from './cards/format';
+import { retagTopics, renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { StartModal } from './review/StartModal';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
-import { buildSession, dueReviews, estimateMinutes, QueueItem, reviewScopes } from './srs/queue';
+import { buildSession, dueReviews, estimateMinutes, matchesFilter, QueueItem, reviewScopes } from './srs/queue';
 import type { Card as FsrsCard } from 'ts-fsrs';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
 import { nearestChoice, sessionChoices, toForecastCards } from './srs/session';
@@ -59,6 +59,7 @@ export default class RevisitPlugin extends Plugin {
 							.setIcon('book-open')
 							.onClick(() => void this.toggleReread(file)),
 					);
+				menu.addItem((i) => i.setTitle('New card from this file').setIcon('plus').onClick(() => void this.captureFor(file)));
 				menu.addItem((i) => i.setTitle('Review the cards of this note').setIcon('layers').onClick(() => void this.reviewNote(file)));
 				menu.addItem((i) =>
 					i.setTitle('Cards of this note').setIcon('layers').onClick(() => {
@@ -416,7 +417,7 @@ export default class RevisitPlugin extends Plugin {
 		} else if (type === 'Reference') {
 			front = reference ?? '';
 		}
-		const draft = {
+		const draft: CaptureDraft = {
 			type,
 			front,
 			back,
@@ -426,6 +427,26 @@ export default class RevisitPlugin extends Plugin {
 			sourcePath: path ?? '',
 		};
 		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path), type === 'Problem').open();
+	}
+
+	/** The capture window for a file (or none) without a selection: the source comes filled, the last topic of its folder too. */
+	async captureFor(file: TFile | null, topic = ''): Promise<void> {
+		const path = file?.path ?? null;
+		// a card whose source is a card file would mirror itself inside the mirror
+		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
+			new Notice('Revisit: the source cannot be a card file of the plugin; open the source note.');
+			return;
+		}
+		const draft: CaptureDraft = {
+			type: 'Question',
+			front: '',
+			back: '',
+			topic: topic || this.settings.lastTopic[folderOf(path)] || '',
+			source: sourceLink(file, null, null),
+			context: '',
+			sourcePath: path ?? '',
+		};
+		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path), false).open();
 	}
 
 	private async saveNew(r: CaptureResult, sourcePath: string | null): Promise<void> {
@@ -582,6 +603,51 @@ export default class RevisitPlugin extends Plugin {
 			this.updateStatus();
 			after?.();
 		}).open();
+	}
+
+	/** Removes a card and its schedule; the UI confirms first. */
+	async deleteCard(card: Card): Promise<void> {
+		if (card.inline) return void new Notice('Revisit: this card is written in the note; delete it there.');
+		await this.store.deleteCard(card);
+		this.updateStatus();
+		new Notice('Revisit: card deleted');
+	}
+
+	/** Renames a topic on every card and in the last-topic memory; an empty `to` removes it. */
+	async renameTopic(from: string, to: string): Promise<void> {
+		const n = await this.store.renameTopic(from, to);
+		let touched = false;
+		for (const [folder, v] of Object.entries(this.settings.lastTopic)) {
+			const next = v
+				.split(';')
+				.map((t) => retagTopics([t], from, to)[0] ?? '')
+				.filter(Boolean)
+				.join('; ');
+			if (next !== v) {
+				this.settings.lastTopic[folder] = next;
+				touched = true;
+			}
+		}
+		if (touched) await this.saveSettings();
+		this.updateStatus();
+		new Notice(n ? `Revisit: topic rewritten on ${n} ${n === 1 ? 'card' : 'cards'}` : 'Revisit: no card carried that topic');
+	}
+
+	/** Sets the topics of specific cards (mirror-file cards only); the UI confirms first. */
+	async setCardsTopics(cards: Card[], topics: string[]): Promise<void> {
+		const n = await this.store.setTopics(cards, topics);
+		this.updateStatus();
+		new Notice(n ? `Revisit: topics set on ${n} ${n === 1 ? 'card' : 'cards'}` : 'Revisit: nothing changed; cards written inside notes change in the note.');
+	}
+
+	/** Retires (suspends) or wakes every card of a topic, children included. */
+	async setTopicSuspended(topic: string, suspended: boolean): Promise<void> {
+		const todo = this.items().filter((it) => matchesFilter(it, null, topic) && it.suspended !== suspended);
+		if (!todo.length) return void new Notice('Revisit: nothing to change there.');
+		for (const it of todo) this.store.state[it.key] = { ...(this.store.state[it.key] ?? {}), st: suspended ? 'suspended' : 'active' };
+		await this.store.saveState();
+		this.updateStatus();
+		new Notice(`Revisit: ${todo.length} ${todo.length === 1 ? 'card' : 'cards'} ${suspended ? 'suspended' : 'back to active'}`);
 	}
 
 	onunload(): void {

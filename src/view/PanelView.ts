@@ -9,6 +9,8 @@ import { drawForecastBars, drawHeatmap } from './charts';
 import { cardRow, CardStatus, statusOf, rowOrder } from '../srs/rows';
 import { cardStats, folderGroup, retentionBy, reviewsPerDay, topGroups } from '../srs/stats';
 import { matchesCard } from './search';
+import { ConfirmModal } from '../ui/ConfirmModal';
+import { TopicModal } from '../ui/TopicModal';
 import type RevisitPlugin from '../main';
 import { estimateMinutes, inScope, matchesFilter, QueueItem, scopeOf, sourceName } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
@@ -82,6 +84,7 @@ export class PanelView extends ItemView {
 		const go = hero.createEl('button', { text: 'Review', cls: 'mod-cta revisit-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.chooseReview(null);
+		hero.createEl('button', { text: 'New card' }).onclick = () => void p.captureFor(p.lastSource);
 		const q = p.quota();
 		hero.createDiv({ cls: 'revisit-muted revisit-small', text: q.quota ? `New today: ${q.used} of ${q.cap}` : 'New cards are paused' });
 
@@ -164,6 +167,24 @@ export class PanelView extends ItemView {
 				go.onclick = (e) => {
 					e.stopPropagation();
 					void p.chooseReview(node.scope, node.topic);
+				};
+			}
+			if (node.topic) {
+				const acts = r.createSpan({ cls: 'revisit-li-go' });
+				setIcon(acts, 'more-horizontal');
+				setTooltip(acts, `Manage the topic ${node.name}`);
+				acts.onclick = (e) => {
+					e.stopPropagation();
+					this.topicMenu(e, node);
+				};
+			} else if (!kids && node.scope) {
+				const acts = r.createSpan({ cls: 'revisit-li-go' });
+				setIcon(acts, 'plus');
+				setTooltip(acts, 'New card from this note');
+				acts.onclick = (e) => {
+					e.stopPropagation();
+					const f = p.app.vault.getAbstractFileByPath(node.scope as string);
+					if (f instanceof TFile) void p.captureFor(f);
 				};
 			}
 			if (kids)
@@ -283,6 +304,7 @@ export class PanelView extends ItemView {
 			this.folderF = sel.value === 'All folders' ? null : sel.value;
 			this.draw();
 		};
+		bar.createEl('button', { text: 'New card' }).onclick = () => void p.captureFor(p.lastSource);
 
 		const clean = this.q.trim() || this.status !== 'all' || this.folderF;
 		if (!clean) {
@@ -296,10 +318,18 @@ export class PanelView extends ItemView {
 			.filter((r) => matchesCard(r.item.card, this.q))
 			.sort(rowOrder);
 		const dueNow = rows.filter((r) => r.dueToday).length;
-		wrap.createDiv({
-			cls: 'revisit-muted revisit-small revisit-count',
-			text: `${rows.length} ${rows.length === 1 ? 'card' : 'cards'}${dueNow ? ` · ${dueNow} due today` : ''}`,
-		});
+		const countLine = wrap.createDiv({ cls: 'revisit-muted revisit-small revisit-count' });
+		countLine.createSpan({ text: `${rows.length} ${rows.length === 1 ? 'card' : 'cards'}${dueNow ? ` · ${dueNow} due today` : ''}` });
+		const unique = [...new Map(rows.map((r) => [r.id, r.item.card])).values()];
+		const bulk = countLine.createEl('button', { text: `Change topic of ${unique.length}…`, cls: 'revisit-link' });
+		setTooltip(bulk, 'Sets one topic on every card matching the search and the filters');
+		bulk.onclick = () => {
+			new TopicModal(p.app, '', p.topics(), `Topic of ${unique.length} ${unique.length === 1 ? 'card' : 'cards'}`, 'Topic > subtopic; empty removes the topic', (topics) =>
+				new ConfirmModal(p.app, 'Change topic', `Sets "${topics.join('; ') || 'no topic'}" as the only topic of ${unique.length} ${unique.length === 1 ? 'card' : 'cards'}.`, 'Change', () =>
+					void p.setCardsTopics(unique, topics).then(() => this.draw()),
+				),
+			);
+		};
 		if (!rows.length) {
 			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'No cards with these filters.' });
 			return;
@@ -353,6 +383,16 @@ export class PanelView extends ItemView {
 				else new Notice('Revisit: the source of this card is not in the vault.');
 			}),
 		);
+		menu.addItem((i) =>
+			i
+				.setTitle('Change topic…')
+				.setIcon('tag')
+				.onClick(() => {
+					new TopicModal(p.app, r.item.card.topics.join('; '), p.topics(), 'Topic of the card', 'Topic > subtopic; empty removes the topic', (topics) =>
+						void p.setCardsTopics([r.item.card], topics).then(() => this.draw()),
+					);
+				}),
+		);
 		menu.addItem((i) => i.setTitle('Reset: comes back as new').setIcon('rotate-ccw').onClick(() => void p.resetCard(r.item.card)));
 		menu.addItem((i) =>
 			i
@@ -365,6 +405,52 @@ export class PanelView extends ItemView {
 					this.draw();
 				}),
 		);
+		menu.addItem((i) =>
+			i
+				.setTitle('Delete card')
+				.setIcon('trash-2')
+				.onClick(() => {
+					if (r.item.card.inline) return void new Notice('Revisit: this card is written in the note; delete it there.');
+					new ConfirmModal(p.app, 'Delete card', r.front.replace(/\s+/g, ' ').slice(0, 140), 'Delete', () => void p.deleteCard(r.item.card).then(() => this.draw()));
+				}),
+		);
+		menu.showAtMouseEvent(e);
+	}
+
+	/** Manage one topic row: new card in it, rename, retire or wake it up. */
+	private topicMenu(e: MouseEvent, node: TreeNode): void {
+		const p = this.plugin;
+		const topic = node.topic as string;
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle('New card in this topic').setIcon('plus').onClick(() => void p.captureFor(p.lastSource, topic)));
+		menu.addItem((i) =>
+			i
+				.setTitle('Rename topic…')
+				.setIcon('pencil')
+				.onClick(() => {
+					new TopicModal(p.app, topic, p.topics(), `Rename ${topic}`, 'New name; empty removes the topic', (topics) => {
+						const to = topics.join('; ');
+						if (!to) new ConfirmModal(p.app, 'Remove the topic', `"${topic}" comes off every card carrying it. The cards stay.`, 'Remove', () => void p.renameTopic(topic, ''));
+						else void p.renameTopic(topic, to);
+					});
+				}),
+		);
+		const under = p.items().filter((it) => matchesFilter(it, null, topic));
+		const suspended = under.filter((it) => it.suspended).length;
+		const activeCount = under.length - suspended;
+		if (activeCount)
+			menu.addItem((i) =>
+				i
+					.setTitle(`Retire topic (suspends ${activeCount})`)
+					.setIcon('pause')
+					.onClick(() =>
+						new ConfirmModal(p.app, 'Retire topic', `Suspends the ${activeCount} active cards under "${topic}". They leave every session until you wake the topic up.`, 'Retire', () =>
+							void p.setTopicSuspended(topic, true),
+						),
+					),
+			);
+		if (suspended)
+			menu.addItem((i) => i.setTitle(`Wake topic up (activates ${suspended})`).setIcon('play').onClick(() => void p.setTopicSuspended(topic, false)));
 		menu.showAtMouseEvent(e);
 	}
 
