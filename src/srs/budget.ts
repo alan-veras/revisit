@@ -16,7 +16,7 @@ export interface RevlogEntry {
 	state?: number;
 }
 
-export const DEFAULT_SECS: Record<CardType, number> = { Pergunta: 10, Lacuna: 10, 'Referência': 10, 'Questão': 60 };
+export const DEFAULT_SECS: Record<CardType, number> = { Question: 10, Cloze: 10, Reference: 10, Problem: 60 };
 
 /** Median seconds per card type over the last 200 grades of that type. */
 export function secsPerType(log: RevlogEntry[]): Record<CardType, number> {
@@ -32,36 +32,25 @@ export function secsPerType(log: RevlogEntry[]): Record<CardType, number> {
 	return out;
 }
 
-/** New cards introduced today, by area (ids without a known area are left out). */
-export function newTodayByArea(log: RevlogEntry[], now: Date, areaOf: (id: string) => string | null): Map<string, number> {
+/** New cards introduced today (extra sessions do not count). */
+export function newToday(log: RevlogEntry[], now: Date): number {
 	const day = now.toDateString();
 	const seen = new Set<string>();
-	const out = new Map<string, number>();
-	for (const e of log) {
-		if (!e.new || e.extra || new Date(e.t).toDateString() !== day || seen.has(e.id)) continue;
-		seen.add(e.id);
-		const area = areaOf(e.id);
-		if (area) out.set(area, (out.get(area) ?? 0) + 1);
-	}
-	return out;
+	for (const e of log) if (e.new && !e.extra && new Date(e.t).toDateString() === day) seen.add(e.id);
+	return seen.size;
 }
 
-export interface QuotaLine {
-	area: string;
-	used: number;
-	cap: number;
-	free: number;
-}
-
-/** New cards per day of an area with no number of its own. */
-export const DEFAULT_AREA_CAP = 5;
+/** New cards per day unless the settings say otherwise. */
+export const DEFAULT_NEW_PER_DAY = 20;
 
 export interface QuotaStatus {
-	/** the sum of the areas, for display; there is no general cap */
-	total: { used: number; cap: number; free: number };
-	/** each area: `quota` is the setting, `cap` the quota after the time budget */
-	areas: (QuotaLine & { quota: number })[];
-	/** due reviews fill the budget, so every quota shrank today */
+	/** the setting */
+	quota: number;
+	/** the setting after the time budget */
+	cap: number;
+	used: number;
+	free: number;
+	/** due reviews fill the budget, so the quota shrank today */
 	reduced: boolean;
 }
 
@@ -83,17 +72,10 @@ export function newAllowedToday(dueMinutes: number, budgetMinutes: number, cap: 
 	return f === 1 ? cap : Math.floor(cap * f);
 }
 
-/** One answer for the session, the panel and the CLI: the new cards left today in each area. */
-export function quotaStatus(o: { dueMinutes: number; budgetMinutes: number; areas: readonly string[]; perArea: Record<string, number>; usedByArea: Map<string, number> }): QuotaStatus {
-	const f = budgetFactor(o.dueMinutes, o.budgetMinutes);
-	const areas = o.areas.map((area) => {
-		const quota = o.perArea[area] ?? DEFAULT_AREA_CAP;
-		const cap = f === 1 ? quota : Math.floor(quota * f);
-		const used = o.usedByArea.get(area) ?? 0;
-		return { area, quota, cap, used, free: Math.max(0, cap - used) };
-	});
-	const sum = (k: 'used' | 'cap' | 'free') => areas.reduce((s, a) => s + a[k], 0);
-	return { total: { used: sum('used'), cap: sum('cap'), free: sum('free') }, areas, reduced: f < 1 };
+/** One answer for the session, the panel and the CLI: the new cards left today. */
+export function quotaStatus(o: { dueMinutes: number; budgetMinutes: number; quota: number; used: number }): QuotaStatus {
+	const cap = newAllowedToday(o.dueMinutes, o.budgetMinutes, o.quota);
+	return { quota: o.quota, cap, used: o.used, free: Math.max(0, cap - o.used), reduced: budgetFactor(o.dueMinutes, o.budgetMinutes) < 1 };
 }
 
 /**

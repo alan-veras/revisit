@@ -1,17 +1,17 @@
 import { getAllTags, normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
-import { areaOf, linkPath } from './cards/area';
+import { linkPath } from './cards/link';
 import { clozes } from './cards/cloze';
 import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
 import { mirrorPath } from './cards/mirror';
-import { AREAS, Card } from './cards/types';
+import { Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
 import { CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
 import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
-import { newTodayByArea, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
-import { buildSession, dueReviews, estimateMinutes, NO_AREA, QueueItem } from './srs/queue';
+import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
+import { buildSession, dueReviews, estimateMinutes, QueueItem, reviewScopes } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
 import { migrateSettings } from './store/migrate';
 import { Store } from './store/Store';
@@ -31,14 +31,14 @@ export default class RevisitPlugin extends Plugin {
 		this.store = new Store(this.app, () => this.settings.folder);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
-		this.addCommand({ id: 'open-painel', name: 'Open panel', callback: () => void this.openPainel() });
+		this.addCommand({ id: 'open-panel', name: 'Open panel', callback: () => void this.openPanel() });
 		this.addSettingTab(new RevisitSettingTab(this.app, this));
 		registerCli(this);
 
 		this.addCommand({ id: 'capture', name: 'Add to review', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.review(null) });
-		this.addCommand({ id: 'review-area', name: 'Review an area', callback: () => this.pickArea() });
-		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickArea(true) });
+		this.addCommand({ id: 'review-scope', name: 'Review this note/folder', callback: () => this.pickScope() });
+		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickScope(true) });
 		this.addCommand({ id: 'reread-toggle', name: 'Reread this note from time to time (toggle)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
 		this.addCommand({ id: 'reread-next', name: 'Reread the next note', callback: () => void this.openNextReread() });
 		this.addCommand({ id: 'note-cards', name: 'Cards of this note', callback: () => void this.openNoteCards() });
@@ -46,6 +46,7 @@ export default class RevisitPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
+				if (file instanceof TFolder) menu.addItem((i) => i.setTitle('Review the cards of this folder').setIcon('layers').onClick(() => void this.review(file.path)));
 				if (!isSource(file)) return;
 				if (file.extension === 'md')
 					menu.addItem((i) =>
@@ -70,7 +71,7 @@ export default class RevisitPlugin extends Plugin {
 				this.redrawNoteCards();
 			}),
 		);
-		this.addRibbonIcon('layers', 'Revisit', () => void this.openPainel());
+		this.addRibbonIcon('layers', 'Revisit', () => void this.openPanel());
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				if (!editor.getSelection()) return;
@@ -79,7 +80,7 @@ export default class RevisitPlugin extends Plugin {
 		);
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('mod-clickable');
-		this.statusEl.onclick = () => void this.openPainel();
+		this.statusEl.onclick = () => void this.openPanel();
 
 		this.registerInterval(window.setInterval(() => void this.remind(), 60_000));
 		this.app.workspace.onLayoutReady(async () => {
@@ -92,7 +93,7 @@ export default class RevisitPlugin extends Plugin {
 					if (f instanceof TFile && f.path.startsWith(this.settings.folder + '/') && f.extension === 'md') void this.reload();
 				}),
 			);
-			// a renamed source note or folder keeps the `Fonte:` of every card alive
+			// a renamed source note or folder keeps the `Source:` of every card alive
 			this.registerEvent(
 				this.app.vault.on('rename', (file, oldPath) => {
 					const folder = this.settings.folder;
@@ -110,8 +111,6 @@ export default class RevisitPlugin extends Plugin {
 		// before the first migration writes over data.json, the original is copied once
 		if (changed) await this.backupDataOnce();
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
-		// the general cap is gone: each area has its own quota
-		delete (this.settings as Partial<RevisitSettings> & { newPerDay?: number }).newPerDay;
 		// the FSRS advises against asking for more than 95%
 		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
 		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
@@ -154,7 +153,7 @@ export default class RevisitPlugin extends Plugin {
 		return secsPerType(this.store.log);
 	}
 
-	/** Rewrites the `Fonte:` of every card file after a source note or folder moved. */
+	/** Rewrites the `Source:` of every card file after a source note or folder moved. */
 	private async rewriteSources(oldPath: string, newPath: string, folder: boolean): Promise<void> {
 		const from = folder ? oldPath.replace(/\/+$/, '') : oldPath.replace(/\.md$/, '');
 		const to = folder ? newPath.replace(/\/+$/, '') : newPath.replace(/\.md$/, '');
@@ -165,13 +164,6 @@ export default class RevisitPlugin extends Plugin {
 			if (next !== text) await this.app.vault.process(f, () => next);
 		}
 		await this.reload();
-	}
-
-	/** Area of a card: the one written in it, or the one of its source path. */
-	areaOfCard(card: Card): string | null {
-		if (card.area) return card.area;
-		const target = this.resolveSource(card);
-		return target ? areaOf(target, this.settings.areaMap) : null;
 	}
 
 	/** Vault path of the source note or PDF of a card. */
@@ -191,16 +183,16 @@ export default class RevisitPlugin extends Plugin {
 		const out: QueueItem[] = [];
 		for (const card of this.store.cards) {
 			if (!card.id) continue;
-			const area = this.areaOfCard(card);
+			const source = this.resolveSource(card);
 			const suspended = this.store.state[card.id]?.st === 'suspended';
-			const holes = card.type === 'Lacuna' ? clozes(card.front).length : 0;
+			const holes = card.type === 'Cloze' ? clozes(card.front).length : 0;
 			const keys: [string, boolean, number | undefined][] = holes
 				? Array.from({ length: holes }, (_, i) => [i ? `${card.id as string}-c${i + 1}` : (card.id as string), false, i])
 				: [[card.id, false, undefined]];
 			if (card.reverse && !holes) keys.push([`${card.id}-r`, true, undefined]);
 			for (const [key, reverse, cloze] of keys) {
 				const st = this.store.state[key];
-				out.push({ key, reverse, ...(cloze !== undefined ? { cloze } : {}), card, area, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
+				out.push({ key, reverse, ...(cloze !== undefined ? { cloze } : {}), card, source, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
 			}
 		}
 		this.itemsCache = { version, items: out };
@@ -218,19 +210,15 @@ export default class RevisitPlugin extends Plugin {
 		return new Set(this.store.log.filter((e) => !e.extra && new Date(e.t).toDateString() === day).map((e) => e.id));
 	}
 
-	session(area: string | null, minutes?: number, extra = false, topic: string | null = null): QueueItem[] {
+	session(scope: string | null, minutes?: number, extra = false, topic: string | null = null): QueueItem[] {
 		const now = new Date();
 		const items = this.items();
-		const secs = this.secs();
-		const budget = minutes ?? this.settings.budgetMinutes;
-		const q = this.quota(now, items);
 		return buildSession(items, {
 			now,
-			area,
-			budgetMinutes: budget,
-			newAllowed: q.total.free,
-			newLeftByArea: new Map(q.areas.map((a) => [a.area, a.free])),
-			secs,
+			scope,
+			budgetMinutes: minutes ?? this.settings.budgetMinutes,
+			newAllowed: this.quota(now, items).free,
+			secs: this.secs(),
 			interleave: this.settings.interleave,
 			retrievability: (c, n) => this.scheduler.retrievability(c, n),
 			gradedToday: this.gradedToday(now),
@@ -239,20 +227,17 @@ export default class RevisitPlugin extends Plugin {
 		});
 	}
 
-	/** New cards left today in each area (its quota comes from the settings, 5 by default). */
+	/** New cards left today, out of the one daily quota. */
 	quota(now = new Date(), items = this.items()): QuotaStatus {
-		const areaById = new Map<string, string>();
-		for (const it of items) areaById.set(it.key, it.area ?? NO_AREA);
 		return quotaStatus({
 			dueMinutes: estimateMinutes(dueReviews(items, now), this.secs()),
 			budgetMinutes: this.settings.budgetMinutes,
-			areas: [...AREAS, NO_AREA],
-			perArea: this.settings.newPerArea,
-			usedByArea: newTodayByArea(this.store.log, now, (id) => areaById.get(id) ?? null),
+			quota: this.settings.newPerDay,
+			used: newToday(this.store.log, now),
 		});
 	}
 
-	async openPainel(): Promise<void> {
+	async openPanel(): Promise<void> {
 		await this.reload();
 		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PANEL)[0];
 		if (!leaf) {
@@ -283,9 +268,10 @@ export default class RevisitPlugin extends Plugin {
 		this.statusEl.setText(`Revisit: ${n} ${n === 1 ? 'card' : 'cards'} today${newCount ? ` · ${newCount} new` : ''}`);
 	}
 
-	async review(area: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
+	async review(scope: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
 		await this.reload();
-		await this.startReview(this.session(area, minutes, extra, topic), topic ? `${area ?? 'All'} > ${topic}` : (area ?? 'All'), extra);
+		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
+		await this.startReview(this.session(scope, minutes, extra, topic), topic ?? name ?? 'All', extra);
 	}
 
 	async startReview(queue: QueueItem[], label: string, extra: boolean): Promise<void> {
@@ -303,8 +289,8 @@ export default class RevisitPlugin extends Plugin {
 		if (view instanceof ReviewView) view.start(queue, label, extra);
 	}
 
-	private pickArea(extra = false): void {
-		new AreaModal(this, extra).open();
+	private pickScope(extra = false): void {
+		new ScopeModal(this, extra).open();
 	}
 
 	/** Last note or PDF opened, followed by the side panel. */
@@ -339,7 +325,6 @@ export default class RevisitPlugin extends Plugin {
 		const items = this.items().filter((it) => this.resolveSource(it.card) === file.path);
 		const queue = buildSession(items, {
 			now,
-			area: null,
 			budgetMinutes: 600,
 			newAllowed: items.length,
 			secs: this.secs(),
@@ -351,7 +336,7 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	topics(): string[] {
-		return [...new Set(this.store.cards.flatMap((c) => c.topics))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+		return [...new Set(this.store.cards.flatMap((c) => c.topics))].sort((a, b) => a.localeCompare(b));
 	}
 
 	async capture(): Promise<void> {
@@ -364,30 +349,30 @@ export default class RevisitPlugin extends Plugin {
 			new Notice('Revisit: the source cannot be a card file of the plugin; open the source note.');
 			return;
 		}
-		const type = initialType({ isPdf: !!ctx?.isPdf, path, selection });
-		const area = (path && areaOf(path, this.settings.areaMap)) ?? '';
+		const reference = ctx ? bibleReference(ctx.noteText, ctx.cursorLine) : null;
+		const type = initialType({ isPdf: !!ctx?.isPdf, hasReference: !!reference, selection });
+		const folder = folderOf(path);
 		let front = '';
 		let back = selection;
-		if (type === 'Questão') {
+		if (type === 'Problem') {
 			front = splitAlternatives(selection);
 			back = '';
-		} else if (type === 'Referência' && ctx) {
-			front = bibleReference(ctx.noteText, ctx.cursorLine) ?? '';
+		} else if (type === 'Reference') {
+			front = reference ?? '';
 		}
 		const draft = {
 			type,
 			front,
 			back,
-			area: area || (this.settings.lastTopic['__area'] ?? AREAS[0]),
-			topic: (area && this.settings.lastTopic[area]) ?? '',
+			topic: this.settings.lastTopic[folder] ?? '',
 			source: sourceLink(file, ctx?.page ?? null, ctx && !ctx.isPdf ? headingAbove(ctx.noteText, ctx.cursorLine) : null),
 			context: ctx?.context ?? '',
 			sourcePath: path ?? '',
 		};
-		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path, area), type === 'Questão').open();
+		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path), type === 'Problem').open();
 	}
 
-	private async saveNew(r: CaptureResult, sourcePath: string | null, derivedArea: string): Promise<void> {
+	private async saveNew(r: CaptureResult, sourcePath: string | null): Promise<void> {
 		await this.reload();
 		const target = mirrorPath(sourcePath, this.settings.folder);
 		const id = await this.store.addCard(target, {
@@ -395,19 +380,17 @@ export default class RevisitPlugin extends Plugin {
 			type: r.type,
 			front: r.front,
 			back: r.back,
-			...(r.area && r.area !== derivedArea ? { area: r.area } : {}),
 			topics: r.topics,
 			...(r.reverse ? { reverse: true } : {}),
 			source: r.source,
 		});
-		this.settings.lastTopic[r.area] = r.topics.join('; ');
-		this.settings.lastTopic['__area'] = r.area;
+		this.settings.lastTopic[folderOf(sourcePath)] = r.topics.join('; ');
 		await this.saveSettings();
 		this.updateStatus();
-		new Notice(`Revisit: card created in ${r.area}${r.topics.length ? ' > ' + r.topics[0] : ''} (^${id})`);
+		new Notice(`Revisit: card created${r.topics.length ? ' in ' + r.topics[0] : ''} (^${id})`);
 	}
 
-	// ---- reread de notas inteiras ----
+	// ---- rereading whole notes ----
 
 	private rereadKey(path: string): string {
 		return `note:${path}`;
@@ -455,7 +438,7 @@ export default class RevisitPlugin extends Plugin {
 		new Notice(on ? `Revisit: ${file.basename} enters rereading` : `Revisit: ${file.basename} leaves rereading`);
 	}
 
-	/** Note being reread now, shown in the Notas tab of the painel. */
+	/** Note being reread now, shown in the Notes tab of the panel. */
 	reading: string | null = null;
 
 	async openNextReread(): Promise<void> {
@@ -473,7 +456,7 @@ export default class RevisitPlugin extends Plugin {
 
 	private readLeaf: WorkspaceLeaf | null = null;
 
-	/** Opens a note to reread beside the painel, reusing the same pane each time. */
+	/** Opens a note to reread beside the panel, reusing the same pane each time. */
 	async openReread(path: string): Promise<void> {
 		this.reading = path;
 		const f = this.app.vault.getAbstractFileByPath(path);
@@ -527,19 +510,13 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	editCard(card: Card, after?: () => void): void {
-		const derived = (() => {
-			const t = this.resolveSource(card);
-			return t ? areaOf(t, this.settings.areaMap) : null;
-		})();
-		const area = card.area ?? derived ?? AREAS[0];
-		const draft = draftFromCard(card, area, card.file ?? '');
+		const draft = draftFromCard(card, card.file ?? '');
 		new CaptureModal(this.app, draft, this.topics(), 'Edit card', async (r) => {
 			await this.store.updateCard(card, {
 				id: card.id,
 				type: r.type,
 				front: r.front,
 				back: r.back,
-				...(r.area && r.area !== derived ? { area: r.area } : {}),
 				topics: r.topics,
 				...(card.tags?.length ? { tags: card.tags } : {}),
 				...(r.reverse ? { reverse: true } : {}),
@@ -557,22 +534,29 @@ export default class RevisitPlugin extends Plugin {
 	}
 }
 
+/** Folder of a source path; the key of the last topic used there. */
+function folderOf(path: string | null): string {
+	return path?.split('/').slice(0, -1).join('/') ?? '';
+}
 
-class AreaModal extends SuggestModal<string> {
+/** Picks what to review: the open note first, then its folders, then every other source. */
+class ScopeModal extends SuggestModal<string> {
 	constructor(
 		private plugin: RevisitPlugin,
 		private extra = false,
 	) {
 		super(plugin.app);
-		if (extra) this.setPlaceholder('Extra session: every card of the area, without changing the schedule');
+		this.setPlaceholder(extra ? 'Extra session: every card of the note or folder, without changing the schedule' : 'Review a note or a folder');
 	}
 	getSuggestions(q: string): string[] {
-		return AREAS.filter((a) => a.toLowerCase().includes(q.toLowerCase()));
+		const active = this.app.workspace.getActiveFile() ?? this.plugin.lastSource;
+		const scopes = reviewScopes(this.plugin.items(), active?.path ?? null);
+		return scopes.filter((s) => s.toLowerCase().includes(q.toLowerCase()));
 	}
-	renderSuggestion(a: string, el: HTMLElement): void {
-		el.setText(`${a} · ${this.plugin.session(a, undefined, this.extra).length}`);
+	renderSuggestion(scope: string, el: HTMLElement): void {
+		el.setText(`${scope} · ${this.plugin.session(scope, undefined, this.extra).length}`);
 	}
-	onChooseSuggestion(a: string): void {
-		void this.plugin.review(a, undefined, this.extra);
+	onChooseSuggestion(scope: string): void {
+		void this.plugin.review(scope, undefined, this.extra);
 	}
 }

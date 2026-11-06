@@ -18,7 +18,7 @@ export interface CardRow {
 	side: string;
 	front: string;
 	type: CardType;
-	area: string | null;
+	source: string | null;
 	topics: string[];
 	status: CardStatus;
 	/** next due, null while the card is new */
@@ -42,7 +42,7 @@ export function cardRow(it: QueueItem, stats: Map<string, { ok: number; bad: num
 		side: it.reverse ? 'reverse' : it.cloze !== undefined ? `cloze ${it.cloze + 1}` : 'front',
 		front: it.card.front,
 		type: it.card.type,
-		area: it.area,
+		source: it.source,
 		topics: it.card.topics,
 		status: statusOf(it),
 		due,
@@ -59,5 +59,5 @@ export function rowOrder(a: CardRow, b: CardRow): number {
 	const d = rank(a) - rank(b);
 	if (d !== 0) return d;
 	if (a.due && b.due) return a.due.getTime() - b.due.getTime();
-	return a.front.localeCompare(b.front, 'pt-BR');
+	return a.front.localeCompare(b.front);
 }

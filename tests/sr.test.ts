@@ -10,7 +10,7 @@ describe('lacunas por destaque', () => {
 		expect(hideCloze(t, 1)).toBe('A fé é a ___ do que se espera');
 	});
 	it('irmãos da mesma lacuna não caem juntos', () => {
-		const it = (key: string) => ({ key, reverse: false, card: { id: 'labcde' }, area: null, suspended: false }) as unknown as QueueItem;
+		const it = (key: string) => ({ key, reverse: false, card: { id: 'labcde' }, source: null, suspended: false }) as unknown as QueueItem;
 		expect(baseOf('labcde-c2')).toBe('labcde');
 		expect(burySiblings([it('labcde'), it('labcde-c2')], new Set()).map((i) => i.key)).toEqual(['labcde']);
 		expect(burySiblings([it('labcde-c2')], new Set(['labcde'])).map((i) => i.key)).toEqual([]);

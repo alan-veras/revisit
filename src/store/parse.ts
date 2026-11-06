@@ -2,7 +2,7 @@ import type { RevlogEntry } from '../srs/budget';
 import type { CardState } from './Store';
 import { migrateEstado, migrateLogEntry } from './migrate';
 
-/** Reads estado.json; anything but an object counts as corruption and throws, so the caller can fall back to the backup. The old Portuguese schema is migrated on the way in. */
+/** Reads estado.json; anything but an object counts as corruption and throws, so the caller can fall back to the backup. The old schema is migrated on the way in. */
 export function parseStateText(text: string): { state: Record<string, CardState>; changed: boolean } {
 	const v: unknown = JSON.parse(text);
 	if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('the content is not an object');

@@ -67,3 +67,14 @@ export function newPerWeek(log: RevlogEntry[], now: Date, weeks = 8): number[] {
 	}
 	return out;
 }
+
+/** Folder a source belongs to in the statistics: its first `depth` folder levels. */
+export function folderGroup(path: string, depth = 2): string {
+	const parts = path.split('/').slice(0, -1).slice(0, depth);
+	return parts.length ? parts.join('/') : '/';
+}
+
+/** The groups with the most reviews, best for a short chart. */
+export function topGroups(ret: Map<string, { ok: number; total: number }>, max = 8): [string, { ok: number; total: number }][] {
+	return [...ret.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0])).slice(0, max);
+}

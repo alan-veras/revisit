@@ -8,16 +8,17 @@ export function wordCount(text: string): number {
 }
 
 /** The type the capture window opens with. */
-export function initialType(o: { isPdf: boolean; path: string | null; selection: string }): CardType {
-	if (o.isPdf && o.selection) return 'Questão';
-	if (o.path?.startsWith('2_The Bible/') && o.selection) return 'Referência';
-	return 'Pergunta';
+export function initialType(o: { isPdf: boolean; hasReference: boolean; selection: string }): CardType {
+	if (o.isPdf && o.selection) return 'Problem';
+	if (o.hasReference && o.selection) return 'Reference';
+	return 'Question';
 }
 
 /**
- * `Hebreus 11:1` from a Bible chapter note: the chapter from the first heading
- * shaped `# <Livro> <n> (...)`, the verse from the closest `###### <n>` heading
- * at or above the cursor line. Null when the note is not shaped like that.
+ * `Hebrews 11:1` from a chapter note: the chapter from the heading shaped
+ * `# <Book> <n> (...)`, the verse from the closest `###### <n>` heading
+ * at or above the cursor line. Null when the note is not shaped like that,
+ * which is also how a capture knows the note is not a scripture chapter.
  */
 export function bibleReference(noteText: string, cursorLine: number): string | null {
 	const lines = noteText.split('\n');
@@ -51,11 +52,11 @@ export function resolveOnSave(o: { type: CardType; front: string; back: string; 
 	| { error: string } {
 	const front = o.front.trim();
 	const back = o.back.trim();
-	if (!back && clozes(front).length) return { type: 'Lacuna', front, back: '' };
+	if (!back && clozes(front).length) return { type: 'Cloze', front, back: '' };
 	if (!back) return { error: 'The back is empty.' };
 	if (front) return { type: o.type, front, back };
 	if (wordCount(back) <= CLOZE_MAX_WORDS && o.context.trim()) {
-		return { type: 'Lacuna', front: clozeFront(o.context, back), back };
+		return { type: 'Cloze', front: clozeFront(o.context, back), back };
 	}
 	return { error: 'Write the question: a cloze only works for a short excerpt.' };
 }
@@ -64,7 +65,7 @@ const ALT_RE = /\s*\(([A-Ea-e])\)\s*/g;
 
 /**
  * Puts each alternative of a question on its own paragraph:
- * `enunciado (A) x (B) y` becomes `enunciado\n\n(A) x\n\n(B) y`.
+ * `statement (A) x (B) y` becomes `statement\n\n(A) x\n\n(B) y`.
  * Only when there are at least two alternatives; otherwise the text stays.
  */
 export function splitAlternatives(text: string): string {

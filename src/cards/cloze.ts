@@ -1,4 +1,4 @@
-/** Highlights `==texto==` in the front of a Lacuna: each one is a card of its own. */
+/** Highlights `==text==` in the front of a Cloze: each one is a card of its own. */
 const CLOZE_RE = /==([^=\n]+?)==/g;
 
 export function clozes(text: string): string[] {

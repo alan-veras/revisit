@@ -6,26 +6,60 @@ export interface QueueItem {
 	/** key in estado.json and the log: the card id, plus `-r` for the reverse */
 	key: string;
 	reverse: boolean;
-	/** which `==highlight==` of a Lacuna this item asks, when the front has them */
+	/** which `==highlight==` of a Cloze this item asks, when the front has them */
 	cloze?: number;
 	card: Card;
-	area: string | null;
+	/** vault path of the source note or PDF, null when the card has none */
+	source: string | null;
 	fsrs?: FsrsCard;
 	suspended: boolean;
 }
 
-/** Area key of the cards whose source has no area: they share one quota. */
-export const NO_AREA = 'No area';
+/** Where the cards without a source are grouped. */
+export const NO_SOURCE = 'No source';
+
+/** What a card is grouped under: the path of its source. */
+export function scopeOf(item: Pick<QueueItem, 'source'>): string {
+	return item.source ?? NO_SOURCE;
+}
+
+/** True when `path` is the note `scope` or sits inside the folder `scope`. */
+export function inScope(path: string, scope: string): boolean {
+	return path === scope || path.startsWith(scope.replace(/\/+$/, '') + '/');
+}
+
+/** Short name of an item's source, for labels: `a/b/Cells.md` reads `Cells`. */
+export function sourceName(item: Pick<QueueItem, 'source'>): string {
+	return (scopeOf(item).split('/').pop() as string).replace(/\.md$/, '');
+}
+
+/**
+ * Every note and folder that has cards, for the picker: the active note and its
+ * folders first (nearest first), then the rest in name order.
+ */
+export function reviewScopes(items: Pick<QueueItem, 'source'>[], active: string | null): string[] {
+	const all = new Set<string>();
+	for (const it of items) {
+		const parts = scopeOf(it).split('/');
+		for (let i = parts.length; i > 0; i--) all.add(parts.slice(0, i).join('/'));
+	}
+	const first: string[] = [];
+	const parts = active?.split('/') ?? [];
+	for (let i = parts.length; i > 0; i--) {
+		const path = parts.slice(0, i).join('/');
+		if (all.delete(path)) first.push(path);
+	}
+	return first.concat([...all].sort((a, b) => a.localeCompare(b)));
+}
 
 export interface QueueOptions {
 	now: Date;
-	area?: string | null;
-	/** prefix of an topic, `Concursos` matches `Concursos > TI` */
+	/** a note or a folder: only the cards of that source */
+	scope?: string | null;
+	/** prefix of a topic, `Biology` matches `Biology > Cells` */
 	topic?: string | null;
 	budgetMinutes: number;
 	newAllowed: number;
-	/** new cards still allowed today per area; an area missing here has no cap of its own */
-	newLeftByArea?: Map<string, number>;
 	secs: Record<CardType, number>;
 	interleave: boolean;
 	retrievability: (card: FsrsCard, now: Date) => number;
@@ -35,8 +69,8 @@ export interface QueueOptions {
 	extra?: boolean;
 }
 
-export function matchesFilter(item: QueueItem, area?: string | null, topic?: string | null): boolean {
-	if (area && item.area !== area) return false;
+export function matchesFilter(item: QueueItem, scope?: string | null, topic?: string | null): boolean {
+	if (scope && !inScope(scopeOf(item), scope)) return false;
 	if (topic) {
 		const want = topic.toLowerCase();
 		return item.card.topics.some((a) => {
@@ -80,7 +114,7 @@ export function dueReviews(items: QueueItem[], now: Date): QueueItem[] {
  * Due dates are never touched: what does not fit simply shows up again tomorrow.
  */
 export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
-	const pool = items.filter((it) => !it.suspended && matchesFilter(it, o.area, o.topic));
+	const pool = items.filter((it) => !it.suspended && matchesFilter(it, o.scope, o.topic));
 	if (o.extra) {
 		const r = (it: QueueItem) => (it.fsrs ? o.retrievability(it.fsrs, o.now) : 0);
 		const all = [...pool].sort((a, b) => r(a) - r(b));
@@ -92,18 +126,11 @@ export function buildSession(items: QueueItem[], o: QueueOptions): QueueItem[] {
 	// a new card and its new reverse count as one introduction
 	const fresh: QueueItem[] = [];
 	const introduced = new Set<string>();
-	const byArea = new Map<string, number>();
 	const byImportance = [...pool].sort((a, b) => Number(isImportant(b.card)) - Number(isImportant(a.card)));
 	for (const it of byImportance) {
 		if (!isNew(it.fsrs)) continue;
 		const base = it.card.id ?? it.key;
-		if (!introduced.has(base)) {
-			if (introduced.size >= Math.max(0, o.newAllowed)) continue;
-			const key = it.area ?? NO_AREA;
-			const left = o.newLeftByArea?.get(key);
-			if (left !== undefined && (byArea.get(key) ?? 0) >= left) continue;
-			byArea.set(key, (byArea.get(key) ?? 0) + 1);
-		}
+		if (!introduced.has(base) && introduced.size >= Math.max(0, o.newAllowed)) continue;
 		introduced.add(base);
 		fresh.push(it);
 	}

@@ -1,7 +1,5 @@
-export const CARD_TYPES = ['Pergunta', 'Lacuna', 'Referência', 'Questão'] as const;
+export const CARD_TYPES = ['Question', 'Cloze', 'Reference', 'Problem'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
-
-export const AREAS = ['Carreira', 'Academia', 'Desenvolvimento Pessoal', 'Espiritual', 'Lazer'] as const;
 
 /** One flashcard as written in a card file. */
 export interface Card {
@@ -9,10 +7,8 @@ export interface Card {
 	type: CardType;
 	front: string;
 	back: string;
-	/** written only when it cannot be read from the source path, or differs */
-	area?: string;
 	topics: string[];
-	/** `#importante` and the like: written only when the card has some */
+	/** `#important` and the like: written only when the card has some */
 	tags?: string[];
 	/** also reviewed back to front */
 	reverse?: boolean;
@@ -28,9 +24,9 @@ export function isCardType(value: string): value is CardType {
 	return (CARD_TYPES as readonly string[]).includes(value);
 }
 
-export const IMPORTANT_TAG = 'importante';
+export const IMPORTANT_TAG = 'important';
 
-/** Tags as written (`#importante #fe`) into a clean list without the `#`. */
+/** Tags as written (`#important #exam`) into a clean list without the `#`. */
 export function parseTags(value: string): string[] {
 	return value
 		.split(/[\s,;]+/)

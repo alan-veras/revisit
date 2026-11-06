@@ -4,6 +4,7 @@ import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
 import { Reread } from '../notes/reread';
+import { migrateCardFiles } from './migrate';
 import { parseStateText, parseLogLines } from './parse';
 
 export type Status = 'active' | 'suspended';
@@ -84,8 +85,9 @@ export class Store {
 			this.rawLog = parsed.lines;
 			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in revisoes.jsonl.`);
 		}
-		const taken = new Set<string>();
 		const files = this.cardFiles();
+		await this.migrateCards(files);
+		const taken = new Set<string>();
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		texts.forEach((t) => parseCardFile(t).forEach((c) => c.id && taken.add(c.id)));
 		const cards: Card[] = [];
@@ -100,6 +102,22 @@ export class Store {
 		}
 		this.cards = cards;
 		this.version++;
+	}
+
+	/** Card files still in the old format move to the English one; a vault without them does nothing here. */
+	private async migrateCards(files: TFile[]): Promise<void> {
+		const byPath = new Map(files.map((f) => [f.path, f]));
+		const adapter = this.app.vault.adapter;
+		const done = await migrateCardFiles([...byPath.keys()], {
+			read: (path) => this.app.vault.cachedRead(byPath.get(path) as TFile),
+			exists: (path) => adapter.exists(path),
+			write: async (path, text) => {
+				const file = byPath.get(path);
+				if (file) await this.app.vault.modify(file, text);
+				else await adapter.write(path, text);
+			},
+		});
+		if (done) new Notice(`Revisit: ${done} card ${done === 1 ? 'file' : 'files'} moved to the new format; the originals are kept beside them as .backup-pre-migration.`);
 	}
 
 	takenIds(): Set<string> {

@@ -8,13 +8,13 @@ import { freshCard } from '../src/srs/scheduler';
 const NOW = new Date('2026-11-04T10:00:00');
 
 function item(over: { id: string; reverse?: boolean; cloze?: number; suspended?: boolean; fsrs?: QueueItem['fsrs'] }): QueueItem {
-	const card: Card = { id: over.id, type: 'Pergunta', front: `front ${over.id}`, back: over.id, topics: [], source: '', start: 0, end: 0 };
+	const card: Card = { id: over.id, type: 'Question', front: `front ${over.id}`, back: over.id, topics: [], source: '', start: 0, end: 0 };
 	return {
 		key: over.id,
 		reverse: over.reverse ?? false,
 		...(over.cloze !== undefined ? { cloze: over.cloze } : {}),
 		card,
-		area: 'Carreira',
+		source: null,
 		...(over.fsrs ? { fsrs: over.fsrs } : {}),
 		suspended: over.suspended ?? false,
 	};

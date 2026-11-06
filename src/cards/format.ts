@@ -5,20 +5,20 @@ import { Card, isCardType, parseTags, CardType } from './types';
  * Card files: blocks separated by a line `---` (outside code fences), each with
  * labelled fields. A field runs until the next label at the start of a line.
  *
- *   Frente: Como desfazer o último rollout?
- *   Verso:
+ *   Front: How do I undo the last rollout?
+ *   Back:
  *   `kubectl rollout undo deployment/web`
- *   Tipo: Pergunta
- *   Assunto: Kubernetes > Workloads
- *   Fonte: [[...|Cronograma do CKA]] ^lk7q2a
+ *   Type: Question
+ *   Topic: Kubernetes > Workloads
+ *   Source: [[...|CKA study plan]] ^lk7q2a
  */
 
-type Label = 'Frente' | 'Verso' | 'Tipo' | 'Área' | 'Assunto' | 'Tags' | 'Reverso' | 'Fonte';
-const LABEL_RE = /^(Frente|Verso|Tipo|Área|Assunto|Tags|Reverso|Fonte):[ \t]?(.*)$/;
+type Label = 'Front' | 'Back' | 'Type' | 'Topic' | 'Tags' | 'Reverse' | 'Source';
+const LABEL_RE = /^(Front|Back|Type|Topic|Tags|Reverse|Source):[ \t]?(.*)$/;
 const ID_RE = /\s\^(l[a-z0-9]{5})\s*$/;
-const FENCE_RE = /^\s*(```|~~~)/;
+export const FENCE_RE = /^\s*(```|~~~)/;
 
-interface Block {
+export interface Block {
 	start: number;
 	end: number;
 	lines: string[];
@@ -72,28 +72,26 @@ export function parseBlock(block: Block): Card | null {
 		if (FENCE_RE.test(raw)) fence = !fence;
 	}
 	const get = (label: Label) => trimBlock((fields[label] ?? []).join('\n'));
-	const front = get('Frente');
-	const back = get('Verso');
+	const front = get('Front');
+	const back = get('Back');
 	if (!front || (!back && !clozes(front).length)) return null;
-	const typeRaw = get('Tipo');
-	const type: CardType = isCardType(typeRaw) ? typeRaw : 'Pergunta';
-	const topics = get('Assunto')
+	const typeRaw = get('Type');
+	const type: CardType = isCardType(typeRaw) ? typeRaw : 'Question';
+	const topics = get('Topic')
 		.split(';')
 		.map((a) => normalizeTopic(a))
 		.filter(Boolean);
 	const tags = parseTags(get('Tags'));
-	const area = get('Área');
-	const reverse = /^(sim|s|yes|true)$/i.test(get('Reverso'));
+	const reverse = /^(yes|true)$/i.test(get('Reverse'));
 	return {
 		id,
 		type,
 		front,
 		back,
-		...(area ? { area } : {}),
 		topics,
 		...(tags.length ? { tags } : {}),
 		...(reverse ? { reverse } : {}),
-		source: get('Fonte'),
+		source: get('Source'),
 		start: block.start,
 		end: block.end,
 	};
@@ -114,20 +112,34 @@ export function normalizeTopic(value: string): string {
 		.join(' > ');
 }
 
+/**
+ * A line of text that reads like a label (`Source: Wikipedia` in the middle of a
+ * back) would start a new field on the next read. One leading space keeps it
+ * inside the field and does not change how the markdown renders. Code fences
+ * are left alone: the parser ignores them.
+ */
+export function escapeLabels(lines: string[]): string[] {
+	let fence = false;
+	return lines.map((line) => {
+		const hit = !fence && LABEL_RE.test(line);
+		if (FENCE_RE.test(line)) fence = !fence;
+		return hit ? ` ${line}` : line;
+	});
+}
+
 function field(label: Label, value: string): string {
-	return value.includes('\n') ? `${label}:\n${value}` : `${label}: ${value}`;
+	return value.includes('\n') ? `${label}:\n${escapeLabels(value.split('\n')).join('\n')}` : `${label}: ${value}`;
 }
 
 /** Writes a card block (without the `---` separator). */
-export type CardFields = Pick<Card, 'id' | 'type' | 'front' | 'back' | 'topics' | 'source' | 'area' | 'reverse' | 'tags'>;
+export type CardFields = Pick<Card, 'id' | 'type' | 'front' | 'back' | 'topics' | 'source' | 'reverse' | 'tags'>;
 
 export function serializeCard(card: CardFields): string {
-	const lines = [field('Frente', card.front.trim()), field('Verso', card.back.trim()), `Tipo: ${card.type}`];
-	if (card.area) lines.push(`Área: ${card.area}`);
-	if (card.topics.length) lines.push(`Assunto: ${card.topics.join('; ')}`);
+	const lines = [field('Front', card.front.trim()), field('Back', card.back.trim()), `Type: ${card.type}`];
+	if (card.topics.length) lines.push(`Topic: ${card.topics.join('; ')}`);
 	if (card.tags?.length) lines.push(`Tags: ${card.tags.map((t) => `#${t}`).join(' ')}`);
-	if (card.reverse) lines.push('Reverso: sim');
-	if (card.source) lines.push(`Fonte: ${card.source}`);
+	if (card.reverse) lines.push('Reverse: yes');
+	if (card.source) lines.push(`Source: ${card.source}`);
 	if (card.id) {
 		const last = lines.length - 1;
 		lines[last] = `${lines[last] as string} ^${card.id}`;
@@ -210,11 +222,11 @@ export function newId(taken: Set<string>, random: () => number = Math.random): s
 
 /**
  * Line of the block that carries the block id: the last one outside a code
- * fence, never a bare label (`Verso:` alone would lose its field when the id
+ * fence, never a bare label (`Back:` alone would lose its field when the id
  * is stripped on the next read), so a card whose back is only a code block
  * gets the id on an earlier line.
  */
-function idLineFor(lines: string[], start: number, end: number): number {
+export function idLineFor(lines: string[], start: number, end: number): number {
 	let fence = false;
 	const candidates: number[] = [];
 	for (let i = start; i <= end; i++) {
@@ -225,7 +237,7 @@ function idLineFor(lines: string[], start: number, end: number): number {
 	}
 	while (candidates.length) {
 		const at = candidates[candidates.length - 1] as number;
-		if (!/^(Frente|Verso|Tipo|Área|Assunto|Tags|Reverso|Fonte):[ \t]?$/i.test(lines[at] ?? '')) return at;
+		if (!/^(Front|Back|Type|Topic|Tags|Reverse|Source):[ \t]?$/i.test(lines[at] ?? '')) return at;
 		candidates.pop();
 	}
 	return -1;
@@ -247,7 +259,7 @@ export function ensureIds(text: string, taken: Set<string>, random?: () => numbe
 }
 
 /**
- * Rewrites `Fonte:` links that point to `from` (a vault path, with or without
+ * Rewrites `Source:` links that point to `from` (a vault path, with or without
  * `.md`) so they point to `to`, keeping `#page=`, headings and aliases.
  */
 export function renameSource(text: string, from: string, to: string): string {
@@ -257,7 +269,7 @@ export function renameSource(text: string, from: string, to: string): string {
 	return text
 		.split('\n')
 		.map((line) => {
-			if (!line.startsWith('Fonte:')) return line;
+			if (!line.startsWith('Source:')) return line;
 			return line.replace(/\[\[([^\]|#]+)([^\]]*)\]\]/g, (m, target: string, rest: string) =>
 				strip(target) === a ? `[[${b}${rest}]]` : m,
 			);
@@ -272,7 +284,7 @@ export function renameSourceFolder(text: string, fromFolder: string, toFolder: s
 	return text
 		.split('\n')
 		.map((line) => {
-			if (!line.startsWith('Fonte:')) return line;
+			if (!line.startsWith('Source:')) return line;
 			return line.replace(/\[\[([^\]|#]+)([^\]]*)\]\]/g, (m, target: string, rest: string) => {
 				const t = target.replace(/\.md$/, '');
 				return t === a || t.startsWith(a + '/') ? `[[${b}${t.slice(a.length)}${rest}]]` : m;
@@ -281,7 +293,7 @@ export function renameSourceFolder(text: string, fromFolder: string, toFolder: s
 		.join('\n');
 }
 
-/** Assuntos as shown on screen: only the last level (`Sustento > Perseguição` reads `Perseguição`). */
+/** Topics as shown on screen: only the last level (`Biology > Cells` reads `Cells`). */
 export function topicsLabel(topics: string[]): string {
 	return topics.map((a) => a.split(' > ').pop() ?? a).join('; ');
 }

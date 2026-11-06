@@ -1,13 +1,12 @@
 import { App, Component, MarkdownRenderer, Modal, Notice } from 'obsidian';
 import { normalizeTopic } from '../cards/format';
-import { AREAS, Card, CardType, CARD_TYPES } from '../cards/types';
+import { Card, CardType, CARD_TYPES } from '../cards/types';
 import { resolveOnSave } from './autoType';
 
 export interface CaptureDraft {
 	type: CardType;
 	front: string;
 	back: string;
-	area: string;
 	topic: string;
 	source: string;
 	/** paragraph around the selection, for a cloze */
@@ -21,13 +20,12 @@ export interface CaptureResult {
 	type: CardType;
 	front: string;
 	back: string;
-	area: string;
 	topics: string[];
 	source: string;
 	reverse: boolean;
 }
 
-/** The capture window: one front, one back, the area and the subject. */
+/** The capture window: one front, one back and an optional topic. */
 export class CaptureModal extends Modal {
 	private draft: CaptureDraft;
 	private preview: HTMLElement | null = null;
@@ -64,14 +62,6 @@ export class CaptureModal extends Modal {
 		const back = this.box(contentEl, 'Back', this.draft.back, 'The answer', (v) => (this.draft.back = v));
 
 		const row = contentEl.createDiv({ cls: 'revisit-row' });
-		const areaBox = row.createDiv({ cls: 'revisit-field' });
-		areaBox.createEl('label', { text: 'Area' });
-		const sel = areaBox.createEl('select');
-		for (const a of AREAS) sel.createEl('option', { text: a, value: a });
-		sel.value = this.draft.area || AREAS[0];
-		this.draft.area = sel.value;
-		sel.onchange = () => (this.draft.area = sel.value);
-
 		const topicBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
 		topicBox.createEl('label', { text: 'Topic' });
 		const listId = `revisit-topics-${Date.now()}`;
@@ -158,7 +148,7 @@ export class CaptureModal extends Modal {
 			.map(normalizeTopic)
 			.filter(Boolean);
 		try {
-			await this.onSave({ ...r, area: this.draft.area, topics, source: this.draft.source.trim(), reverse: !!this.draft.reverse });
+			await this.onSave({ ...r, topics, source: this.draft.source.trim(), reverse: !!this.draft.reverse });
 			this.close();
 		} catch (e) {
 			new Notice(`Revisit: ${e instanceof Error ? e.message : String(e)}`);
@@ -171,12 +161,11 @@ export class CaptureModal extends Modal {
 	}
 }
 
-export function draftFromCard(card: Card, area: string, sourcePath: string): CaptureDraft {
+export function draftFromCard(card: Card, sourcePath: string): CaptureDraft {
 	return {
 		type: card.type,
 		front: card.front,
 		back: card.back,
-		area,
 		topic: card.topics.join('; '),
 		source: card.source,
 		context: '',

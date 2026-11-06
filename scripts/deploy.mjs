@@ -1,8 +1,12 @@
-// Copies the built plugin into a vault. Override the target with REVISIT_VAULT (LEMBRO_VAULT still works).
+// Copies the built plugin into a vault: REVISIT_VAULT=/path/to/vault npm run deploy
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const vault = process.env.REVISIT_VAULT ?? process.env.LEMBRO_VAULT ?? '/home/alanv/Trabalhos/Obsidian/second-brain';
+const vault = process.env.REVISIT_VAULT;
+if (!vault) {
+	process.stderr.write('Set REVISIT_VAULT to the vault folder.\n');
+	process.exit(1);
+}
 const target = join(vault, '.obsidian', 'plugins', 'revisit');
 
 mkdirSync(target, { recursive: true });

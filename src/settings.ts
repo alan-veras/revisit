@@ -1,30 +1,27 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
-import { parseAreaMap } from './cards/area';
-import { AREAS } from './cards/types';
 import type RevisitPlugin from './main';
-import { DEFAULT_AREA_CAP } from './srs/budget';
+import { DEFAULT_NEW_PER_DAY } from './srs/budget';
 
 export interface RevisitSettings {
 	folder: string;
 	budgetMinutes: number;
-	/** new cards per day of each area; an area left out gets DEFAULT_AREA_CAP */
-	newPerArea: Record<string, number>;
+	/** new cards per day, all of them together */
+	newPerDay: number;
 	retention: number;
-	/** target retention of cards tagged #importante */
+	/** target retention of cards tagged #important */
 	retentionImportant: number;
 	interleave: boolean;
-	/** words of the back text shown by each hint on a Referência card */
+	/** words of the back text shown by each hint on a Reference card */
 	hintWords: number;
 	/** the `New` badge on cards seen for the first time */
 	showNewBadge: boolean;
 	/** a card graded Again comes back after this many cards in the same session */
 	requeueGap: number;
-	/** extra `folder: area` pairs for folders outside 3_Outputs, 4_Resources and 2_The Bible */
-	areaMap: Record<string, string>;
+	/** last topic used per source folder, offered on the next capture there */
 	lastTopic: Record<string, string>;
 	/** `HH:MM` of the daily reminder, empty when off */
 	reminder: string;
-	/** notes with this tag are reread too */
+	/** notes with this tag are reread too; empty until the person picks one */
 	rereadTag: string;
 	newNotesPerDay: number;
 	/** day (toDateString) the reminder last showed */
@@ -32,25 +29,21 @@ export interface RevisitSettings {
 }
 
 export const DEFAULT_SETTINGS: RevisitSettings = {
-	folder: '8_System/Lembro',
+	folder: 'Revisit',
 	budgetMinutes: 20,
-	newPerArea: {},
+	newPerDay: DEFAULT_NEW_PER_DAY,
 	retention: 0.9,
 	retentionImportant: 0.95,
 	interleave: true,
 	hintWords: 3,
 	showNewBadge: true,
 	requeueGap: 3,
-	areaMap: {},
 	lastTopic: {},
 	reminder: '',
-	rereadTag: '#review/permanent',
+	rereadTag: '',
 	newNotesPerDay: 2,
 	lastReminder: '',
 };
-
-/** Settings key of an area's own cap: `quota:Espiritual`. */
-const QUOTA = 'quota:';
 
 export class RevisitSettingTab extends PluginSettingTab {
 	constructor(
@@ -64,15 +57,6 @@ export class RevisitSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: 'group',
-				heading: 'New cards per day',
-				items: AREAS.map((area) => ({
-					name: area,
-					desc: `How many new ${area} cards enter per day (default ${DEFAULT_AREA_CAP}). 0 pauses the new cards of the area. If due reviews fill the budget, the quota shrinks for the day.`,
-					control: { type: 'number' as const, key: `${QUOTA}${area}`, min: 0 },
-				})),
-			},
-			{
-				type: 'group',
 				heading: 'Review',
 				items: [
 					{
@@ -81,13 +65,18 @@ export class RevisitSettingTab extends PluginSettingTab {
 						control: { type: 'number', key: 'budgetMinutes', min: 1 },
 					},
 					{
+						name: 'New cards per day',
+						desc: `How many new cards enter per day (default ${DEFAULT_NEW_PER_DAY}). 0 pauses new cards. If due reviews fill the budget, the quota shrinks for the day.`,
+						control: { type: 'number', key: 'newPerDay', min: 0 },
+					},
+					{
 						name: 'Desired retention, in %',
 						desc: 'Chance of remembering on the review day. Higher reviews more often. The FSRS advises against going above 95.',
 						control: { type: 'slider', key: 'retention', min: 70, max: 95, step: 1 },
 					},
 					{
-						name: 'Retention of #importante cards, in %',
-						desc: 'Target for cards with a Tags: #importante line. Higher than the general one, they come back more often. The ceiling is 95, which the FSRS advises.',
+						name: 'Retention of #important cards, in %',
+						desc: 'Target for cards with a Tags: #important line. Higher than the general one, they come back more often. The ceiling is 95, which the FSRS advises.',
 						control: { type: 'slider', key: 'retentionImportant', min: 70, max: 95, step: 1 },
 					},
 					{
@@ -108,7 +97,7 @@ export class RevisitSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: 'Words per hint',
-						desc: "On 'Referência' cards (Bible verses), each click on Hint or the D key shows this many more words of the text.",
+						desc: "On Reference cards (verses, quotes, definitions), each click on Hint or the D key shows this many more words of the text.",
 						control: { type: 'slider', key: 'hintWords', min: 1, max: 10, step: 1 },
 					},
 					{
@@ -125,7 +114,7 @@ export class RevisitSettingTab extends PluginSettingTab {
 					{
 						name: 'Tag of the notes to reread',
 						desc: 'Notes with this tag are reread, besides the ones you mark by command. Empty ignores the tag.',
-						control: { type: 'text', key: 'rereadTag', placeholder: '#review/permanent' },
+						control: { type: 'text', key: 'rereadTag', placeholder: '#reread' },
 					},
 					{
 						name: 'New notes to reread per day',
@@ -154,11 +143,6 @@ export class RevisitSettingTab extends PluginSettingTab {
 						desc: 'Where the card files, the state and the review log live.',
 						control: { type: 'text', key: 'folder', placeholder: DEFAULT_SETTINGS.folder },
 					},
-					{
-						name: 'Folders with an area',
-						desc: 'One per line, in the folder: area format. The outputs, resources and Bible folders are already recognized.',
-						control: { type: 'textarea', key: 'areaMap' },
-					},
 				],
 			},
 		];
@@ -166,24 +150,17 @@ export class RevisitSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
-		if (key.startsWith(QUOTA)) {
-			return s.newPerArea[key.slice(QUOTA.length)] ?? DEFAULT_AREA_CAP;
-		}
 		if (key === 'retention') return Math.round(s.retention * 100);
 		if (key === 'retentionImportant') return Math.round(s.retentionImportant * 100);
-		if (key === 'areaMap')
-			return Object.entries(s.areaMap)
-				.map(([k, v]) => `${k}: ${v}`)
-				.join('\n');
 		return s[key as keyof RevisitSettings];
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
-		if (key.startsWith(QUOTA)) {
+		if (key === 'newPerDay') {
 			const n = Number(value);
 			if (!Number.isFinite(n) || n < 0) return; // half-typed: keep the last valid value
-			s.newPerArea = { ...s.newPerArea, [key.slice(QUOTA.length)]: Math.floor(n) };
+			s.newPerDay = Math.floor(n);
 		} else if (key === 'folder') s.folder = String(value).trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
 		else if (key === 'budgetMinutes') s.budgetMinutes = Math.max(1, Number(value) || DEFAULT_SETTINGS.budgetMinutes);
 		else if (key === 'retention') {
@@ -196,7 +173,6 @@ export class RevisitSettingTab extends PluginSettingTab {
 		else if (key === 'requeueGap') s.requeueGap = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.requeueGap));
 		else if (key === 'hintWords') s.hintWords = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.hintWords));
 		else if (key === 'showNewBadge') s.showNewBadge = Boolean(value);
-		else if (key === 'areaMap') s.areaMap = parseAreaMap(String(value));
 		else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
 		else if (key === 'newNotesPerDay') s.newNotesPerDay = Math.max(0, Number(value) || 0);
 		else if (key === 'reminder') s.reminder = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(value).trim()) ? String(value).trim() : '';

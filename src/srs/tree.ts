@@ -1,53 +1,63 @@
-import { AREAS } from '../cards/types';
-import { NO_AREA } from './queue';
+import { NO_SOURCE } from './queue';
 
 export interface TreeNode {
-	/** `Area` or `Area > topic > sub`, unique */
+	/** unique inside its tree */
 	path: string;
 	name: string;
-	area: string;
-	/** topic prefix for the filter; null at the area level */
+	/** folder or note for the filter; null in a topic tree */
+	scope: string | null;
+	/** topic prefix for the filter; null in a source tree */
 	topic: string | null;
 	cards: number;
 	children: TreeNode[];
 }
 
-/** Area > topic > … with the number of cards under each level; empty levels are left out. */
-export function topicTree(items: { area: string | null; card: { topics: string[] } }[]): TreeNode[] {
-	const roots = new Map<string, TreeNode>();
-	const node = (parent: TreeNode | null, area: string, name: string, topic: string | null): TreeNode => {
-		const list = parent ? parent.children : null;
-		const path = topic ? `${area} > ${topic}` : area;
-		let n = list ? list.find((c) => c.path === path) : roots.get(area);
-		if (!n) {
-			n = { path, name, area, topic, cards: 0, children: [] };
-			if (list) list.push(n);
-			else roots.set(area, n);
-		}
-		return n;
-	};
+function sortDeep(nodes: TreeNode[]): TreeNode[] {
+	return nodes.sort((a, b) => a.name.localeCompare(b.name)).map((n) => ({ ...n, children: sortDeep(n.children) }));
+}
+
+/** Folder > subfolder > note, with the number of cards under each level. */
+export function sourceTree(items: { source: string | null }[]): TreeNode[] {
+	const roots: TreeNode[] = [];
 	for (const it of items) {
-		const area = it.area ?? NO_AREA;
-		const root = node(null, area, area, null);
-		root.cards++;
+		const parts = (it.source ?? NO_SOURCE).split('/');
+		let list = roots;
+		parts.forEach((part, i) => {
+			const path = parts.slice(0, i + 1).join('/');
+			let n = list.find((c) => c.path === path);
+			if (!n) {
+				n = { path, name: i === parts.length - 1 ? part.replace(/\.md$/, '') : part, scope: path, topic: null, cards: 0, children: [] };
+				list.push(n);
+			}
+			n.cards++;
+			list = n.children;
+		});
+	}
+	return sortDeep(roots);
+}
+
+/** Topic > subtopic > …, with the number of cards under each level. Cards without a topic are left out. */
+export function topicTree(items: { card: { topics: string[] } }[]): TreeNode[] {
+	const roots: TreeNode[] = [];
+	for (const it of items) {
 		const seen = new Set<TreeNode>();
-		for (const a of it.card.topics) {
-			let cur = root;
-			const parts = a.split(' > ');
-			parts.forEach((p, i) => {
-				cur = node(cur, area, p, parts.slice(0, i + 1).join(' > '));
-				if (!seen.has(cur)) {
-					seen.add(cur);
-					cur.cards++;
+		for (const topic of it.card.topics) {
+			const parts = topic.split(' > ');
+			let list = roots;
+			parts.forEach((part, i) => {
+				const path = parts.slice(0, i + 1).join(' > ');
+				let n = list.find((c) => c.path === path);
+				if (!n) {
+					n = { path, name: part, scope: null, topic: path, cards: 0, children: [] };
+					list.push(n);
 				}
+				if (!seen.has(n)) {
+					seen.add(n);
+					n.cards++;
+				}
+				list = n.children;
 			});
 		}
 	}
-	const order = (a: TreeNode, b: TreeNode) => a.name.localeCompare(b.name, 'pt-BR');
-	const sortDeep = (ns: TreeNode[]): TreeNode[] => ns.sort(order).map((n) => ({ ...n, children: sortDeep(n.children) }));
-	const rank = (a: string) => {
-		const i = (AREAS as readonly string[]).indexOf(a);
-		return i < 0 ? 99 : i;
-	};
-	return [...roots.values()].sort((a, b) => rank(a.area) - rank(b.area)).map((n) => ({ ...n, children: sortDeep(n.children) }));
+	return sortDeep(roots);
 }

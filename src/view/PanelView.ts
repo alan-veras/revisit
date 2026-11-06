@@ -1,14 +1,13 @@
 import { topicsLabel } from '../cards/format';
 import { ItemView, Menu, Notice, setIcon, setTooltip, TFile, WorkspaceLeaf } from 'obsidian';
 import { daysLabel, nextInterval, untilLabel } from '../notes/reread';
-import { topicTree, TreeNode } from '../srs/tree';
+import { sourceTree, topicTree, TreeNode } from '../srs/tree';
 import { forecast } from '../srs/budget';
 import { cardRow, CardStatus, statusOf, rowOrder } from '../srs/rows';
-import { cardStats, retentionBy, reviewsPerDay } from '../srs/stats';
+import { cardStats, folderGroup, retentionBy, reviewsPerDay, topGroups } from '../srs/stats';
 import { matchesCard } from './search';
-import { AREAS } from '../cards/types';
 import type RevisitPlugin from '../main';
-import { estimateMinutes, matchesFilter, NO_AREA, QueueItem } from '../srs/queue';
+import { estimateMinutes, inScope, matchesFilter, QueueItem, scopeOf, sourceName } from '../srs/queue';
 import { isNew } from '../srs/scheduler';
 
 export const VIEW_TYPE_PANEL = 'revisit-panel';
@@ -27,9 +26,9 @@ export class PanelView extends ItemView {
 	private q = '';
 	/** browser filters */
 	private status: CardStatus | 'all' = 'all';
-	private areaF: string | null = null;
+	private folderF: string | null = null;
 	private limit = 100;
-	/** tree rows opened (area or area > topic paths) */
+	/** tree rows opened (folder or topic paths) */
 	private expanded = new Set<string>();
 	private tab: 'today' | 'search' | 'notes' | 'progress' = 'today';
 	/** day picked in the next-7-days chart (0 = today); null = the first day with cards */
@@ -80,20 +79,41 @@ export class PanelView extends ItemView {
 		const go = hero.createEl('button', { text: 'Review', cls: 'mod-cta revisit-go' });
 		go.disabled = !today.length;
 		go.onclick = () => void p.review(null);
+		const q = p.quota();
+		hero.createDiv({ cls: 'revisit-muted revisit-small', text: q.quota ? `New today: ${q.used} of ${q.cap}` : 'New cards are paused' });
 
 		this.drawDecks(wrap);
 	}
 
-	/** Started once: areas with something for today open on the first draw. */
+	/** Started once: folders with something for today open on the first draw. */
 	private seeded = false;
 
-	/** The decks as a clean tree: pills for what is due (blue) and new (green), the area's quota as a small meter; an open parent shows only its name. */
+	/** The cards by folder and note, then by topic when there are topics. */
 	private drawDecks(wrap: HTMLElement): void {
 		const p = this.plugin;
-		const q = p.quota();
 		const items = p.items().filter((it) => !it.reverse && !it.cloze);
-		const tree = topicTree(items.filter((it) => !it.suspended));
-		const suspended = topicTree(items.filter((it) => it.suspended));
+		const active = items.filter((it) => !it.suspended);
+		const suspended = items.filter((it) => it.suspended);
+		const folders = sourceTree(active);
+
+		// open the folders with something for today, once the cards are loaded
+		if (!this.seeded && folders.length) {
+			this.seeded = true;
+			for (const t of folders) if (p.session(t.scope).length) this.expanded.add(t.path);
+		}
+
+		this.drawTree(wrap.createDiv({ cls: 'revisit-list' }), folders, sourceTree(suspended), items);
+		const topics = topicTree(active);
+		if (topics.length) {
+			wrap.createEl('h4', { text: 'By topic', cls: 'revisit-sub' });
+			this.drawTree(wrap.createDiv({ cls: 'revisit-list' }), topics, topicTree(suspended), items);
+		}
+		if (p.quota().reduced) wrap.createDiv({ cls: 'revisit-deck-empty', text: 'Due reviews take up the minute budget: the new-card quota shrank today.' });
+	}
+
+	/** One tree as clean rows: pills for what is due (blue) and new (green); an open parent shows only its name. */
+	private drawTree(list: HTMLElement, tree: TreeNode[], suspended: TreeNode[], items: QueueItem[]): void {
+		const p = this.plugin;
 		const suspendedOf = (path: string) => {
 			const find = (ns: TreeNode[]): number => {
 				for (const n of ns) {
@@ -105,16 +125,8 @@ export class PanelView extends ItemView {
 			};
 			return find(suspended);
 		};
-
-		// open the areas with something for today, once the cards are loaded
-		if (!this.seeded && tree.length) {
-			this.seeded = true;
-			for (const t of tree) if (p.session(t.area).length) this.expanded.add(t.path);
-		}
-
-		const list = wrap.createDiv({ cls: 'revisit-list' });
 		const row = (node: TreeNode, depth: number) => {
-			const s = p.session(node.area, undefined, false, node.topic);
+			const s = p.session(node.scope, undefined, false, node.topic);
 			const newCount = s.filter((it) => isNew(it.fsrs)).length;
 			const toReview = s.length - newCount;
 			const kids = node.children.length > 0;
@@ -135,33 +147,20 @@ export class PanelView extends ItemView {
 			// nothing for today: say when the next review falls, so the row is never mute
 			if (summary && !s.length) {
 				const next = items
-					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.area === NO_AREA ? null : node.area, node.topic))
+					.filter((it) => !it.suspended && it.fsrs && !isNew(it.fsrs) && matchesFilter(it, node.scope, node.topic))
 					.reduce<Date | null>((m, it) => (it.fsrs && (!m || it.fsrs.due < m) ? it.fsrs.due : m), null);
 				if (next) setTooltip(r.createSpan({ cls: 'revisit-li-next', text: untilLabel(next, new Date()) }), `Next review: ${next.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`);
 			}
 			const total = r.createSpan({ cls: 'revisit-li-total', text: summary ? String(node.cards) : '' });
 			if (summary) setTooltip(total, `${node.cards} ${node.cards === 1 ? 'active card' : 'active cards'}${susp ? ` · ${susp} suspended` : ''}`);
 
-			const quota = depth === 0 ? q.areas.find((a) => a.area === node.area) : undefined;
-			const meter = r.createSpan({ cls: 'revisit-li-quota' });
-			if (quota) {
-				const full = quota.cap > 0 && quota.free === 0;
-				const paused = quota.quota === 0;
-				if (full) meter.addClass('is-full');
-				const bar = meter.createSpan({ cls: 'revisit-li-bar' });
-				bar.createEl('i').style.width = `${quota.cap ? Math.min(100, (quota.used / quota.cap) * 100) : 0}%`;
-				meter.createSpan({ cls: 'revisit-li-quota-n', text: paused ? 'paused' : `${quota.used}/${quota.cap}` });
-				if (full) setIcon(meter.createSpan({ cls: 'revisit-li-ok' }), 'check');
-				setTooltip(meter, paused ? 'Quota 0: new cards of this area are paused' : full ? `New quota filled for today (${quota.cap}): back tomorrow` : `New today: ${quota.used} of ${quota.cap}${q.reduced ? ' · quota shrunk by the budget' : ''}`);
-			}
-
 			const go = r.createSpan({ cls: 'revisit-li-go' });
 			if (s.length) {
 				setIcon(go, 'play');
-				setTooltip(go, `Review ${node.topic ?? node.area} (${s.length})`);
+				setTooltip(go, `Review ${node.name} (${s.length})`);
 				go.onclick = (e) => {
 					e.stopPropagation();
-					void p.review(node.area, undefined, false, node.topic);
+					void p.review(node.scope, undefined, false, node.topic);
 				};
 			}
 			if (kids)
@@ -170,12 +169,10 @@ export class PanelView extends ItemView {
 					else this.expanded.add(node.path);
 					this.draw();
 				};
-			else if (s.length) r.onclick = () => void p.review(node.area, undefined, false, node.topic);
+			else if (s.length) r.onclick = () => void p.review(node.scope, undefined, false, node.topic);
 			if (open) for (const c of node.children) row(c, depth + 1);
 		};
 		for (const t of tree) row(t, 0);
-
-		if (q.reduced) list.createDiv({ cls: 'revisit-deck-empty', text: 'Due reviews take up the minute budget: the new-card quotas shrank today.' });
 	}
 
 	/** Whole notes to reread: today's, the one being read, and the next ones. */
@@ -249,7 +246,7 @@ export class PanelView extends ItemView {
 		});
 	}
 
-	/** The browser: search, filters by state and area, and one dense row per card, like the Anki desktop table. */
+	/** The browser: search, filters by state and folder, and one dense row per card, like the Anki desktop table. */
 	private drawSearch(wrap: HTMLElement): void {
 		const p = this.plugin;
 		const now = new Date();
@@ -271,25 +268,26 @@ export class PanelView extends ItemView {
 			this.status = est.value as CardStatus | 'all';
 			this.draw();
 		};
-		const sel = bar.createEl('select', { attr: { 'aria-label': 'Area' } });
-		for (const a of ['All areas', ...AREAS, NO_AREA] as const) {
+		const sel = bar.createEl('select', { attr: { 'aria-label': 'Folder' } });
+		const folders = [...new Set(p.items().map((it) => scopeOf(it).split('/')[0] as string))].sort((x, y) => x.localeCompare(y));
+		for (const a of ['All folders', ...folders]) {
 			const o = sel.createEl('option', { text: a, value: a });
-			if ((this.areaF ?? 'All areas') === a) o.selected = true;
+			if ((this.folderF ?? 'All folders') === a) o.selected = true;
 		}
 		sel.onchange = () => {
-			this.areaF = sel.value === 'All areas' ? null : sel.value;
+			this.folderF = sel.value === 'All folders' ? null : sel.value;
 			this.draw();
 		};
 
-		const clean = this.q.trim() || this.status !== 'all' || this.areaF;
+		const clean = this.q.trim() || this.status !== 'all' || this.folderF;
 		if (!clean) {
-			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Type to search, or filter by state and area.' });
+			wrap.createDiv({ cls: 'revisit-muted revisit-empty', text: 'Type to search, or filter by state and folder.' });
 			return;
 		}
 		const rows = p
 			.items()
 			.map((it) => cardRow(it, stats, now))
-			.filter((r) => (this.status === 'all' || r.status === this.status) && (!this.areaF || (r.area ?? NO_AREA) === this.areaF))
+			.filter((r) => (this.status === 'all' || r.status === this.status) && (!this.folderF || inScope(scopeOf(r.item), this.folderF)))
 			.filter((r) => matchesCard(r.item.card, this.q))
 			.sort(rowOrder);
 		const dueNow = rows.filter((r) => r.dueToday).length;
@@ -314,7 +312,7 @@ export class PanelView extends ItemView {
 			const row = table.createDiv({ cls: `revisit-tr is-${r.status}` });
 			const c = row.createDiv({ cls: 'revisit-td-c' });
 			c.createDiv({ cls: 'revisit-td-f', text: r.front.replace(/\s+/g, ' ') });
-			c.createDiv({ cls: 'revisit-td-sub', text: [r.area ?? NO_AREA, topicsLabel(r.topics), r.side !== 'front' ? r.side : r.type].filter(Boolean).join(' · ') });
+			c.createDiv({ cls: 'revisit-td-sub', text: [sourceName(r.item), topicsLabel(r.topics), r.side !== 'front' ? r.side : r.type].filter(Boolean).join(' · ') });
 			row.createSpan({ cls: `revisit-st is-${r.status}`, text: STATUS_LABEL[r.status] });
 			row.createSpan({ cls: 'revisit-td-due', text: r.due ? untilLabel(r.due, now) : '—' });
 			row.createSpan({ cls: 'revisit-td-n is-ok', text: r.ok ? String(r.ok) : '' });
@@ -371,8 +369,11 @@ export class PanelView extends ItemView {
 		const items = p.items();
 		const log = p.store.log;
 		const meta = Math.round(p.settings.retention * 100);
-		const areaOf = new Map(items.map((i) => [i.key, i.area]));
-		const ret = retentionBy(log, (id) => areaOf.get(id) ?? null);
+		const byKey = new Map(items.map((i) => [i.key, i]));
+		const ret = retentionBy(log, (id) => {
+			const it = byKey.get(id);
+			return it ? folderGroup(scopeOf(it)) : null;
+		});
 		const all = [...ret.values()].reduce((a, r) => ({ ok: a.ok + r.ok, total: a.total + r.total }), { ok: 0, total: 0 });
 		const past = reviewsPerDay(log, now, 30);
 
@@ -436,7 +437,7 @@ export class PanelView extends ItemView {
 			const row = list.createDiv({ cls: 'revisit-result' });
 			const t = row.createDiv({ cls: 'revisit-result-t' });
 			t.createDiv({ cls: 'revisit-result-f', text: it.card.front.replace(/\s+/g, ' ') });
-			t.createDiv({ cls: 'revisit-muted revisit-small', text: [it.area ?? NO_AREA, topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
+			t.createDiv({ cls: 'revisit-muted revisit-small', text: [sourceName(it), topicsLabel(it.card.topics), it.card.type].filter(Boolean).join(' · ') });
 			row.createEl('button', { text: 'Edit' }).onclick = () => p.editCard(it.card, () => this.draw());
 		}
 		const day = (i: number) => new Date(now.getTime() - (29 - i) * 86400000);
@@ -447,18 +448,22 @@ export class PanelView extends ItemView {
 			past.map((v, i) => `${day(i).getDate()}/${day(i).getMonth() + 1} · ${v ? `${v} reviews` : 'no session'}`),
 		);
 
-		const hb = chart('Accuracy by area', `Cards seen 7 or more days ago; the line is the target of ${meta}%`).createDiv({ cls: 'revisit-hbars' });
-		for (const a of AREAS) {
-			const r = ret.get(a);
-			const pct = r ? Math.round((r.ok / r.total) * 100) : null;
-			const row = hb.createDiv({ cls: 'revisit-hb' + (pct === null ? ' is-none' : '') });
-			setTooltip(row, pct === null ? `${a} · no mature reviews` : `${a} · ${pct}% over ${r?.total ?? 0} reviews`);
-			row.createSpan({ cls: 'revisit-hb-name', text: a });
-			const track = row.createSpan({ cls: 'revisit-hb-track' });
-			if (pct !== null) track.createEl('i').style.width = `${pct}%`;
-			track.createEl('b').style.left = `${meta}%`;
-			row.createSpan({ cls: 'revisit-hb-val', text: pct === null ? '—' : `${pct}%` });
-		}
+		const bars = (title: string, groups: [string, { ok: number; total: number }][]) => {
+			const hb = chart(title, `Cards seen 7 or more days ago; the line is the target of ${meta}%`).createDiv({ cls: 'revisit-hbars' });
+			for (const [name, r] of groups) {
+				const pct = Math.round((r.ok / r.total) * 100);
+				const row = hb.createDiv({ cls: 'revisit-hb' });
+				setTooltip(row, `${name} · ${pct}% over ${r.total} reviews`);
+				row.createSpan({ cls: 'revisit-hb-name', text: name });
+				const track = row.createSpan({ cls: 'revisit-hb-track' });
+				track.createEl('i').style.width = `${pct}%`;
+				track.createEl('b').style.left = `${meta}%`;
+				row.createSpan({ cls: 'revisit-hb-val', text: `${pct}%` });
+			}
+		};
+		if (ret.size) bars('Accuracy by folder', topGroups(ret));
+		const retTopic = retentionBy(log, (id) => byKey.get(id)?.card.topics[0]?.split(' > ')[0] ?? null);
+		if (retTopic.size) bars('Accuracy by topic', topGroups(retTopic));
 	}
 }
 

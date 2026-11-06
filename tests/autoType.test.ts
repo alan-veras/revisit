@@ -16,11 +16,11 @@ Pois foi por meio dela que os antigos receberam good testemunho.
 `;
 
 describe('initialType', () => {
-	it('PDF selection is a question, Bible a reference, the rest a question-and-answer', () => {
-		expect(initialType({ isPdf: true, path: 'p.pdf', selection: 'Enunciado' })).toBe('Questão');
-		expect(initialType({ isPdf: false, path: '2_The Bible/NT/Hebrews/Heb 11.md', selection: 'Ora' })).toBe('Referência');
-		expect(initialType({ isPdf: false, path: '4_Resources/x.md', selection: 'algo' })).toBe('Pergunta');
-		expect(initialType({ isPdf: false, path: null, selection: '' })).toBe('Pergunta');
+	it('PDF selection is a problem, a verse note a reference, the rest a question', () => {
+		expect(initialType({ isPdf: true, hasReference: false, selection: 'Enunciado' })).toBe('Problem');
+		expect(initialType({ isPdf: false, hasReference: true, selection: 'Ora' })).toBe('Reference');
+		expect(initialType({ isPdf: false, hasReference: false, selection: 'algo' })).toBe('Question');
+		expect(initialType({ isPdf: false, hasReference: false, selection: '' })).toBe('Question');
 	});
 });
 
@@ -36,16 +36,16 @@ describe('bibleReference', () => {
 
 describe('resolveOnSave', () => {
 	it('keeps a written front', () => {
-		expect(resolveOnSave({ type: 'Pergunta', front: ' P? ', back: ' R ', context: '' })).toEqual({ type: 'Pergunta', front: 'P?', back: 'R' });
+		expect(resolveOnSave({ type: 'Question', front: ' P? ', back: ' R ', context: '' })).toEqual({ type: 'Question', front: 'P?', back: 'R' });
 	});
 	it('turns an empty front on a short selection into a cloze', () => {
-		const r = resolveOnSave({ type: 'Pergunta', front: '', back: 'Amazon Bedrock', context: 'Foundation Model as a Service: Amazon Bedrock.' });
-		expect(r).toEqual({ type: 'Lacuna', front: 'Foundation Model as a Service: [...].', back: 'Amazon Bedrock' });
+		const r = resolveOnSave({ type: 'Question', front: '', back: 'Amazon Bedrock', context: 'Foundation Model as a Service: Amazon Bedrock.' });
+		expect(r).toEqual({ type: 'Cloze', front: 'Foundation Model as a Service: [...].', back: 'Amazon Bedrock' });
 	});
 	it('refuses an empty front on a long selection and an empty back', () => {
 		const long = 'um dois três quatro cinco seis sete oito nove dez';
-		expect('error' in resolveOnSave({ type: 'Pergunta', front: '', back: long, context: long })).toBe(true);
-		expect('error' in resolveOnSave({ type: 'Pergunta', front: 'P', back: ' ', context: '' })).toBe(true);
+		expect('error' in resolveOnSave({ type: 'Question', front: '', back: long, context: long })).toBe(true);
+		expect('error' in resolveOnSave({ type: 'Question', front: 'P', back: ' ', context: '' })).toBe(true);
 	});
 	it('clozeFront without context still hides', () => {
 		expect(clozeFront('', 'x')).toBe('[...]');

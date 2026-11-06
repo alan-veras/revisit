@@ -5,7 +5,7 @@ import { clozes, hideCloze } from '../cards/cloze';
 import { Card as FsrsCard } from 'ts-fsrs';
 import { splitAlternatives } from '../capture/autoType';
 import type RevisitPlugin from '../main';
-import { estimateMinutes, NO_AREA, QueueItem, sessionRequeue } from '../srs/queue';
+import { estimateMinutes, QueueItem, sessionRequeue, sourceName } from '../srs/queue';
 import { checkCloze, hintWords } from './answer';
 import { IMPORTANT_TAG, isImportant } from '../cards/types';
 import { fromStored, freshCard, isNew, Grade, GRADES, toStored } from '../srs/scheduler';
@@ -41,7 +41,7 @@ export class ReviewView extends ItemView {
 	private extra = false;
 	/** answer typed into the cloze */
 	private typed = '';
-	/** words of the back shown as a hint on a Referência front */
+	/** words of the back shown as a hint on a Reference front */
 	private hint = 0;
 	private render = new Component();
 
@@ -75,7 +75,7 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'ArrowLeft', (e) => this.key(e, () => void this.undoLast()));
 		this.scope?.register([], 'ArrowRight', (e) => this.key(e, () => void this.redoNext()));
 		this.scope?.register([], 'q', (e) => this.key(e, () => this.finish()));
-		this.scope?.register([], 'Escape', (e) => this.key(e, () => void this.plugin.openPainel()));
+		this.scope?.register([], 'Escape', (e) => this.key(e, () => void this.plugin.openPanel()));
 		this.scope?.register([], 'p', (e) => this.key(e, () => this.skip()));
 		this.scope?.register([], 'r', (e) => this.key(e, () => void this.restart()));
 		this.scope?.register([], 'd', (e) => this.key(e, () => this.moreHint()));
@@ -151,7 +151,7 @@ export class ReviewView extends ItemView {
 		const headLeft = head.createSpan({ cls: 'revisit-head-left' });
 		const home = headLeft.createEl('button', { cls: 'revisit-back-btn revisit-home', attr: { 'aria-label': 'Back to the panel' } });
 		setIcon(home, 'layout-dashboard');
-		home.onclick = () => void this.plugin.openPainel();
+		home.onclick = () => void this.plugin.openPanel();
 		const prevBtn = headLeft.createEl('button', { text: 'Previous', cls: 'revisit-back-btn', attr: { title: 'Goes back to the previous card and undoes its grade (← or Ctrl+Z)' } });
 		prevBtn.disabled = !this.undo.length;
 		prevBtn.onclick = () => void this.undoLast();
@@ -167,7 +167,7 @@ export class ReviewView extends ItemView {
 		const scene = root.createDiv({ cls: 'revisit-scene' });
 		const card = scene.createDiv({ cls: 'revisit-card' + (this.flipped ? ' is-flipped' : '') });
 		const sourcePath = item.card.file ?? '';
-		const tag = `${item.area ?? NO_AREA}${item.card.topics.length ? ' · ' + topicsLabel(item.card.topics) : ''} · ${item.card.type}${item.reverse ? ' · reverse' : ''}${sectionOf(item.card.source) ? ' · § ' + sectionOf(item.card.source) : ''}`;
+		const tag = `${sourceName(item)}${item.card.topics.length ? ' · ' + topicsLabel(item.card.topics) : ''} · ${item.card.type}${item.reverse ? ' · reverse' : ''}${sectionOf(item.card.source) ? ' · § ' + sectionOf(item.card.source) : ''}`;
 		const hole = item.cloze !== undefined ? clozes(item.card.front)[item.cloze] : undefined;
 		const ask = hole !== undefined ? hideCloze(item.card.front, item.cloze as number) : item.reverse ? item.card.back : item.card.front;
 		const answer = hole ?? (item.reverse ? item.card.front : item.card.back);
@@ -176,11 +176,11 @@ export class ReviewView extends ItemView {
 		const front = card.createDiv({ cls: 'revisit-face revisit-front' });
 		const ftag = front.createDiv({ cls: 'revisit-tag', text: tag });
 		if (this.plugin.settings.showNewBadge && isNew(item.fsrs)) ftag.prepend(createSpan({ cls: 'revisit-new-badge', text: 'New' }));
-		const isQuestion = item.card.type === 'Questão' && !item.reverse;
+		const isQuestion = item.card.type === 'Problem' && !item.reverse;
 		const questionText = isQuestion ? splitAlternatives(ask) : ask;
 		const q = front.createDiv({ cls: 'revisit-q' + (isQuestion ? ' is-question' : '') });
 		void MarkdownRenderer.render(this.app, questionText, q, sourcePath, this.render);
-		const typeCloze = item.card.type === 'Lacuna' && !item.reverse;
+		const typeCloze = item.card.type === 'Cloze' && !item.reverse;
 		if (typeCloze) {
 			const input = front.createEl('input', { type: 'text', cls: 'revisit-type', attr: { placeholder: 'Type the answer' } });
 			input.value = this.typed;
@@ -267,13 +267,13 @@ export class ReviewView extends ItemView {
 		}
 		const btns = box.createDiv({ cls: 'revisit-buttons' });
 		if (this.undo.length) btns.createEl('button', { text: 'Back to the last card' }).onclick = () => void this.undoLast();
-		btns.createEl('button', { text: 'Back to the panel' }).onclick = () => void this.plugin.openPainel();
+		btns.createEl('button', { text: 'Back to the panel' }).onclick = () => void this.plugin.openPanel();
 		btns.createEl('button', { text: 'Another 5 minutes', cls: 'mod-cta' }).onclick = () => void this.plugin.review(null, 5);
 	}
 
-	/** A Referência asked from the reference: the first words of the text can be revealed. */
+	/** A Reference asked from the reference: the first words of the text can be revealed. */
 	private canHint(item: QueueItem): boolean {
-		return item.card.type === 'Referência' && !item.reverse && item.cloze === undefined;
+		return item.card.type === 'Reference' && !item.reverse && item.cloze === undefined;
 	}
 
 	/** Shows three more words of the back on the front. */
@@ -421,7 +421,7 @@ export class ReviewView extends ItemView {
 		this.draw();
 	}
 
-	/** Marks or unmarks the current card as #importante (writes the Tags line). */
+	/** Marks or unmarks the current card as #important (writes the Tags line). */
 	private async toggleImportant(): Promise<void> {
 		const item = this.current();
 		if (!item?.card.id) return;

@@ -17,7 +17,7 @@ describe('parseStateText', () => {
 
 describe('parseLogLines', () => {
 	const pt = '{"id":"labcde","t":"2026-11-03T10:00:00Z","nota":3,"segundos":10,"tipo":"Pergunta","novo":false,"extra":false}';
-	const en = '{"id":"labfgh","t":"2026-11-04T10:00:00Z","grade":3,"seconds":10,"type":"Pergunta","new":false,"extra":false}';
+	const en = '{"id":"labfgh","t":"2026-11-04T10:00:00Z","grade":3,"seconds":10,"type":"Question","new":false,"extra":false}';
 	it('reads the good lines, counts the bad ones and keeps the raw lines', () => {
 		const { entries, bad, lines } = parseLogLines([pt, '{"id": truncated', '', en].join('\n'));
 		expect(entries).toHaveLength(2);
