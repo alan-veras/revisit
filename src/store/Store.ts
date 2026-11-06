@@ -1,5 +1,6 @@
-import { App, normalizePath, Notice, TFile } from 'obsidian';
+import { App, getAllTags, normalizePath, Notice, TFile } from 'obsidian';
 import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../cards/format';
+import { parseInlineCards } from '../cards/inline';
 import { Card } from '../cards/types';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
@@ -16,6 +17,13 @@ export interface CardState {
 	st: Status;
 }
 
+/** True when the note carries the tag or one under it (`#a` matches `#a/b`). */
+export function noteHasTag(app: App, file: TFile, tag: string): boolean {
+	const want = tag.toLowerCase();
+	const cache = app.metadataCache.getFileCache(file);
+	return !!cache && (getAllTags(cache) ?? []).some((t) => t.toLowerCase() === want || t.toLowerCase().startsWith(want + '/'));
+}
+
 /** Everything Revisit keeps lives in one vault folder. */
 export class Store {
 	cards: Card[] = [];
@@ -30,6 +38,7 @@ export class Store {
 	constructor(
 		private app: App,
 		private folder: () => string,
+		private inlineTag: () => string = () => '',
 	) {}
 
 	private get base(): string {
@@ -100,16 +109,38 @@ export class Store {
 			}
 			for (const c of parseCardFile(text)) cards.push({ ...c, file: file.path });
 		}
-		this.cards = cards;
+		this.cards = cards.concat(await this.inlineCards(taken));
 		this.version++;
+	}
+
+	/** Cards written inside the notes with the inline tag; nothing is written back. */
+	private async inlineCards(taken: Set<string>): Promise<Card[]> {
+		const tag = this.inlineTag();
+		if (!tag) return [];
+		const notes = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(this.base + '/') && noteHasTag(this.app, f, tag));
+		const out: Card[] = [];
+		for (const f of notes) {
+			const link = `[[${f.path.replace(/\.md$/, '')}|${f.basename}]]`;
+			for (const c of parseInlineCards(await this.app.vault.cachedRead(f), link)) {
+				if (taken.has(c.id as string)) continue;
+				taken.add(c.id as string);
+				out.push({ ...c, file: f.path });
+			}
+		}
+		return out;
 	}
 
 	/** Card files still in the old format move to the English one; a vault without them does nothing here. */
 	private async migrateCards(files: TFile[]): Promise<void> {
 		const byPath = new Map(files.map((f) => [f.path, f]));
+		const fileAt = (path: string) => {
+			const file = byPath.get(path);
+			if (!file) throw new Error(`Card file not found: ${path}`);
+			return file;
+		};
 		const adapter = this.app.vault.adapter;
 		const done = await migrateCardFiles([...byPath.keys()], {
-			read: (path) => this.app.vault.cachedRead(byPath.get(path) as TFile),
+			read: (path) => this.app.vault.cachedRead(fileAt(path)),
 			exists: (path) => adapter.exists(path),
 			write: async (path, text) => {
 				const file = byPath.get(path);
@@ -167,6 +198,7 @@ export class Store {
 	}
 
 	private async withCardFile(card: Card, edit: (text: string, fresh: Card) => string): Promise<void> {
+		if (card.inline) throw new Error('This card is written in a note: change it there.');
 		const file = card.file ? this.app.vault.getAbstractFileByPath(card.file) : null;
 		if (!(file instanceof TFile)) throw new Error('Card file not found.');
 		await this.app.vault.process(file, (text) => {

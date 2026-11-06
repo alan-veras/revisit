@@ -13,6 +13,8 @@ export interface Card {
 	/** also reviewed back to front */
 	reverse?: boolean;
 	source: string;
+	/** written inside a note, which is never touched: read only */
+	inline?: boolean;
 	/** card file this card lives in (vault path); set by the store */
 	file?: string;
 	/** first and last line of the block inside its file (0-based, inclusive) */

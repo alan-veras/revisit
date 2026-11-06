@@ -1,4 +1,4 @@
-import { getAllTags, normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { linkPath } from './cards/link';
 import { clozes } from './cards/cloze';
 import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
@@ -14,7 +14,7 @@ import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, QueueItem, reviewScopes } from './srs/queue';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
 import { migrateSettings } from './store/migrate';
-import { Store } from './store/Store';
+import { noteHasTag, Store } from './store/Store';
 import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
 import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
 import { registerCli } from './cli/commands';
@@ -28,7 +28,7 @@ export default class RevisitPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
-		this.store = new Store(this.app, () => this.settings.folder);
+		this.store = new Store(this.app, () => this.settings.folder, () => this.settings.inlineTag);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
 		this.addCommand({ id: 'open-panel', name: 'Open panel', callback: () => void this.openPanel() });
@@ -397,10 +397,7 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	private hasTag(file: TFile): boolean {
-		const tag = this.settings.rereadTag.toLowerCase();
-		if (!tag) return false;
-		const cache = this.app.metadataCache.getFileCache(file);
-		return !!cache && (getAllTags(cache) ?? []).some((t) => t.toLowerCase() === tag || t.toLowerCase().startsWith(tag + '/'));
+		return !!this.settings.rereadTag && noteHasTag(this.app, file, this.settings.rereadTag);
 	}
 
 	isReread(path: string): boolean {
@@ -510,6 +507,10 @@ export default class RevisitPlugin extends Plugin {
 	}
 
 	editCard(card: Card, after?: () => void): void {
+		if (card.inline) {
+			new Notice('Revisit: this card is written in the note; change it there.');
+			return;
+		}
 		const draft = draftFromCard(card, card.file ?? '');
 		new CaptureModal(this.app, draft, this.topics(), 'Edit card', async (r) => {
 			await this.store.updateCard(card, {

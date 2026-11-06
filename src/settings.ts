@@ -19,6 +19,8 @@ export interface RevisitSettings {
 	requeueGap: number;
 	/** last topic used per source folder, offered on the next capture there */
 	lastTopic: Record<string, string>;
+	/** notes with this tag have their `::` and `==cloze==` lines read as cards; empty turns it off */
+	inlineTag: string;
 	/** `HH:MM` of the daily reminder, empty when off */
 	reminder: string;
 	/** notes with this tag are reread too; empty until the person picks one */
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: RevisitSettings = {
 	showNewBadge: true,
 	requeueGap: 3,
 	lastTopic: {},
+	inlineTag: '#flashcards',
 	reminder: '',
 	rereadTag: '',
 	newNotesPerDay: 2,
@@ -143,6 +146,11 @@ export class RevisitSettingTab extends PluginSettingTab {
 						desc: 'Where the card files, the state and the review log live.',
 						control: { type: 'text', key: 'folder', placeholder: DEFAULT_SETTINGS.folder },
 					},
+					{
+						name: 'Tag of notes with inline cards',
+						desc: 'In notes with this tag, Question::Answer, Question:::Answer (both ways) and ==cloze== lines become cards. The notes are never changed. Empty turns it off.',
+						control: { type: 'text', key: 'inlineTag', placeholder: DEFAULT_SETTINGS.inlineTag },
+					},
 				],
 			},
 		];
@@ -173,7 +181,10 @@ export class RevisitSettingTab extends PluginSettingTab {
 		else if (key === 'requeueGap') s.requeueGap = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.requeueGap));
 		else if (key === 'hintWords') s.hintWords = Math.min(10, Math.max(1, Number(value) || DEFAULT_SETTINGS.hintWords));
 		else if (key === 'showNewBadge') s.showNewBadge = Boolean(value);
-		else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
+		else if (key === 'inlineTag') {
+			s.inlineTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
+			await this.plugin.reload();
+		} else if (key === 'rereadTag') s.rereadTag = String(value).trim() ? '#' + String(value).trim().replace(/^#/, '') : '';
 		else if (key === 'newNotesPerDay') s.newNotesPerDay = Math.max(0, Number(value) || 0);
 		else if (key === 'reminder') s.reminder = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(value).trim()) ? String(value).trim() : '';
 		await this.plugin.saveSettings();

@@ -425,6 +425,7 @@ export class ReviewView extends ItemView {
 	private async toggleImportant(): Promise<void> {
 		const item = this.current();
 		if (!item?.card.id) return;
+		if (item.card.inline) return void new Notice('Revisit: this card is written in the note; change it there.');
 		const { start: _s, end: _e, file: _f, ...fields } = item.card;
 		const tags = isImportant(item.card) ? (item.card.tags ?? []).filter((t) => t !== IMPORTANT_TAG) : [...(item.card.tags ?? []), IMPORTANT_TAG];
 		await this.plugin.store.updateCard(item.card, { ...fields, tags });
