@@ -1,34 +1,28 @@
-import { App, Modal, setIcon } from 'obsidian';
-import { CatchUpOffer, planDaysText } from '../srs/forecast';
-import { SessionChoice, visibleChoices } from '../srs/session';
+import { App, Modal, Notice } from 'obsidian';
+import { SESSION_MINUTES, SessionChoice } from '../srs/session';
 
-const NOTES: Record<number, string> = { 5: 'Fits a coffee break', 10: 'Short', 20: 'A solid session', 30: 'Long' };
-/** One colour per row, by position, so the lengths read at a glance. */
-const TONES = ['green', 'cyan', 'blue', 'purple', 'orange'];
+/** One colour per button, so the lengths read at a glance. */
+const TONES = ['green', 'cyan', 'blue', 'purple'];
 
-/** "How much time do you have?": one row per length that changes the outcome, then Start. */
+/**
+ * The launcher: "How much time do you have today?" — the deck is already on the
+ * card, so one tap on a length starts the session.
+ */
 export class StartModal extends Modal {
-	private picked: number | null;
-
-	private rows: SessionChoice[];
+	private custom = false;
 
 	constructor(
 		app: App,
 		private o: {
 			title: string;
+			/** one choice per quick length, plus "everything due" (minutes null) last, for the counts */
 			choices: SessionChoice[];
-			/** minutes preselected */
-			preselected: number;
-			/** cards due today, for the line under the list */
-			dueCards: number;
-			onStart: (minutes: number | null) => void;
-			/** large overdue backlog: offer to work through it gradually */
-			catchUp?: { offer: CatchUpOffer; onStart: () => void };
+			/** minutes suggested in the custom field */
+			suggested: number;
+			onStart: (minutes: number) => void;
 		},
 	) {
 		super(app);
-		this.rows = visibleChoices(o.choices);
-		this.picked = this.rows.some((c) => c.minutes === o.preselected) ? o.preselected : null;
 	}
 
 	onOpen(): void {
@@ -41,66 +35,52 @@ export class StartModal extends Modal {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass('revisit-start');
-		const cu = this.o.catchUp;
-		if (cu) {
-			const b = root.createDiv({ cls: 'revisit-catchup', attr: { role: 'region', 'aria-label': 'Catch up' } });
-			const head = b.createDiv({ cls: 'revisit-catchup-text' });
-			setIcon(head.createSpan({ cls: 'revisit-catchup-icon' }), 'alert-triangle');
-			head.createSpan({ text: `You have ${cu.offer.overdue} overdue ${cu.offer.overdue === 1 ? 'card' : 'cards'} (about ${Math.round(cu.offer.overdueMinutes)} min). Catch up gradually?` });
-			b.createDiv({ cls: 'revisit-muted revisit-catchup-plan', text: `Today: ${cu.offer.todayKeys.length} ${cu.offer.todayKeys.length === 1 ? 'card' : 'cards'}, about ${Math.max(1, Math.round(cu.offer.todayMinutes))} min. The plan takes ${planDaysText(cu.offer)}.` });
-			const btn = b.createEl('button', { text: "Start today's catch-up", cls: 'revisit-catchup-go' });
-			btn.onclick = () => {
-				this.close();
-				cu.onStart();
-			};
-		}
-		// one length survived: no choice to make, so no list, no check, no repeated line
-		const single = this.rows.length === 1 ? (this.rows[0] ?? null) : null;
-		if (single) {
-			const box = root.createDiv({ cls: 'revisit-start-single' });
-			box.createDiv({ cls: 'revisit-start-hero', text: single.minutes === null ? `~${Math.max(1, single.estimate)} min` : `${single.minutes} min` });
-			box.createDiv({ cls: 'revisit-muted', text: `${single.cards} ${single.cards === 1 ? 'card' : 'cards'}${single.minutes === null ? ' due today' : ' fit this length'}` });
-			const go = root.createEl('button', { text: 'Start reviewing', cls: 'mod-cta revisit-start-go' });
-			go.disabled = single.cards === 0;
-			go.onclick = () => {
-				this.close();
-				this.o.onStart(single.minutes);
-			};
-			return;
-		}
-		root.createEl('p', { text: 'How much time do you have now?', cls: 'revisit-muted revisit-start-ask' });
-		const group = root.createDiv({ cls: 'revisit-choices', attr: { role: 'radiogroup', 'aria-label': 'Session length' } });
-		this.rows.forEach((c, i) => {
-			const on = c.minutes === this.picked;
-			const row = group.createEl('button', { cls: `revisit-choice tone-${TONES[i % TONES.length]}` + (on ? ' is-on' : ''), attr: { role: 'radio', 'aria-checked': String(on) } });
-			setIcon(row.createSpan({ cls: 'revisit-choice-icon' }), 'clock');
-			const text = row.createSpan({ cls: 'revisit-choice-text' });
-			text.createEl('b', { text: c.minutes === null ? 'Everything due' : `${c.minutes} min` });
-			text.createSpan({ cls: 'revisit-muted', text: c.minutes === null ? `about ${c.estimate} min` : (NOTES[c.minutes] ?? '') });
-			setIcon(row.createSpan({ cls: 'revisit-choice-check' }), 'check');
+		root.createEl('p', { text: 'How much time do you have today?', cls: 'revisit-start-ask' });
+		if (this.custom) return this.drawCustom(root);
+		const group = root.createDiv({ cls: 'revisit-quick', attr: { role: 'group', 'aria-label': 'Session length' } });
+		SESSION_MINUTES.forEach((m, i) => {
+			const fit = this.o.choices.find((c) => c.minutes === m);
+			const row = group.createEl('button', { cls: `revisit-choice tone-${TONES[i % TONES.length]}`, attr: { 'aria-label': `${m} minutes` } });
+			row.createEl('b', { text: `${m} min` });
+			row.createSpan({ cls: 'revisit-muted', text: fit ? `${fit.cards} ${fit.cards === 1 ? 'card' : 'cards'}` : '' });
+			row.disabled = !fit || fit.cards === 0;
 			row.onclick = () => {
-				this.picked = c.minutes;
-				this.draw();
-				this.contentEl.querySelector<HTMLElement>('.revisit-choice.is-on')?.focus();
+				this.close();
+				this.o.onStart(m);
 			};
 		});
-		const sel = this.rows.find((c) => c.minutes === this.picked);
-		const fits = sel?.cards ?? 0;
-		const plural = (n: number): string => (n === 1 ? 'card' : 'cards');
-		root.createEl('p', {
-			cls: 'revisit-muted revisit-start-note',
-			text:
-				this.o.dueCards === 0
-					? 'Nothing is due today.'
-					: this.picked === null
-						? `${this.o.dueCards} ${plural(this.o.dueCards)}, about ${Math.max(1, sel?.estimate ?? 1)} min.`
-						: `${fits} of ${this.o.dueCards} ${plural(this.o.dueCards)} due today, the most forgotten first.`,
-		});
-		const go = root.createEl('button', { text: this.picked === null ? 'Start everything' : `Start ${this.picked} min`, cls: 'mod-cta revisit-start-go' });
-		go.disabled = fits === 0;
-		go.onclick = () => {
+		const custom = group.createEl('button', { cls: `revisit-choice tone-${TONES[TONES.length - 1]}`, attr: { 'aria-label': 'Custom length' } });
+		custom.createEl('b', { text: 'Custom' });
+		custom.createSpan({ cls: 'revisit-muted', text: 'pick a length' });
+		custom.onclick = () => {
+			this.custom = true;
+			this.draw();
+		};
+	}
+
+	private drawCustom(root: HTMLElement): void {
+		const box = root.createDiv({ cls: 'revisit-custom' });
+		const input = box.createEl('input', { type: 'number', cls: 'revisit-custom-input', attr: { min: '1', max: '600', step: '1', 'aria-label': 'Minutes' } });
+		input.value = String(this.o.suggested);
+		const go = box.createEl('button', { text: 'Start', cls: 'mod-cta' });
+		const submit = (): void => {
+			const raw = Math.floor(Number(input.value));
+			if (!Number.isFinite(raw) || raw < 1) {
+				input.focus();
+				return;
+			}
+			if (raw > 600) new Notice('Revisit: the maximum session is 600 min.');
 			this.close();
-			this.o.onStart(this.picked);
+			this.o.onStart(Math.min(raw, 600));
+		};
+		go.onclick = submit;
+		input.onkeydown = (e) => {
+			if (e.key === 'Enter') submit();
+		};
+		window.setTimeout(() => input.focus(), 50);
+		root.createEl('button', { text: 'Back', cls: 'revisit-start-back' }).onclick = () => {
+			this.custom = false;
+			this.draw();
 		};
 	}
 

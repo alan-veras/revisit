@@ -2,8 +2,13 @@ import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import type RevisitPlugin from './main';
 import { DEFAULT_NEW_PER_DAY } from './srs/budget';
 
+/** How card files are laid out in the folder: the old one file per source note, or one per deck (current). */
+export type CardLayout = 'source' | 'deck';
+
 export interface RevisitSettings {
 	folder: string;
+	/** the layout of the card files; flips to `deck` once, when the one-time migration runs */
+	cardLayout: CardLayout;
 	budgetMinutes: number;
 	/** new cards per day, all of them together */
 	newPerDay: number;
@@ -32,6 +37,7 @@ export interface RevisitSettings {
 
 export const DEFAULT_SETTINGS: RevisitSettings = {
 	folder: 'Revisit',
+	cardLayout: 'source',
 	budgetMinutes: 20,
 	newPerDay: DEFAULT_NEW_PER_DAY,
 	retention: 0.9,

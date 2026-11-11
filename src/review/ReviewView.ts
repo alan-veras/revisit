@@ -16,12 +16,22 @@ import { CardState } from '../store/Store';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
 
+/** What each grade asserts about the memory, shown as the button tooltip. */
+const GRADE_MEANING: Record<Grade, string> = { 1: 'Again: did not remember', 2: 'Hard: remembered with effort', 3: 'Good: remembered', 4: 'Easy: remembered instantly' };
+
 interface Undo {
 	index: number;
 	id: string;
 	before: CardState | undefined;
 	/** the copy put back in this session, if it was */
 	requeuedItem?: QueueItem;
+}
+
+/** The part of a workspace split the focus mode needs, kept loose to survive typings. */
+interface SplitLike {
+	collapsed?: boolean;
+	collapse(): void;
+	expand(): void;
 }
 
 /** The session: one card at a time, the front first, then it turns over. */
@@ -49,6 +59,14 @@ export class ReviewView extends ItemView {
 	private render = new Component();
 	/** minutes the person asked for on the start screen; null for everything due */
 	private planned: number | null = null;
+	/** when the session ends by itself, from the planned minutes; null after any end or without a budget */
+	private deadline: number | null = null;
+	/** the 1 s interval that watches the deadline */
+	private ticker: number | null = null;
+	/** the session ended because the time ran out, for the end headline */
+	private endedByTime = false;
+	/** sidebar state before the focus mode collapsed them; null when no session holds them */
+	private focus: { left: boolean; right: boolean } | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -84,10 +102,19 @@ export class ReviewView extends ItemView {
 		this.scope?.register([], 'p', (e) => this.key(e, () => this.skip()));
 		this.scope?.register([], 'r', (e) => this.key(e, () => void this.restart()));
 		this.scope?.register([], 'd', (e) => this.key(e, () => this.moreHint()));
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', (leaf) => {
+				if (leaf === this.leaf) {
+					if (!this.ended && this.queue.length) this.enterFocus();
+				} else this.restoreFocus();
+			}),
+		);
 		this.draw();
 	}
 
 	async onClose(): Promise<void> {
+		this.stopTimer();
+		this.restoreFocus();
 		this.render.unload();
 	}
 
@@ -107,6 +134,7 @@ export class ReviewView extends ItemView {
 		this.label = label;
 		this.index = 0;
 		this.ended = false;
+		this.endedByTime = false;
 		this.flipped = false;
 		this.revealed = false;
 		this.results = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -116,6 +144,10 @@ export class ReviewView extends ItemView {
 		this.typed = '';
 		this.hint = 0;
 		this.startedAt = Date.now();
+		this.stopTimer();
+		this.deadline = this.planned !== null ? this.startedAt + this.planned * 60000 : null;
+		if (this.deadline !== null) this.ticker = window.setInterval(() => this.tick(), 1000);
+		this.enterFocus();
 		this.draw();
 	}
 
@@ -147,7 +179,7 @@ export class ReviewView extends ItemView {
 		if (!this.queue.length) {
 			const box = root.createDiv({ cls: 'revisit-end' });
 			box.createEl('h2', { text: 'Nothing to review now' });
-			box.createEl('p', { text: 'Create cards with the capture command, or come back tomorrow.', cls: 'revisit-muted' });
+			box.createEl('p', { text: 'Add to review turns selected text into a card. Or press the button below to start from scratch.', cls: 'revisit-muted' });
 			const btns = box.createDiv({ cls: 'revisit-buttons' });
 			btns.createEl('button', { text: 'New card', cls: 'mod-cta' }).onclick = () => void this.plugin.captureFor(this.plugin.lastSource);
 			btns.createEl('button', { text: 'Open panel' }).onclick = () => void this.plugin.openPanel();
@@ -168,8 +200,7 @@ export class ReviewView extends ItemView {
 		nextBtn.disabled = !this.redo.length;
 		nextBtn.onclick = () => void this.redoNext();
 		headLeft.createSpan({ text: this.extra ? `${this.label} · extra, does not change the schedule` : this.label });
-		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
-		head.createSpan({ text: `${this.index + 1} of ${this.queue.length} · ~${Math.max(1, left)} min left` });
+		head.createSpan({ cls: 'revisit-remaining', text: this.headStatus() });
 		const bar = root.createDiv({ cls: 'revisit-bar' });
 		bar.createEl('i').style.width = `${(this.index / this.queue.length) * 100}%`;
 
@@ -229,6 +260,10 @@ export class ReviewView extends ItemView {
 		};
 
 		const tools = root.createDiv({ cls: 'revisit-tools' });
+		const editBtn = tools.createEl('button', { text: 'Edit', attr: { 'aria-label': 'Edit this card' } });
+		editBtn.onclick = () => this.edit();
+		const impBtn = tools.createEl('button', { text: 'Important', cls: isImportant(item.card) ? 'is-on' : '', attr: { 'aria-label': 'Marks or unmarks #important: it comes back more often' } });
+		impBtn.onclick = () => void this.toggleImportant();
 		const skipBtn = tools.createEl('button', { text: 'Skip', attr: { 'aria-label': 'Sends the card to the end of the session, without grading' } });
 		skipBtn.disabled = this.index >= this.queue.length - 1;
 		skipBtn.onclick = () => this.skip();
@@ -237,7 +272,7 @@ export class ReviewView extends ItemView {
 		resetBtn.onclick = () => void this.restart();
 		const delBtn = tools.createEl('button', { text: 'Delete', attr: { 'aria-label': 'Deletes the card after a confirmation' } });
 		delBtn.onclick = () => this.askDelete();
-		root.createDiv({ cls: 'revisit-keys', text: 'Space flips · 1 to 4 grade · D hint · E edits · Q ends' });
+		root.createDiv({ cls: 'revisit-keys', text: 'Space flips · 1 to 4 grade · D hint · ← undo · Q ends' });
 		this.dock = root.createDiv({ cls: 'revisit-dock' });
 		this.drawDock();
 
@@ -250,6 +285,62 @@ export class ReviewView extends ItemView {
 			}),
 		);
 		this.shownAt = Date.now();
+	}
+
+	/** "3 of 20 · 12 min left": the real countdown when the session has a deadline, the estimate otherwise. */
+	private headStatus(): string {
+		const pos = `${this.index + 1} of ${this.queue.length}`;
+		if (this.deadline !== null) {
+			const left = Math.max(1, Math.ceil((this.deadline - Date.now()) / 60000));
+			return `${pos} · ${left} min left`;
+		}
+		const left = estimateMinutes(this.queue.slice(this.index), this.plugin.secs());
+		return `${pos} · ~${Math.max(1, left)} min left`;
+	}
+
+	/** Watches the deadline; when it is gone, the session ends by itself. */
+	private tick(): void {
+		if (this.ended || this.deadline === null) return;
+		if (this.deadline - Date.now() <= 0) return this.timeUp();
+		const el = this.contentEl.querySelector<HTMLElement>('.revisit-remaining');
+		if (el) el.setText(this.headStatus());
+	}
+
+	/** The planned minutes ran out: stop, thank for the session and show the summary. */
+	private timeUp(): void {
+		this.stopTimer();
+		this.deadline = null;
+		this.ended = true;
+		this.endedByTime = true;
+		const sum = summarizeSession(this.results, this.startedAt, Date.now());
+		new Notice(sum.cards ? `🎉 Time's up! You reviewed ${sum.cards} ${sum.cards === 1 ? 'card' : 'cards'} in ${sum.minutes} min.` : "Time's up! Nothing answered this time, the cards stay for tomorrow.");
+		this.draw();
+	}
+
+	private stopTimer(): void {
+		if (this.ticker !== null) {
+			window.clearInterval(this.ticker);
+			this.ticker = null;
+		}
+	}
+
+	/** Focus mode: the sidebars get out of the way while the review tab is on screen. */
+	private enterFocus(): void {
+		if (this.focus) return;
+		const ws = this.app.workspace as unknown as { leftSplit?: SplitLike; rightSplit?: SplitLike };
+		this.focus = { left: !!ws.leftSplit?.collapsed, right: !!ws.rightSplit?.collapsed };
+		ws.leftSplit?.collapse();
+		ws.rightSplit?.collapse();
+	}
+
+	/** Gives the sidebars back the way they were before the focus mode. */
+	private restoreFocus(): void {
+		const f = this.focus;
+		if (!f) return;
+		this.focus = null;
+		const ws = this.app.workspace as unknown as { leftSplit?: SplitLike; rightSplit?: SplitLike };
+		if (!f.left) ws.leftSplit?.expand();
+		if (!f.right) ws.rightSplit?.expand();
 	}
 
 	private dock: HTMLElement | null = null;
@@ -267,7 +358,7 @@ export class ReviewView extends ItemView {
 		const grades = this.dock.createDiv({ cls: 'revisit-grades', attr: { role: 'group', 'aria-label': 'Grade the answer' } });
 		const preview = this.previewOf(item);
 		for (const { grade, name } of GRADES) {
-			const b = grades.createEl('button', { cls: `revisit-g${grade}`, attr: { 'aria-label': `${name}, back in ${preview[grade].label}` } });
+			const b = grades.createEl('button', { cls: `revisit-g${grade}`, attr: { 'aria-label': `${GRADE_MEANING[grade]} · back in ${preview[grade].label}`, title: `${GRADE_MEANING[grade]} · back in ${preview[grade].label}` } });
 			b.createEl('b', { text: name });
 			b.createEl('small', { text: preview[grade].label });
 			b.onclick = () => void this.grade(grade);
@@ -278,7 +369,7 @@ export class ReviewView extends ItemView {
 		const root = this.contentEl;
 		const box = root.createDiv({ cls: 'revisit-end' });
 		const sum = summarizeSession(this.results, this.startedAt, Date.now());
-		box.createEl('h2', { text: 'Session finished' });
+		box.createEl('h2', { text: this.endedByTime ? "Time's up!" : 'Session finished' });
 		box.createEl('p', {
 			text: sum.cards ? `${sum.minutes} min: ${sum.cards} ${sum.cards === 1 ? 'card' : 'cards'}, ${sum.percentRight}% right` : 'No cards answered',
 			cls: 'revisit-muted',
@@ -426,6 +517,7 @@ export class ReviewView extends ItemView {
 		this.typed = '';
 		this.hint = 0;
 		this.ended = false;
+		this.endedByTime = false;
 		this.flipped = false;
 		this.revealed = false;
 		new Notice('Back to the previous card');
@@ -533,6 +625,8 @@ export class ReviewView extends ItemView {
 
 	private finish(): void {
 		if (!this.queue.length) return;
+		this.stopTimer();
+		this.deadline = null;
 		this.ended = true;
 		this.draw();
 	}

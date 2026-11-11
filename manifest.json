@@ -1,9 +1,9 @@
 {
 	"id": "revisit",
 	"name": "Revisit",
-	"version": "0.3.0",
+	"version": "0.6.0",
 	"minAppVersion": "1.13.0",
-	"description": "Spaced repetition flashcards with FSRS. Pick 10, 20 or 30 minutes and get exactly that, with a forecast of tomorrow's workload.",
+	"description": "Spaced repetition flashcards with FSRS. Pick your time and review; the deck is chosen when the card is created.",
 	"author": "Alan Veras",
 	"fundingUrl": "https://www.buymeacoffee.com/alanveras",
 	"isDesktopOnly": false

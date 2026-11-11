@@ -1,5 +1,6 @@
-import { escapeLabels, FENCE_RE, idLineFor, splitBlocks } from '../cards/format';
-import type { CardType } from '../cards/types';
+import { appendCards, escapeLabels, FENCE_RE, idLineFor, parseBlock, removeCard, splitBlocks } from '../cards/format';
+import { deckPath } from '../cards/mirror';
+import type { Card, CardType } from '../cards/types';
 import type { RevlogEntry } from '../srs/budget';
 import type { CardState, Status } from './Store';
 
@@ -119,6 +120,74 @@ export async function migrateCardFiles(paths: string[], io: MigrationIO): Promis
 
 /** The data files Revisit keeps in its folder. */
 export const DATA_FILES = { state: 'state.json', stateBackup: 'state.backup.json', log: 'review-log.jsonl' } as const;
+
+export interface DeckEntry {
+	path: string;
+	text: string;
+}
+
+export interface DeckPlan {
+	/** full text per target file (a kept file rewritten, or a new deck file), after the move */
+	writes: { path: string; text: string }[];
+	/** the original of each file that changes or goes away, copied to `<path>.backup-pre-deck` first */
+	backups: { target: string; text: string }[];
+	/** files that end up without a card block and are deleted */
+	removes: string[];
+}
+
+/**
+ * Plan to move every card to the file of its deck (the first topic; no topic goes
+ * to `No deck.md`). Blocks move verbatim, so ids and bytes survive; a file whose
+ * cards all leave is deleted, and a file that receives cards keeps its own. Pure:
+ * the caller reads the files, applies the plan and cleans the empty folders.
+ */
+export function planDeckMigration(entries: DeckEntry[], folder: string): DeckPlan {
+	const originals = new Map(entries.map((e) => [e.path, e.text]));
+	const incoming = new Map<string, string[]>();
+	const rest = new Map<string, string>();
+	const removes = new Set<string>();
+	for (const { path, text } of entries) {
+		const lines = text.split('\n');
+		const moved: Card[] = [];
+		for (const block of splitBlocks(text)) {
+			const card = parseBlock(block);
+			if (!card) continue;
+			const target = deckPath(card.topics, folder);
+			if (target === path) continue;
+			moved.push(card);
+			const blockText = lines.slice(block.start, block.end + 1).join('\n');
+			const g = incoming.get(target);
+			if (g) g.push(blockText);
+			else incoming.set(target, [blockText]);
+		}
+		let out = text;
+		for (const card of [...moved].sort((a, b) => (b.start ?? 0) - (a.start ?? 0))) out = removeCard(out, card);
+		rest.set(path, out);
+	}
+	const writes = new Map<string, string>();
+	for (const [path, text] of rest) {
+		const blocks = incoming.get(path);
+		const next = blocks ? appendCards(text, blocks) : text;
+		if (!blocks && !splitBlocks(next).length) {
+			removes.add(path);
+			continue;
+		}
+		if (next !== originals.get(path)) writes.set(path, next);
+	}
+	for (const [target, blocks] of incoming) {
+		if (writes.has(target) || removes.has(target)) continue;
+		writes.set(target, appendCards(originals.get(target) ?? '', blocks));
+	}
+	const backups = [...new Set([...writes.keys(), ...removes])]
+		.filter((p) => originals.has(p))
+		.map((p) => ({ target: `${p}.backup-pre-deck`, text: originals.get(p) as string }));
+	const byPath = (a: [string, string], b: [string, string]) => a[0].localeCompare(b[0]);
+	return {
+		writes: [...writes.entries()].sort(byPath).map(([path, text]) => ({ path, text })),
+		backups: backups.sort((a, b) => a.target.localeCompare(b.target)),
+		removes: [...removes].sort(),
+	};
+}
 
 /** Names the same files had in older versions, and what each became. */
 const LEGACY_DATA_FILES: readonly (readonly [old: string, now: string])[] = [

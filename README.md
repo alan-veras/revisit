@@ -7,7 +7,7 @@
 
 ## Why Revisit is different
 
-- **Study for the time you have.** Pick 5, 10, 20 or 30 minutes (or everything due). Each choice shows how many cards fit, and the session holds exactly that many, the most forgotten first.
+- **Study for the time you have.** Pick 10, 15 or 30 minutes, or any custom length. Each choice shows how many cards fit, and the session holds exactly that many, the most forgotten first.
 - **Know tomorrow's workload.** The panel forecasts the next 30 days in minutes against your daily budget and tells you whether the load is Light, Sustainable or Heavy. When a session ends you see tomorrow's minutes too.
 - **A backlog never becomes a wall.** What does not fit in today's session simply waits; nothing is rescheduled or lost.
 - **Catch-up mode when you fall behind.** A big backlog is spread over the coming days within your budget.
@@ -22,21 +22,24 @@
 
 That's it. There is nothing else to configure to get started.
 
+The four grade buttons mean what they say: **Again** did not remember, **Hard** remembered with effort, **Good** remembered, **Easy** remembered instantly. Each button shows the next interval, and a card graded Again comes back inside the same session.
+
 ## Cards beyond the selection
 
 You never need an open editor to work on cards:
 
 - **New card** buttons live in the panel (Today and Search), in *Cards of this note*, and in the empty review session. The source note and your last topic come prefilled. Right-click any note or PDF in the file explorer and choose **New card from this file**.
+- The capture window has a **Tags** field: `#important` makes the card come back more often. You can also toggle it with the **Important** button (or key I) in the session.
 - **Delete** a card from the Search row menu, from *Cards of this note*, or from the session toolbar. Every delete asks first, and removes the card's schedule with it.
 - The capture window points at what it is missing: an empty answer focuses the Back field, and a long excerpt asks for the question instead of failing with nowhere to look.
 
-## Topics are born with the cards
+## Decks are the topics
 
-There are no decks to configure. A card carries an optional `Topic:` (`Kubernetes > Workloads`), and the panel builds a tree from them:
+A deck is just a topic, and it is chosen when the card is created: type it in the capture window (the **Pick deck** button lists the ones you already have) and the card lives in the deck's own file, one file per deck (`Sustento > Caridade` becomes `Sustento/Caridade.md` inside the cards folder; a card without a topic goes to `No deck.md`). The panel builds a tree from the topics:
 
-- **Rename** a topic from its row menu and every card under it follows, children included, in one pass.
+- **Rename** a topic from its row menu and every card under it follows, children included, in one pass, moving to the renamed deck's file.
 - **Retire** a topic to suspend all its cards at once (an exam that passed, a course that ended) and **wake it up** later; nothing is deleted.
-- **Change topic** from a card's menu, or in bulk: filter the Search tab and press *Change topic of N…*.
+- **Change topic** from a card's menu, or in bulk: filter the Search tab and press *Change topic of N…*. The card moves to the new deck's file, schedule intact.
 
 ## Card format
 
@@ -127,7 +130,7 @@ Spaced Repetition is the established, widely used plugin with its own card synta
 
 ## Your data stays local
 
-Revisit stores your cards, schedule (`state.json`) and review history (`review-log.jsonl`) inside your vault. Nothing is sent to a server, and there is no account to create.
+Revisit stores your cards, schedule (`state.json`) and review history (`review-log.jsonl`) inside your vault. Nothing is sent to a server, and there is no account to create. They are plain vault files, so they follow your vault sync; avoid reviewing on two devices at the same time (last write wins). Renamed a source note or folder? Your cards follow: the `Source:` link is rewritten automatically.
 
 ## Install
 

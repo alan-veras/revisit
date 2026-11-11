@@ -1,8 +1,8 @@
-import { normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { Menu, normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { linkPath } from './cards/link';
 import { clozes } from './cards/cloze';
 import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
-import { mirrorPath } from './cards/mirror';
+import { deckPath } from './cards/mirror';
 import { Card } from './cards/types';
 import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
 import { CaptureDraft, CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
@@ -10,12 +10,13 @@ import { captureContext, headingAbove, sourceLink } from './capture/selection';
 import { retagTopics, renameSource, renameSourceFolder } from './cards/format';
 import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
 import { StartModal } from './review/StartModal';
+import { DecksModal, DeckRow } from './review/DecksModal';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
 import { buildSession, dueReviews, estimateMinutes, matchesFilter, QueueItem, reviewScopes } from './srs/queue';
 import type { Card as FsrsCard } from 'ts-fsrs';
 import { fromStored, isNew, Scheduler } from './srs/scheduler';
-import { nearestChoice, sessionChoices, toForecastCards } from './srs/session';
+import { sessionChoices, toForecastCards } from './srs/session';
 import { CatchUpOffer, catchUpOffer, catchUpPlan } from './srs/forecast';
 import { migrateSettings } from './store/migrate';
 import { noteHasTag, Store } from './store/Store';
@@ -32,7 +33,16 @@ export default class RevisitPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
-		this.store = new Store(this.app, () => this.settings.folder, () => this.settings.inlineTag);
+		this.store = new Store(
+			this.app,
+			() => this.settings.folder,
+			() => this.settings.inlineTag,
+			() => this.settings.cardLayout,
+			async (l) => {
+				this.settings.cardLayout = l;
+				await this.saveSettings();
+			},
+		);
 		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
 		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
 		this.addCommand({ id: 'open-panel', name: 'Open panel', callback: () => void this.openPanel() });
@@ -41,6 +51,7 @@ export default class RevisitPlugin extends Plugin {
 
 		this.addCommand({ id: 'capture', name: 'Add to review', callback: () => void this.capture() });
 		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.chooseReview(null) });
+		this.addCommand({ id: 'browse-decks', name: 'Browse decks', callback: () => void this.openDecks() });
 		this.addCommand({ id: 'review-scope', name: 'Review this note/folder', callback: () => this.pickScope() });
 		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickScope(true) });
 		this.addCommand({ id: 'reread-toggle', name: 'Reread this note from time to time (toggle)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
@@ -76,7 +87,16 @@ export default class RevisitPlugin extends Plugin {
 				this.redrawNoteCards();
 			}),
 		);
-		this.addRibbonIcon('layers', 'Revisit', () => void this.openPanel());
+		const ribbon = this.addRibbonIcon('layers', 'Revisit', () => void this.chooseReview(null));
+		ribbon.setAttribute('aria-label', 'Revisit: start a review session (right-click for the panel)');
+		ribbon.addEventListener('contextmenu', (e) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem((i) => i.setTitle('Browse decks').setIcon('list').onClick(() => void this.openDecks()));
+			menu.addItem((i) => i.setTitle('Open panel').setIcon('layout-dashboard').onClick(() => void this.openPanel()));
+			menu.addItem((i) => i.setTitle('Add to review').setIcon('plus').onClick(() => void this.capture()));
+			menu.showAtMouseEvent(e);
+		});
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				if (!editor.getSelection()) return;
@@ -85,6 +105,8 @@ export default class RevisitPlugin extends Plugin {
 		);
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('mod-clickable');
+		this.statusEl.setAttribute('aria-label', 'Revisit panel');
+		this.statusEl.setAttribute('title', 'Revisit panel');
 		this.statusEl.onclick = () => void this.openPanel();
 
 		this.registerInterval(window.setInterval(() => void this.remind(), 60_000));
@@ -116,6 +138,7 @@ export default class RevisitPlugin extends Plugin {
 		// before the first migration writes over data.json, the original is copied once
 		if (changed) await this.backupDataOnce();
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
+		if (this.settings.cardLayout !== 'source' && this.settings.cardLayout !== 'deck') this.settings.cardLayout = 'source';
 		// the FSRS advises against asking for more than 95%
 		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
 		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
@@ -162,12 +185,17 @@ export default class RevisitPlugin extends Plugin {
 	private async rewriteSources(oldPath: string, newPath: string, folder: boolean): Promise<void> {
 		const from = folder ? oldPath.replace(/\/+$/, '') : oldPath.replace(/\.md$/, '');
 		const to = folder ? newPath.replace(/\/+$/, '') : newPath.replace(/\.md$/, '');
+		let changed = 0;
 		for (const f of this.store.cardFiles()) {
 			const text = await this.app.vault.cachedRead(f);
 			if (!text.includes(from)) continue;
 			const next = folder ? renameSourceFolder(text, from, to) : renameSource(text, from, to);
-			if (next !== text) await this.app.vault.process(f, () => next);
+			if (next !== text) {
+				changed++;
+				await this.app.vault.process(f, () => next);
+			}
 		}
+		if (changed) new Notice(`Revisit: source links updated on ${changed} ${changed === 1 ? 'card file' : 'card files'} after the rename.`);
 		await this.reload();
 	}
 
@@ -295,7 +323,7 @@ export default class RevisitPlugin extends Plugin {
 		this.statusEl.setText(`Revisit: ${n} ${n === 1 ? 'card' : 'cards'} today${newCount ? ` · ${newCount} new` : ''}`);
 	}
 
-	/** "How much time do you have?": the start screen, then the session of that length. */
+	/** The launcher: "How much time do you have today?" and the session starts; the deck lives on the card. */
 	async chooseReview(scope: string | null, topic: string | null = null): Promise<void> {
 		await this.reload();
 		const now = new Date();
@@ -313,16 +341,28 @@ export default class RevisitPlugin extends Plugin {
 		const choices = sessionChoices(items, base, this.secs());
 		const everything = choices[choices.length - 1];
 		if (!everything?.cards) return void new Notice('Revisit: nothing to review now.');
-		const catchUp = scope === null && topic === null ? this.catchUp(now, items) : null;
 		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
 		new StartModal(this.app, {
-			title: topic ?? name ? `Review: ${topic ?? name}` : 'Review',
+			title: topic ?? name ? `Review: ${topic ?? name}` : 'Revisit',
 			choices,
-			preselected: nearestChoice(this.settings.budgetMinutes),
-			dueCards: everything.cards,
-			...(catchUp ? { catchUp: { offer: catchUp.offer, onStart: () => void this.startCatchUp() } } : {}),
-			onStart: (minutes) => void this.review(scope, minutes ?? Number.POSITIVE_INFINITY, false, topic),
+			suggested: this.settings.budgetMinutes,
+			onStart: (minutes) => void this.review(scope, minutes, false, topic),
 		}).open();
+	}
+
+	/** The decks window: every topic with its due and total, one tap picks it and asks for the time. */
+	async openDecks(): Promise<void> {
+		await this.reload();
+		const items = this.items().filter((it) => !it.suspended);
+		const matches = (topic: string): QueueItem[] =>
+			items.filter((it) => it.card.topics.some((x) => x.toLowerCase() === topic.toLowerCase() || x.toLowerCase().startsWith(topic.toLowerCase() + ' > ')));
+		const rows: DeckRow[] = [{ topic: null, label: 'All cards', due: this.session(null).length, total: items.length }];
+		for (const t of this.topics()) {
+			const group = matches(t);
+			rows.push({ topic: t, label: t, due: this.session(null, undefined, false, t).length, total: group.length });
+		}
+		const decks = rows.slice(1).sort((a, b) => b.due - a.due || a.label.localeCompare(b.label));
+		new DecksModal(this.app, [rows[0] as DeckRow, ...decks], (topic) => void this.chooseReview(null, topic)).open();
 	}
 
 	async review(scope: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
@@ -451,13 +491,14 @@ export default class RevisitPlugin extends Plugin {
 
 	private async saveNew(r: CaptureResult, sourcePath: string | null): Promise<void> {
 		await this.reload();
-		const target = mirrorPath(sourcePath, this.settings.folder);
+		const target = deckPath(r.topics, this.settings.folder);
 		const id = await this.store.addCard(target, {
 			id: null,
 			type: r.type,
 			front: r.front,
 			back: r.back,
 			topics: r.topics,
+			...(r.tags.length ? { tags: r.tags } : {}),
 			...(r.reverse ? { reverse: true } : {}),
 			source: r.source,
 		});
@@ -596,7 +637,7 @@ export default class RevisitPlugin extends Plugin {
 				front: r.front,
 				back: r.back,
 				topics: r.topics,
-				...(card.tags?.length ? { tags: card.tags } : {}),
+				tags: r.tags,
 				...(r.reverse ? { reverse: true } : {}),
 				source: r.source,
 			});

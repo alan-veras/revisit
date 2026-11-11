@@ -2,7 +2,7 @@ import { CliFlags, normalizePath, TFile } from 'obsidian';
 import { clozes } from '../cards/cloze';
 import { groupBy, normalizeTopic } from '../cards/format';
 import { linkPath } from '../cards/link';
-import { mirrorPath } from '../cards/mirror';
+import { deckPath } from '../cards/mirror';
 import { Card, CARD_TYPES, isCardType } from '../cards/types';
 import type RevisitPlugin from '../main';
 import { forecast } from '../srs/budget';
@@ -39,16 +39,15 @@ function topicsOf(p: Params): string[] {
 	return (p.topic ?? '').split(';').map(normalizeTopic).filter(Boolean);
 }
 
-/** Card file for a source link (or none). */
-function placeFor(plugin: RevisitPlugin, source: string): string {
+/** Refuses a source that points into the card folder: the link would live beside the cards it points at. */
+function checkSource(plugin: RevisitPlugin, source: string): void {
+	if (!source) return;
 	const link = linkPath(source);
 	const file = link ? plugin.app.metadataCache.getFirstLinkpathDest(link, '') : null;
 	const src = file?.path ?? (link || null);
-	// a source that is itself a card file would be mirrored inside the mirror (Revisit/x/Revisit/x.md)
 	const folder = normalizePath(plugin.settings.folder);
 	if (src && (src === folder || src.startsWith(folder + '/')))
 		throw new CliError('source', `the source ${source} points to a Revisit card file (${src}); use the source note`);
-	return mirrorPath(src, plugin.settings.folder);
 }
 
 function typeOf(value: string): Card['type'] {
@@ -117,12 +116,13 @@ const COMMANDS: Record<string, Command> = {
 		},
 	},
 	new: {
-		desc: 'Creates a card in the mirror file of the source',
+		desc: 'Creates a card in the file of its deck (the first topic)',
 		flags: { front: 'Front (\\n breaks the line)', back: 'Back (empty is fine when the front has ==cloze==)', source: 'Source [[...]] link', topic: 'Topic; another', type: CARD_TYPES.join(', '), reverse: 'Review back to front too', dry: 'Shows only, writes nothing' },
 		run: async (p, plugin) => {
 			const type = typeOf(p.type ?? 'Question');
 			const source = p.source ?? '';
-			const path = placeFor(plugin, source);
+			checkSource(plugin, source);
+			const path = deckPath(topicsOf(p), plugin.settings.folder);
 			const front = unescape(need(p, 'front'));
 			const back = p.back && p.back !== 'true' ? unescape(p.back) : '';
 			if (!back && !clozes(front).length) throw new CliError('parameter', 'missing back= (or mark the cloze with ==like this== on the front)');
@@ -153,7 +153,7 @@ const COMMANDS: Record<string, Command> = {
 				source: c.source || (p.source ?? ''),
 				topics: c.topics.length ? c.topics : topicsOf(p),
 			}));
-			const dests = cards.map((c) => placeFor(plugin, c.source));
+			const dests = cards.map((c) => deckPath(c.topics, plugin.settings.folder));
 			if (flag(p, 'dry')) return json({ dry: true, cards: cards.length, files: [...new Set(dests)], preview: cards.slice(0, 5).map((c) => ({ front: short(c.front), type: c.type, topics: c.topics })) });
 			// one write per destination file, then check that every card landed; retry the missing once
 			const items = cards.map((card, i) => ({ card, dest: dests[i] as string }));

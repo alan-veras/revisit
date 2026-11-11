@@ -1,11 +1,13 @@
 import { App, getAllTags, normalizePath, Notice, TFile } from 'obsidian';
-import { appendCard, appendCards, ensureIds, newId, parseCardFile, removeCard, replaceCard, retagTopics, rewriteTopics, serializeCard } from '../cards/format';
+import { appendCard, appendCards, ensureIds, groupBy, newId, parseCardFile, removeCard, replaceCard, retagTopics, rewriteTopics, serializeCard, splitBlocks } from '../cards/format';
+import { deckPath } from '../cards/mirror';
 import { parseInlineCards } from '../cards/inline';
 import { Card } from '../cards/types';
+import type { CardLayout } from '../settings';
 import { RevlogEntry } from '../srs/budget';
 import { StoredFsrs } from '../srs/scheduler';
 import { Reread } from '../notes/reread';
-import { DATA_FILES, migrateCardFiles, migrateDataFiles } from './migrate';
+import { DATA_FILES, migrateCardFiles, migrateDataFiles, planDeckMigration } from './migrate';
 import { parseStateText, parseLogLines } from './parse';
 
 export type Status = 'active' | 'suspended';
@@ -39,6 +41,8 @@ export class Store {
 		private app: App,
 		private folder: () => string,
 		private inlineTag: () => string = () => '',
+		private layout: () => CardLayout = () => 'deck',
+		private setLayout: (l: CardLayout) => Promise<void> = async () => {},
 	) {}
 
 	private get base(): string {
@@ -113,11 +117,13 @@ export class Store {
 		}
 		const files = this.cardFiles();
 		await this.migrateCards(files);
+		await this.migrateToDecks();
+		const current = this.cardFiles();
 		const taken = new Set<string>();
-		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
+		const texts = await Promise.all(current.map((f) => this.app.vault.cachedRead(f)));
 		texts.forEach((t) => parseCardFile(t).forEach((c) => c.id && taken.add(c.id)));
 		const cards: Card[] = [];
-		for (const [i, file] of files.entries()) {
+		for (const [i, file] of current.entries()) {
 			let text = texts[i] ?? '';
 			const fixed = ensureIds(text, taken);
 			if (fixed.added) {
@@ -149,6 +155,7 @@ export class Store {
 
 	/** Card files still in the old format move to the English one; a vault without them does nothing here. */
 	private async migrateCards(files: TFile[]): Promise<void> {
+
 		const byPath = new Map(files.map((f) => [f.path, f]));
 		const fileAt = (path: string) => {
 			const file = byPath.get(path);
@@ -166,6 +173,68 @@ export class Store {
 			},
 		});
 		if (done) new Notice(`Revisit: ${done} card ${done === 1 ? 'file' : 'files'} moved to the new format; the originals are kept beside them as .backup-pre-migration.`);
+	}
+
+	/** One-time move from one file per source note to one file per deck; a vault already on the deck layout does nothing here. */
+	private async migrateToDecks(): Promise<void> {
+		if (this.layout() === 'deck') return;
+		const adapter = this.app.vault.adapter;
+		const entries = await Promise.all(this.cardFiles().map(async (f) => ({ path: f.path, text: await this.app.vault.cachedRead(f) })));
+		const plan = planDeckMigration(entries, this.base);
+		if (plan.writes.length || plan.removes.length) {
+			for (const b of plan.backups) if (!(await adapter.exists(b.target))) await adapter.write(b.target, b.text);
+			for (const w of plan.writes) {
+				await this.ensureFolder(w.path);
+				await adapter.write(w.path, w.text);
+			}
+			for (const r of plan.removes) if (await adapter.exists(r)) await adapter.remove(r);
+			await this.pruneEmptyDirs();
+			new Notice('Revisit: cards moved to one file per deck; every original is kept as .backup-pre-deck.');
+		}
+		await this.setLayout('deck');
+	}
+
+	/** Moves cards whose file is not the file of their deck (after a topic change): one write per source file, one per target. */
+	private async relocateMisplaced(): Promise<void> {
+		const moving = this.cards.filter((c) => c.id && !c.inline && c.file && c.file.startsWith(this.base + '/') && deckPath(c.topics, this.base) !== c.file);
+		if (!moving.length) return;
+		for (const [src, group] of groupBy(moving, (c) => c.file as string)) {
+			const file = this.app.vault.getAbstractFileByPath(src);
+			if (!(file instanceof TFile)) continue;
+			await this.app.vault.process(file, (text) => {
+				let out = text;
+				for (const card of [...group].sort((a, b) => (b.start ?? 0) - (a.start ?? 0))) out = removeCard(out, card);
+				return out;
+			});
+		}
+		const portable = (c: Card): Omit<Card, 'start' | 'end' | 'file' | 'inline'> => {
+			const { start: _s, end: _e, file: _f, inline: _i, ...rest } = c;
+			return rest;
+		};
+		for (const [dest, group] of groupBy(moving, (c) => deckPath(c.topics, this.base))) await this.addCards(dest, group.map(portable));
+		await this.pruneEmptyFiles();
+		await this.pruneEmptyDirs();
+		await this.load();
+	}
+
+	/** Deletes card files left with no card block (an emptied deck file has no reason to stay). */
+	private async pruneEmptyFiles(): Promise<void> {
+		for (const f of this.cardFiles()) {
+			if (splitBlocks(await this.app.vault.cachedRead(f)).length) continue;
+			await this.app.vault.adapter.remove(f.path);
+		}
+	}
+
+	/** Removes folders under the base that no file of any kind remains in, deepest first. */
+	private async pruneEmptyDirs(): Promise<void> {
+		const removeEmpty = async (dir: string): Promise<number> => {
+			const listing = await this.app.vault.adapter.list(dir);
+			let left = listing.files.length;
+			for (const sub of listing.folders) left += await removeEmpty(sub);
+			if (!left && dir !== this.base) await this.app.vault.adapter.rmdir(dir, false);
+			return left;
+		};
+		for (const sub of (await this.app.vault.adapter.list(this.base)).folders) await removeEmpty(sub);
 	}
 
 	takenIds(): Set<string> {
@@ -228,6 +297,7 @@ export class Store {
 
 	async updateCard(card: Card, next: Omit<Card, 'start' | 'end' | 'file'>): Promise<void> {
 		await this.withCardFile(card, (text, fresh) => replaceCard(text, fresh, serializeCard({ ...next, id: card.id })));
+		if (deckPath(next.topics, this.base) !== card.file) await this.relocateMisplaced();
 	}
 
 	async deleteCard(card: Card): Promise<void> {
@@ -237,6 +307,7 @@ export class Store {
 			for (const k of Object.keys(this.state))
 				if (k === card.id || k.startsWith(card.id + '-')) delete this.state[k];
 		await this.saveState();
+		await this.pruneEmptyFiles();
 	}
 
 	/** Renames a topic (and every `from > …` under it) on all card files; an empty `to` removes the topic. */
@@ -252,7 +323,10 @@ export class Store {
 				return r.text;
 			});
 		}
-		if (changed) await this.load();
+		if (changed) {
+			await this.load();
+			await this.relocateMisplaced();
+		}
 		return changed;
 	}
 
@@ -278,7 +352,10 @@ export class Store {
 				return r.text;
 			});
 		}
-		if (changed) await this.load();
+		if (changed) {
+			await this.load();
+			await this.relocateMisplaced();
+		}
 		return changed;
 	}
 

@@ -87,6 +87,12 @@ export class PanelView extends ItemView {
 		hero.createEl('button', { text: 'New card' }).onclick = () => void p.captureFor(p.lastSource);
 		const q = p.quota();
 		hero.createDiv({ cls: 'revisit-muted revisit-small', text: q.quota ? `New today: ${q.used} of ${q.cap}` : 'New cards are paused' });
+		if (!today.length) {
+			hero.createDiv({
+				cls: 'revisit-muted revisit-small',
+				text: p.store.cards.length ? 'Nothing is due now; cards come back on their due day.' : 'Select text in any note and run Add to review to make your first card.',
+			});
+		}
 
 		this.drawDecks(wrap);
 	}

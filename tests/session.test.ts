@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Card } from '../src/cards/types';
 import { averageAhead, dueCounts, forecastMinutes } from '../src/srs/forecast';
 import { QueueItem, QueueOptions } from '../src/srs/queue';
-import { nearestChoice, sessionChoices, summarizeSession, toForecastCards } from '../src/srs/session';
+import { sessionChoices, summarizeSession, toForecastCards } from '../src/srs/session';
 import { heatLevels } from '../src/srs/stats';
 
 const NOW = new Date(2026, 10, 5, 10, 0, 0);
@@ -30,28 +30,18 @@ describe('sessionChoices', () => {
 	it('counts how many cards fit each length, then everything due', () => {
 		const items = Array.from({ length: 40 }, (_, i) => item(i, -1));
 		const out = sessionChoices(items, base, SECS);
-		expect(out.map((c) => c.minutes)).toEqual([5, 10, 20, 30, null]);
-		expect(out.map((c) => c.cards)).toEqual([5, 10, 20, 30, 40]);
-		expect(out[4]?.estimate).toBe(40);
+		expect(out.map((c) => c.minutes)).toEqual([10, 15, 30, null]);
+		expect(out.map((c) => c.cards)).toEqual([10, 15, 30, 40]);
+		expect(out[3]?.estimate).toBe(40);
 	});
 
 	it('never holds more than what is due and keeps one card in a tiny budget', () => {
 		const out = sessionChoices([item(1, -1), item(2, 3)], base, { ...SECS, Question: 600 });
-		expect(out.map((c) => c.cards)).toEqual([1, 1, 1, 1, 1]);
+		expect(out.map((c) => c.cards)).toEqual([1, 1, 1, 1]);
 	});
 
 	it('is empty with nothing due', () => {
 		expect(sessionChoices([item(1, 2)], base, SECS).every((c) => c.cards === 0)).toBe(true);
-	});
-});
-
-describe('nearestChoice', () => {
-	it('picks the closest length, the lower on a tie', () => {
-		expect(nearestChoice(20)).toBe(20);
-		expect(nearestChoice(15)).toBe(10);
-		expect(nearestChoice(25)).toBe(20);
-		expect(nearestChoice(120)).toBe(30);
-		expect(nearestChoice(1)).toBe(5);
 	});
 });
 

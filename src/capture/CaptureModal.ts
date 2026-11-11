@@ -1,6 +1,6 @@
-import { App, Component, MarkdownRenderer, Modal, Notice } from 'obsidian';
+import { App, Component, FuzzySuggestModal, MarkdownRenderer, Modal, Notice } from 'obsidian';
 import { normalizeTopic } from '../cards/format';
-import { Card, CardType, CARD_TYPES } from '../cards/types';
+import { Card, CardType, CARD_TYPES, parseTags } from '../cards/types';
 import { resolveOnSave } from './autoType';
 
 export interface CaptureDraft {
@@ -14,6 +14,7 @@ export interface CaptureDraft {
 	/** where the source note is, to resolve links in the preview */
 	sourcePath: string;
 	reverse?: boolean;
+	tags?: string[];
 }
 
 export interface CaptureResult {
@@ -21,6 +22,7 @@ export interface CaptureResult {
 	front: string;
 	back: string;
 	topics: string[];
+	tags: string[];
 	source: string;
 	reverse: boolean;
 }
@@ -33,6 +35,7 @@ export class CaptureModal extends Modal {
 	private chips: HTMLButtonElement[] = [];
 	private frontEl: HTMLTextAreaElement | null = null;
 	private backEl: HTMLTextAreaElement | null = null;
+	private tagsRaw = '';
 
 	constructor(
 		app: App,
@@ -44,6 +47,7 @@ export class CaptureModal extends Modal {
 	) {
 		super(app);
 		this.draft = { ...draft };
+		this.tagsRaw = (draft.tags ?? []).join(' ');
 	}
 
 	onOpen(): void {
@@ -67,15 +71,28 @@ export class CaptureModal extends Modal {
 		const topicBox = row.createDiv({ cls: 'revisit-field revisit-grow' });
 		topicBox.createEl('label', { text: 'Topic' });
 		const listId = `revisit-topics-${Date.now()}`;
-		const topicInput = topicBox.createEl('input', { type: 'text', value: this.draft.topic, attr: { list: listId, placeholder: 'Topic > subtopic; another' } });
+		const topicInput = topicBox.createEl('input', { type: 'text', value: this.draft.topic, attr: { list: listId, placeholder: 'Topic > subtopic; another (empty goes to no deck)' } });
 		const dl = topicBox.createEl('datalist', { attr: { id: listId } });
 		for (const a of this.topics) dl.createEl('option', { value: a });
 		topicInput.oninput = () => (this.draft.topic = topicInput.value);
+		const pick = topicBox.createEl('button', { text: 'Pick deck', cls: 'revisit-pick', attr: { 'aria-label': 'Pick a deck from the ones that exist' } });
+		pick.onclick = () => {
+			new DeckSuggest(this.app, this.topics, (t) => {
+				topicInput.value = t;
+				this.draft.topic = t;
+				topicInput.focus();
+			}).open();
+		};
 
 		const sourceBox = contentEl.createDiv({ cls: 'revisit-field' });
 		sourceBox.createEl('label', { text: 'Source' });
 		const source = sourceBox.createEl('input', { type: 'text', value: this.draft.source });
 		source.oninput = () => (this.draft.source = source.value);
+
+		const tagsBox = contentEl.createDiv({ cls: 'revisit-field' });
+		tagsBox.createEl('label', { text: 'Tags' });
+		const tags = tagsBox.createEl('input', { type: 'text', value: this.tagsRaw, attr: { placeholder: 'Space separated; #important comes back more often' } });
+		tags.oninput = () => (this.tagsRaw = tags.value);
 
 		const rev = contentEl.createEl('label', { cls: 'revisit-check' });
 		const cb = rev.createEl('input', { type: 'checkbox' });
@@ -151,7 +168,7 @@ export class CaptureModal extends Modal {
 			.map(normalizeTopic)
 			.filter(Boolean);
 		try {
-			await this.onSave({ ...r, topics, source: this.draft.source.trim(), reverse: !!this.draft.reverse });
+			await this.onSave({ ...r, topics, tags: parseTags(this.tagsRaw), source: this.draft.source.trim(), reverse: !!this.draft.reverse });
 			this.close();
 		} catch (e) {
 			new Notice(`Revisit: ${e instanceof Error ? e.message : String(e)}`);
@@ -174,5 +191,27 @@ export function draftFromCard(card: Card, sourcePath: string): CaptureDraft {
 		context: '',
 		sourcePath,
 		reverse: !!card.reverse,
+		...(card.tags?.length ? { tags: card.tags } : {}),
 	};
+}
+
+/** Lists the decks that already exist; typing filters, choosing fills the topic field. */
+class DeckSuggest extends FuzzySuggestModal<string> {
+	constructor(
+		app: App,
+		private decks: string[],
+		private pick: (deck: string) => void,
+	) {
+		super(app);
+		this.setPlaceholder('Pick a deck');
+	}
+	getItems(): string[] {
+		return this.decks;
+	}
+	getItemText(deck: string): string {
+		return deck;
+	}
+	onChooseItem(deck: string): void {
+		this.pick(deck);
+	}
 }
