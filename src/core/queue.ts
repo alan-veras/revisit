@@ -103,8 +103,9 @@ export function buildQueue(items: QueueItem[], o: { now: Date; log: RevlogEntry[
 	const r = (it: QueueItem) => o.retrievability(it.fsrs as FsrsCard, o.now);
 	const reviews = dueReviews(pool, o.now).sort((a, b) => r(a) - r(b));
 	const allowed = Math.max(0, NEW_PER_DAY - introduced);
-	const fresh = pool.filter((it) => isNew(it.fsrs));
-	return burySiblings(interleave(reviews).concat(interleave(fresh.slice(0, allowed))), graded);
+	// siblings are buried before the cap, so a cloze with three highlights takes one of the slots, not three
+	const kept = burySiblings(interleave(reviews).concat(pool.filter((it) => isNew(it.fsrs))), graded);
+	return kept.filter((it) => !isNew(it.fsrs)).concat(interleave(kept.filter((it) => isNew(it.fsrs)).slice(0, allowed)));
 }
 
 /** When the next card comes back, for the Done screen: `Next card tomorrow`, `Next card in 3 days`; null when nothing is waiting. */

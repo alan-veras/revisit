@@ -12,6 +12,13 @@ const queue = (cards: Card[], state: Record<string, CardState>, log: RevlogEntry
 const entry = (id: string, isNew: boolean): RevlogEntry => ({ id, t: now.toISOString(), grade: 3, seconds: 5, type: 'Question', new: isNew, extra: false });
 
 describe('queue', () => {
+	it('counts a cloze with several highlights once against the daily cap', () => {
+		const cloze = card('lclz001', { type: 'Cloze', front: '==a== ==b== ==c==', back: '' });
+		const others = Array.from({ length: 10 }, (_, i) => card(`lnew00${i}`));
+		const q = queue([cloze, ...others], {});
+		expect(q).toHaveLength(10);
+		expect(q.filter((i) => i.card.id === 'lclz001')).toHaveLength(1);
+	});
 	it('puts due reviews before new cards and leaves future ones out', () => {
 		const q = queue([card('lnew001'), card('ldue001'), card('lfut001')], { ldue001: reviewed(at(-1)), lfut001: reviewed(at(3)) });
 		expect(q.map((i) => i.key)).toEqual(['ldue001', 'lnew001']);
