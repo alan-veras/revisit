@@ -70,10 +70,11 @@ export default class RevisitPlugin extends Plugin {
 
 	async openReview(): Promise<void> {
 		const { workspace } = this.app;
-		const leaf = workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0] ?? workspace.getLeaf('tab');
-		await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
-		const view = leaf.view;
-		if (view instanceof ReviewView) await view.begin();
+		const open = workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
+		const leaf = open ?? workspace.getLeaf('tab');
+		// a new view starts itself when it opens; one already open goes back to Start, unless a session is running
+		if (!open) await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
+		else if (open.view instanceof ReviewView && !open.view.reviewing) await open.view.begin();
 		await workspace.revealLeaf(leaf);
 	}
 
@@ -82,7 +83,9 @@ export default class RevisitPlugin extends Plugin {
 		const { card } = o;
 		const draft: Draft = { front: card?.front ?? '', back: card?.back ?? '', topics: card?.topics ?? [], source: card?.source ?? '', context: '', ...(card ? { card } : {}), ...o.draft };
 		new CreateModal(this.app, draft, async (r) => {
-			const fields = { type: r.type, front: r.front, back: r.back, topics: draft.topics, source: draft.source };
+			// editing keeps the type of kinds the UI no longer offers (Reference, Problem)
+			const type = card && card.type !== 'Question' && card.type !== 'Cloze' ? card.type : r.type;
+			const fields = { type, front: r.front, back: r.back, topics: draft.topics, source: draft.source };
 			if (card) await this.store.updateCard(card, { ...card, ...fields, id: card.id });
 			else {
 				const id = await this.store.addCard({ id: null, ...fields });

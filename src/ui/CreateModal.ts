@@ -31,17 +31,21 @@ export class CreateModal extends Modal {
 		contentEl.createDiv({ cls: 'revisit-area', text: draft.topics.length ? `Area: ${draft.topics.join('; ')}` : 'No area' });
 		const front = this.box('Front', draft.front, (v) => (draft.front = v));
 		const back = this.box('Back', draft.back, (v) => (draft.back = v));
+		let saving = false;
 		const save = async () => {
+			if (saving) return;
 			const r = resolveOnSave(draft);
 			if ('error' in r) {
 				new Notice(r.error);
 				(r.focus === 'front' ? front : back).focus();
 				return;
 			}
+			saving = true;
 			try {
 				await this.onSave(r);
 				this.close();
 			} catch (e) {
+				saving = false;
 				new Notice(`Revisit: ${e instanceof Error ? e.message : String(e)}`);
 			}
 		};
