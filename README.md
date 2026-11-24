@@ -96,7 +96,7 @@ Source: [[CKA study plan]] ^lk7q2a
 
 ## Install
 
-Revisit is on its way to the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Desktop only for now.
+Revisit is on its way to the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins.
 
 ## FAQ
 
@@ -104,7 +104,9 @@ Revisit is on its way to the Community plugins list. Until it appears there, ins
 
 **Can I edit cards by hand?** Yes. They are markdown files. Press `E` in a review to edit one there.
 
-**Does it work on mobile?** Not yet. It is desktop only.
+**Does it work on mobile?** Yes. On a phone the `?` becomes a `⋯` menu (edit, open source note, delete, undo), buttons are larger and you tap to flip.
+
+**Two devices?** Yes, with Syncthing or any file sync. Each device writes only its own files, `devices/<id>/state.json` and `devices/<id>/review-log.jsonl` inside the cards folder, and Revisit merges them when reading (the latest review of each card wins; logs are joined by time). Files from older versions in the folder root are still read and never touched. `*.sync-conflict-*` files are ignored. Reviewing on two devices is safe. One limit: creating or editing cards in the *same deck file* on both devices before they sync can still make Syncthing create a conflict in that file.
 
 **Can I move over from another plugin?** There is no importer. Cards are plain markdown with a simple format (above), so you can write them into the cards folder yourself. Revisit does not read the scheduling data of other plugins.
 
