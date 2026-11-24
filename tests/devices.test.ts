@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildItems, buildQueue } from '../src/core/queue';
 import { freshCard, Scheduler, toStored } from '../src/core/scheduler';
 import { CardState, RevlogEntry } from '../src/core/types';
+import { deckPath } from '../src/core/format';
 import { isConflictPath, mergeLogs, mergeStates, newDeviceId } from '../src/store/data';
 
 const now = new Date(2026, 10, 24, 12, 0, 0);
@@ -46,5 +47,16 @@ describe('devices', () => {
 	});
 	it('makes short readable device ids', () => {
 		expect(newDeviceId()).toMatch(/^[a-z2-9]{6}$/);
+	});
+});
+
+describe('robustness', () => {
+	it('keeps a log line with a bad time from scrambling the order', () => {
+		const out = mergeLogs([[e('a', '2026-11-02T10:00:00Z'), e('bad', 'x'), e('c', '2026-11-04T10:00:00Z')], [e('b', '2026-11-03T10:00:00Z')]]);
+		expect(out.filter((x) => x.id !== 'bad').map((x) => x.id)).toEqual(['a', 'b', 'c']);
+	});
+	it('never puts a deck inside the devices folder', () => {
+		expect(deckPath(['devices > x'], 'R').startsWith('R/devices/')).toBe(false);
+		expect(deckPath(['Devices'], 'R')).not.toBe('R/devices/.md');
 	});
 });
