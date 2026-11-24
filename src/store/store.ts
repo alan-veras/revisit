@@ -1,4 +1,4 @@
-import { App, normalizePath, Notice, TFile } from 'obsidian';
+import { App, normalizePath, Notice, TFile, Vault } from 'obsidian';
 import { appendCard, deckPath, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../core/format';
 import type { Card, CardState, RevlogEntry } from '../core/types';
 import { DEVICES_DIR, isConflictPath, mergeLogs, mergeStates, newDeviceId, parseLogLines, parseStateText } from './data';
@@ -108,8 +108,18 @@ export class Store {
 		return this.loading;
 	}
 
+	/** Markdown files under the Revisit folder only: the rest of the vault is never listed. */
+	private folderFiles(): TFile[] {
+		const files: TFile[] = [];
+		const root = this.app.vault.getFolderByPath(this.base);
+		if (root) Vault.recurseChildren(root, (f) => {
+			if (f instanceof TFile && f.extension === 'md') files.push(f);
+		});
+		return files;
+	}
+
 	private async readCards(): Promise<void> {
-		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/') && !this.isDevicePath(f.path) && !isConflictPath(f.path));
+		const files = this.folderFiles().filter((f) => !this.isDevicePath(f.path) && !isConflictPath(f.path));
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		const taken = new Set<string>();
 		texts.forEach((t) => parseCardFile(t).forEach((c) => c.id && taken.add(c.id)));
@@ -207,8 +217,8 @@ export class Store {
 		const path = this.ownLog;
 		if (!(await this.app.vault.adapter.exists(path))) return;
 		const lines = (await this.app.vault.adapter.read(path)).split('\n');
-		while (lines.length && !(lines.at(-1) ?? '').trim()) lines.pop();
-		const last = lines.at(-1);
+		while (lines.length && !(lines[lines.length - 1] ?? '').trim()) lines.pop();
+		const last = lines[lines.length - 1];
 		if (last === undefined || !last.includes(`"id":"${id}"`)) return;
 		lines.pop();
 		const gone = parseLogLines(last).entries[0];
