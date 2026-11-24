@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildItems, buildQueue, burySiblings, faces, interleave, nextCardLabel } from '../src/core/queue';
+import { buildItems, buildQueue, burySiblings, extraQueue, faces, interleave, nextCardLabel } from '../src/core/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/core/scheduler';
 import { Card, CardState, RevlogEntry } from '../src/core/types';
 
@@ -9,6 +9,7 @@ const card = (id: string, extra: Partial<Card> = {}): Card => ({ id, type: 'Ques
 const reviewed = (due: Date): CardState => ({ st: 'active', fsrs: toStored({ ...freshCard(now), state: 2, due, stability: 5, difficulty: 5, reps: 2 }) });
 const at = (days: number) => new Date(now.getTime() + days * 86400000);
 const queue = (cards: Card[], state: Record<string, CardState>, log: RevlogEntry[] = []) => buildQueue(buildItems(cards, state), { now, log, retrievability: (c, n) => sched.retrievability(c, n) });
+const extra = (cards: Card[], state: Record<string, CardState>, log: RevlogEntry[] = []) => extraQueue(buildItems(cards, state), { now, log, retrievability: (c, n) => sched.retrievability(c, n) });
 const entry = (id: string, isNew: boolean): RevlogEntry => ({ id, t: now.toISOString(), grade: 3, seconds: 5, type: 'Question', new: isNew, extra: false });
 
 describe('queue', () => {
@@ -77,5 +78,24 @@ describe('scheduler', () => {
 		expect(Object.keys(p)).toEqual(['1', '2', '3', '4']);
 		expect(p[4].card.due.getTime()).toBeGreaterThan(p[1].card.due.getTime());
 		expect(fromStored(toStored(p[3].card)).due).toEqual(p[3].card.due);
+	});
+});
+
+describe('keep going', () => {
+	it('takes today\'s queue first', () => {
+		expect(extra([card('ldue001'), card('lfut001')], { ldue001: reviewed(at(-1)), lfut001: reviewed(at(3)) }).map((i) => i.card.id)).toEqual(['ldue001']);
+	});
+	it('then new cards past the daily cap', () => {
+		const news = Array.from({ length: 12 }, (_, i) => card(`lnew0${String(i).padStart(2, '0')}`));
+		const log = news.slice(0, 10).map((c) => entry(c.id as string, true));
+		const state = Object.fromEntries(news.slice(0, 10).map((c) => [c.id as string, reviewed(at(1))]));
+		expect(extra([...news, card('lfut001')], { ...state, lfut001: reviewed(at(3)) }, log).map((i) => i.card.id)).toEqual(['lnew010', 'lnew011']);
+	});
+	it('then cards ahead of their day, soonest first, leaving out those graded today', () => {
+		const q = extra([card('lfar001'), card('lsoon01'), card('ldone01')], { lfar001: reviewed(at(9)), lsoon01: reviewed(at(2)), ldone01: reviewed(at(1)) }, [entry('ldone01', false)]);
+		expect(q.map((i) => i.card.id)).toEqual(['lsoon01', 'lfar001']);
+	});
+	it('is empty when there is nothing at all', () => {
+		expect(extra([], {})).toEqual([]);
 	});
 });

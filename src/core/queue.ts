@@ -121,3 +121,19 @@ export function nextCardLabel(items: QueueItem[], log: RevlogEntry[], now: Date)
 	const d = Math.min(...days);
 	return d <= 1 ? 'Next card tomorrow' : `Next card in ${d} days`;
 }
+
+/**
+ * What "Keep going" reviews once today's queue is empty, in this order: new cards past
+ * the daily allowance, then cards ahead of their day (soonest first). Reviewing ahead
+ * is the last resort because an early success barely lengthens the next interval.
+ */
+export function extraQueue(items: QueueItem[], o: { now: Date; log: RevlogEntry[]; retrievability: (c: FsrsCard, now: Date) => number }): QueueItem[] {
+	const today_ = buildQueue(items, o);
+	if (today_.length) return today_;
+	const { graded } = today(o.log, o.now);
+	const pool = items.filter((it) => !it.suspended);
+	const fresh = burySiblings(pool.filter((it) => isNew(it.fsrs)), graded);
+	if (fresh.length) return interleave(fresh);
+	const ahead = pool.filter((it) => !isNew(it.fsrs) && !graded.has(it.card.id ?? ''));
+	return burySiblings(ahead.sort((a, b) => (a.fsrs as FsrsCard).due.getTime() - (b.fsrs as FsrsCard).due.getTime()), graded);
+}

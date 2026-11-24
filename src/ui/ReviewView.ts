@@ -1,6 +1,6 @@
 import { ItemView, MarkdownRenderer, Modifier, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { freshCard, isNew, toStored } from '../core/scheduler';
-import { buildItems, buildQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
+import { buildItems, buildQueue, extraQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
 
@@ -9,7 +9,7 @@ export const VIEW_TYPE_REVIEW = 'revisit-review';
 // the wording is the design (lowercase, with the key letter), so it is joined here instead of written as one literal
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
-const MORE_TEXT = ['5', 'more min'].join(' ');
+const TIMES = [2, 5, 10];
 const FLIP_TEXT = ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
@@ -50,6 +50,8 @@ export class ReviewView extends ItemView {
 	private bar: HTMLElement | null = null;
 	private hint: HTMLElement | null = null;
 	private disarm = 0;
+	/** the length picked at Start; Keep going offers it again */
+	private minutes = TIMES[0] as number;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -120,17 +122,21 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
 		const row = col.createDiv({ cls: 'revisit-times' });
-		[5, 10, 15].forEach((m, i) => {
-			const b = row.createEl('button', { text: `${m} min`, cls: i === 1 ? 'mod-cta' : '' });
+		TIMES.forEach((m, i) => {
+			const b = row.createEl('button', { text: `${m} min`, cls: i === 0 ? 'mod-cta' : '' });
 			b.createSpan({ text: String(i + 1), cls: 'revisit-key' });
 			b.onclick = () => this.startSession(m);
 		});
 	}
 
-	private startSession(minutes: number): void {
+	/** `more` keeps going after Done: the count and the undo history carry on. */
+	private startSession(minutes: number, more = false): void {
+		this.minutes = minutes;
 		this.index = 0;
-		this.graded.clear();
-		this.undo = [];
+		if (!more) {
+			this.graded.clear();
+			this.undo = [];
+		}
 		this.startedAt = Date.now();
 		this.endsAt = this.startedAt + minutes * 60_000;
 		this.show('review');
@@ -210,7 +216,7 @@ export class ReviewView extends ItemView {
 	}
 
 	private digit(n: number): void {
-		if (this.mode === 'start' && n <= 3) this.startSession([5, 10, 15][n - 1] as number);
+		if (this.mode === 'start' && n <= 3) this.startSession(TIMES[n - 1] as number);
 		else if (this.mode === 'review' && this.flipped && n <= 4) void this.grade(n as Grade);
 	}
 
@@ -335,10 +341,11 @@ export class ReviewView extends ItemView {
 		col.createEl('h2', { text: n ? `Done. ${n} ${n === 1 ? 'card' : 'cards'}.` : 'All caught up.', cls: 'revisit-serif' });
 		const next = left.length ? null : nextCardLabel(items, store.log, now);
 		if (next) col.createDiv({ text: next, cls: 'revisit-muted' });
-		if (left.length) {
-			col.createEl('button', { text: MORE_TEXT }).onclick = () => {
-				this.queue = left;
-				this.startSession(5);
+		const more = extraQueue(items, { now, log: store.log, retrievability: (c, t) => scheduler.retrievability(c, t) });
+		if (more.length) {
+			col.createEl('button', { text: `Keep going +${this.minutes} min`, cls: 'mod-cta' }).onclick = () => {
+				this.queue = more;
+				this.startSession(this.minutes, true);
 			};
 		}
 		col.createEl('a', { text: 'New card', cls: 'revisit-link' }).onclick = () => this.plugin.openCreate({ onSaved: () => (n ? this.show('done') : void this.begin()) });
