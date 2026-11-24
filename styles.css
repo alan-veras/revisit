@@ -54,3 +54,6 @@
 .revisit-help-title { margin-bottom: var(--size-4-2); color: var(--text-muted); font-weight: var(--font-semibold); }
 .revisit-help-row { display: flex; gap: var(--size-4-3); align-items: center; padding: 3px 0; }
 .revisit-help-row kbd { min-width: 64px; text-align: center; }
+
+/* touch screens: comfortable targets (desktop untouched) */
+.revisit.is-touch button { min-height: 44px; }

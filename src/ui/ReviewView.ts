@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Modifier, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
@@ -10,7 +10,7 @@ export const VIEW_TYPE_REVIEW = 'revisit-review';
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
 const TIMES = [2, 5, 10];
-const FLIP_TEXT = ['Space', 'or click to flip'].join(' ');
+const FLIP_TEXT = Platform.isMobile ? 'Tap to flip' : ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
 const KEYS: [string, string][] = [
@@ -110,11 +110,13 @@ export class ReviewView extends ItemView {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass('revisit');
+		root.toggleClass('is-touch', Platform.isMobile);
 		this.bar = null;
 		if (mode === 'start') this.drawStart(root);
 		else if (mode === 'review') this.drawCard(root);
 		else this.drawDone(root);
-		if (mode !== 'done') this.drawHelp(root);
+		if (mode === 'review' && Platform.isMobile) this.drawMenu(root);
+		else if (mode !== 'done' && !Platform.isMobile) this.drawHelp(root);
 		this.plugin.updateStatus();
 	}
 
@@ -131,7 +133,7 @@ export class ReviewView extends ItemView {
 		const row = col.createDiv({ cls: 'revisit-times' });
 		TIMES.forEach((m, i) => {
 			const b = row.createEl('button', { text: `${m} min`, cls: m === this.minutes ? 'mod-cta' : '' });
-			b.createSpan({ text: String(i + 1), cls: 'revisit-key' });
+			if (!Platform.isMobile) b.createSpan({ text: String(i + 1), cls: 'revisit-key' });
 			b.onclick = () => pick(m);
 		});
 	}
@@ -189,7 +191,7 @@ export class ReviewView extends ItemView {
 		for (const { grade, name } of GRADES) {
 			const b = grades.createEl('button', { cls: `revisit-g${grade}` });
 			const label = b.createSpan({ text: name, cls: 'revisit-grade-name' });
-			label.createSpan({ text: String(grade), cls: 'revisit-key' });
+			if (!Platform.isMobile) label.createSpan({ text: String(grade), cls: 'revisit-key' });
 			b.createSpan({ text: this.preview[grade].label, cls: 'revisit-grade-int' });
 			b.onclick = () => void this.grade(grade);
 		}
@@ -212,6 +214,38 @@ export class ReviewView extends ItemView {
 			row.createSpan({ text: what });
 		}
 		btn.onclick = () => this.toggleHelp();
+	}
+
+	/** On touch screens the ? becomes a ⋯ menu with the actions that have keys on the desktop. */
+	private drawMenu(root: HTMLElement): void {
+		const btn = root.createEl('button', { cls: 'revisit-help-btn clickable-icon', attr: { 'aria-label': 'Card actions' } });
+		setIcon(btn, 'more-horizontal');
+		btn.onclick = (ev) => {
+			const menu = new Menu();
+			menu.addItem((i) => i.setTitle('Edit card').setIcon('pencil').onClick(() => this.editCard()));
+			menu.addItem((i) => i.setTitle('Open source note').setIcon('file-text').onClick(() => this.openSource()));
+			menu.addItem((i) => i.setTitle('Delete card').setIcon('trash').onClick(() => void this.confirmDelete()));
+			menu.addItem((i) => i.setTitle('Undo last grade').setIcon('undo-2').onClick(() => void this.undoLast()));
+			menu.showAtMouseEvent(ev);
+		};
+	}
+
+	/** Delete from the menu: one short confirmation instead of the double D. */
+	private async confirmDelete(): Promise<void> {
+		const item = this.queue[this.index];
+		if (this.mode !== 'review' || !item || this.busy) return;
+		const ok = await new Promise<boolean>((resolve) => {
+			const m = new Modal(this.app);
+			m.titleEl.setText('Delete this card?');
+			const row = m.contentEl.createDiv({ cls: 'modal-button-container' });
+			row.createEl('button', { text: 'Delete', cls: 'mod-warning' }).onclick = () => (resolve(true), m.close());
+			row.createEl('button', { text: 'Cancel' }).onclick = () => m.close();
+			m.onClose = () => resolve(false);
+			m.open();
+		});
+		if (!ok) return;
+		this.discardArmed = true;
+		await this.discard();
 	}
 
 	private toggleHelp(): void {
