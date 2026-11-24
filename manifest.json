@@ -1,9 +1,9 @@
 {
 	"id": "revisit",
 	"name": "Revisit",
-	"version": "0.6.0",
+	"version": "1.0.0-beta",
 	"minAppVersion": "1.13.0",
-	"description": "Spaced repetition flashcards with FSRS. Pick your time and review; the deck is chosen when the card is created.",
+	"description": "Spaced repetition flashcards with FSRS. Pick your time and review.",
 	"author": "Alan Veras",
 	"fundingUrl": "https://www.buymeacoffee.com/alanveras",
 	"isDesktopOnly": false

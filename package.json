@@ -1,15 +1,14 @@
 {
 	"name": "revisit",
-	"version": "0.6.0",
-	"description": "Spaced repetition flashcards with FSRS. Pick your time and review; the deck is chosen when the card is created.",
+	"version": "1.0.0-beta",
+	"description": "Spaced repetition flashcards with FSRS. Pick your time and review.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"deploy": "npm run build && node scripts/deploy.mjs",
-		"test": "TZ=America/Fortaleza vitest run --reporter=dot --silent=passed-only --exclude tests/stress.test.ts",
-		"test:stress": "TZ=America/Fortaleza vitest run --reporter=dot tests/stress.test.ts",
+		"test": "TZ=America/Fortaleza vitest run --reporter=dot --silent=passed-only ",
 		"lint": "eslint .",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},

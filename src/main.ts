@@ -1,731 +1,112 @@
-import { Menu, normalizePath, Notice, Plugin, SuggestModal, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
-import { linkPath } from './cards/link';
-import { clozes } from './cards/cloze';
-import { daysLabel, dueNotes, RereadGrade, read, Reread } from './notes/reread';
-import { deckPath } from './cards/mirror';
-import { Card } from './cards/types';
-import { bibleReference, initialType, splitAlternatives } from './capture/autoType';
-import { CaptureDraft, CaptureModal, CaptureResult, draftFromCard } from './capture/CaptureModal';
-import { captureContext, headingAbove, sourceLink } from './capture/selection';
-import { retagTopics, renameSource, renameSourceFolder } from './cards/format';
-import { ReviewView, VIEW_TYPE_REVIEW } from './review/ReviewView';
-import { StartModal } from './review/StartModal';
-import { DecksModal, DeckRow } from './review/DecksModal';
+import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { buildItems, buildQueue } from './core/queue';
+import { Scheduler } from './core/scheduler';
+import type { Card } from './core/types';
+import { sourceLink } from './core/format';
+import { Store } from './store/store';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
-import { newToday, QuotaStatus, quotaStatus, secsPerType } from './srs/budget';
-import { buildSession, dueReviews, estimateMinutes, matchesFilter, QueueItem, reviewScopes } from './srs/queue';
-import type { Card as FsrsCard } from 'ts-fsrs';
-import { fromStored, isNew, Scheduler } from './srs/scheduler';
-import { sessionChoices, toForecastCards } from './srs/session';
-import { CatchUpOffer, catchUpOffer, catchUpPlan } from './srs/forecast';
-import { migrateSettings } from './store/migrate';
-import { noteHasTag, Store } from './store/Store';
-import { PanelView, VIEW_TYPE_PANEL } from './view/PanelView';
-import { isSource, NoteCardsView, VIEW_TYPE_NOTE } from './view/NoteCardsView';
-import { registerCli } from './cli/commands';
+import { CreateModal, Draft } from './ui/CreateModal';
+import { ReviewView, VIEW_TYPE_REVIEW } from './ui/ReviewView';
 
 export default class RevisitPlugin extends Plugin {
-	settings: RevisitSettings = DEFAULT_SETTINGS;
+	settings: RevisitSettings = { ...DEFAULT_SETTINGS };
 	store!: Store;
 	scheduler!: Scheduler;
+	/** data.json as read, so keys of older versions survive a save */
+	private rawData: Record<string, unknown> = {};
 	private statusEl: HTMLElement | null = null;
 
 	async onload(): Promise<void> {
-		await this.loadSettings();
-		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
-		this.store = new Store(
-			this.app,
-			() => this.settings.folder,
-			() => this.settings.inlineTag,
-			() => this.settings.cardLayout,
-			async (l) => {
-				this.settings.cardLayout = l;
-				await this.saveSettings();
-			},
-		);
-		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
-		this.registerView(VIEW_TYPE_PANEL, (leaf: WorkspaceLeaf) => new PanelView(leaf, this));
-		this.addCommand({ id: 'open-panel', name: 'Open panel', callback: () => void this.openPanel() });
-		this.addSettingTab(new RevisitSettingTab(this.app, this));
-		registerCli(this);
+		this.rawData = ((await this.loadData()) as Record<string, unknown> | null) ?? {};
+		const folder = typeof this.rawData.folder === 'string' && this.rawData.folder ? this.rawData.folder : DEFAULT_SETTINGS.folder;
+		const retention = Number(this.rawData.retention);
+		this.settings = { folder, retention: retention >= 0.7 && retention <= 0.95 ? retention : DEFAULT_SETTINGS.retention };
+		this.scheduler = new Scheduler(this.settings.retention);
+		this.store = new Store(this.app, () => this.settings.folder);
 
-		this.addCommand({ id: 'capture', name: 'Add to review', callback: () => void this.capture() });
-		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.chooseReview(null) });
-		this.addCommand({ id: 'browse-decks', name: 'Browse decks', callback: () => void this.openDecks() });
-		this.addCommand({ id: 'review-scope', name: 'Review this note/folder', callback: () => this.pickScope() });
-		this.addCommand({ id: 'review-extra', name: 'Extra session before an exam', callback: () => this.pickScope(true) });
-		this.addCommand({ id: 'reread-toggle', name: 'Reread this note from time to time (toggle)', callback: () => void this.toggleReread(this.app.workspace.getActiveFile()) });
-		this.addCommand({ id: 'reread-next', name: 'Reread the next note', callback: () => void this.openNextReread() });
-		this.addCommand({ id: 'note-cards', name: 'Cards of this note', callback: () => void this.openNoteCards() });
-		this.addCommand({ id: 'review-note', name: 'Review the cards of this note', callback: () => void this.reviewNote(this.app.workspace.getActiveFile() ?? this.lastSource) });
-		this.registerView(VIEW_TYPE_NOTE, (leaf: WorkspaceLeaf) => new NoteCardsView(leaf, this));
-		this.registerEvent(
-			this.app.workspace.on('file-menu', (menu, file) => {
-				if (file instanceof TFolder) menu.addItem((i) => i.setTitle('Review the cards of this folder').setIcon('layers').onClick(() => void this.chooseReview(file.path)));
-				if (!isSource(file)) return;
-				if (file.extension === 'md')
-					menu.addItem((i) =>
-						i
-							.setTitle(this.isReread(file.path) ? 'Stop rereading this note' : 'Reread this note from time to time')
-							.setIcon('book-open')
-							.onClick(() => void this.toggleReread(file)),
-					);
-				menu.addItem((i) => i.setTitle('New card from this file').setIcon('plus').onClick(() => void this.captureFor(file)));
-				menu.addItem((i) => i.setTitle('Review the cards of this note').setIcon('layers').onClick(() => void this.reviewNote(file)));
-				menu.addItem((i) =>
-					i.setTitle('Cards of this note').setIcon('layers').onClick(() => {
-						this.lastSource = file;
-						void this.openNoteCards();
-					}),
-				);
-			}),
-		);
-		this.registerEvent(
-			this.app.workspace.on('file-open', (f) => {
-				if (!isSource(f)) return;
-				this.lastSource = f;
-				this.redrawNoteCards();
-			}),
-		);
-		const ribbon = this.addRibbonIcon('layers', 'Revisit', () => void this.chooseReview(null));
-		ribbon.setAttribute('aria-label', 'Revisit: start a review session (right-click for the panel)');
-		ribbon.addEventListener('contextmenu', (e) => {
-			e.preventDefault();
-			const menu = new Menu();
-			menu.addItem((i) => i.setTitle('Browse decks').setIcon('list').onClick(() => void this.openDecks()));
-			menu.addItem((i) => i.setTitle('Open panel').setIcon('layout-dashboard').onClick(() => void this.openPanel()));
-			menu.addItem((i) => i.setTitle('Add to review').setIcon('plus').onClick(() => void this.capture()));
-			menu.showAtMouseEvent(e);
-		});
-		this.registerEvent(
-			this.app.workspace.on('editor-menu', (menu, editor) => {
-				if (!editor.getSelection()) return;
-				menu.addItem((i) => i.setTitle('Add to review').setIcon('layers').onClick(() => void this.capture()));
-			}),
-		);
+		this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
+		this.addSettingTab(new RevisitSettingTab(this.app, this));
+		this.addRibbonIcon('layers', 'Revisit', () => void this.openReview());
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('mod-clickable');
-		this.statusEl.setAttribute('aria-label', 'Revisit panel');
-		this.statusEl.setAttribute('title', 'Revisit panel');
-		this.statusEl.onclick = () => void this.openPanel();
+		this.statusEl.onclick = () => void this.openReview();
 
-		this.registerInterval(window.setInterval(() => void this.remind(), 60_000));
-		this.app.workspace.onLayoutReady(async () => {
-			const active = this.app.workspace.getActiveFile();
-			if (isSource(active)) this.lastSource = active;
-			await this.reload();
-			// a card file edited by hand (or by an agent) is read again
+		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.openReview() });
+		this.addCommand({ id: 'new-card', name: 'New card', callback: () => void this.createFromEditor() });
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, editor) => {
+				const title = editor.getSelection() ? 'New card from selection' : 'New card';
+				menu.addItem((i) => i.setTitle(title).setIcon('layers').onClick(() => void this.createFromEditor()));
+			}),
+		);
+		this.app.workspace.onLayoutReady(() => {
+			void this.refresh();
+			// a card file edited by hand is read again
 			this.registerEvent(
 				this.app.vault.on('modify', (f) => {
-					if (f instanceof TFile && f.path.startsWith(this.settings.folder + '/') && f.extension === 'md') void this.reload();
-				}),
-			);
-			// a renamed source note or folder keeps the `Source:` of every card alive
-			this.registerEvent(
-				this.app.vault.on('rename', (file, oldPath) => {
-					const folder = this.settings.folder;
-					if (oldPath === folder || oldPath.startsWith(folder + '/')) return;
-					if (file instanceof TFolder) void this.rewriteSources(oldPath, file.path, true);
-					else if (file instanceof TFile) void this.rewriteSources(oldPath, file.path, false);
+					if (f instanceof TFile && f.path.startsWith(this.settings.folder + '/') && f.extension === 'md') void this.refresh();
 				}),
 			);
 		});
-	}
-
-	async loadSettings(): Promise<void> {
-		const raw = (await this.loadData()) as Record<string, unknown> | null;
-		const { settings, changed } = migrateSettings(raw);
-		// before the first migration writes over data.json, the original is copied once
-		if (changed) await this.backupDataOnce();
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
-		if (this.settings.cardLayout !== 'source' && this.settings.cardLayout !== 'deck') this.settings.cardLayout = 'source';
-		// the FSRS advises against asking for more than 95%
-		if (this.settings.retention > 0.95) this.settings.retention = 0.95;
-		if (this.settings.retentionImportant > 0.95) this.settings.retentionImportant = 0.95;
-		if (changed) await this.saveSettings();
-	}
-
-	/** One-time copy of data.json beside the plugin files, before the first settings migration. */
-	private async backupDataOnce(): Promise<void> {
-		const dir = this.manifest.dir ?? '';
-		const target = normalizePath(`${dir}/data.json.backup-pre-migration`);
-		if (await this.app.vault.adapter.exists(target)) return;
-		const source = normalizePath(`${dir}/data.json`);
-		if (await this.app.vault.adapter.exists(source)) await this.app.vault.adapter.write(target, await this.app.vault.adapter.read(source));
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+		this.scheduler = new Scheduler(this.settings.retention);
+		await this.saveData({ ...this.rawData, ...this.settings });
+		await this.refresh();
 	}
 
-	refreshScheduler(): void {
-		this.scheduler = new Scheduler(this.settings.retention, this.settings.retentionImportant);
+	async refresh(): Promise<void> {
+		await this.store.load();
+		this.updateStatus();
 	}
 
-	private reloading: Promise<void> | null = null;
-	async reload(): Promise<void> {
-		if (this.reloading) return this.reloading;
-		this.reloading = this.store
-			.load()
-			.catch((e: unknown) => {
-				new Notice(`Revisit: error reading the cards (${e instanceof Error ? e.message : String(e)})`);
-			})
-			.finally(() => {
-				this.reloading = null;
-				this.updateStatus();
-			});
-		return this.reloading;
-	}
-
-	secs() {
-		return secsPerType(this.store.log);
-	}
-
-	/** Rewrites the `Source:` of every card file after a source note or folder moved. */
-	private async rewriteSources(oldPath: string, newPath: string, folder: boolean): Promise<void> {
-		const from = folder ? oldPath.replace(/\/+$/, '') : oldPath.replace(/\.md$/, '');
-		const to = folder ? newPath.replace(/\/+$/, '') : newPath.replace(/\.md$/, '');
-		let changed = 0;
-		for (const f of this.store.cardFiles()) {
-			const text = await this.app.vault.cachedRead(f);
-			if (!text.includes(from)) continue;
-			const next = folder ? renameSourceFolder(text, from, to) : renameSource(text, from, to);
-			if (next !== text) {
-				changed++;
-				await this.app.vault.process(f, () => next);
-			}
-		}
-		if (changed) new Notice(`Revisit: source links updated on ${changed} ${changed === 1 ? 'card file' : 'card files'} after the rename.`);
-		await this.reload();
-	}
-
-	/** Vault path of the source note or PDF of a card. */
-	resolveSource(card: Card): string | null {
-		const link = linkPath(card.source);
-		if (!link) return null;
-		const file = this.app.metadataCache.getFirstLinkpathDest(link, card.file ?? '');
-		return file ? file.path : link;
-	}
-
-	private itemsCache: { version: number; items: QueueItem[] } | null = null;
-
-	/** One item per card, plus one for its reverse (key `id-r`). Suspending the card suspends both. Memoized until the store changes. */
-	items(): QueueItem[] {
-		const version = this.store.version;
-		if (this.itemsCache && this.itemsCache.version === version) return this.itemsCache.items;
-		const out: QueueItem[] = [];
-		for (const card of this.store.cards) {
-			if (!card.id) continue;
-			const source = this.resolveSource(card);
-			const suspended = this.store.state[card.id]?.st === 'suspended';
-			const holes = card.type === 'Cloze' ? clozes(card.front).length : 0;
-			const keys: [string, boolean, number | undefined][] = holes
-				? Array.from({ length: holes }, (_, i) => [i ? `${card.id as string}-c${i + 1}` : (card.id as string), false, i])
-				: [[card.id, false, undefined]];
-			if (card.reverse && !holes) keys.push([`${card.id}-r`, true, undefined]);
-			for (const [key, reverse, cloze] of keys) {
-				const st = this.store.state[key];
-				out.push({ key, reverse, ...(cloze !== undefined ? { cloze } : {}), card, source, ...(st?.fsrs ? { fsrs: fromStored(st.fsrs) } : {}), suspended });
-			}
-		}
-		this.itemsCache = { version, items: out };
-		return out;
-	}
-
-	/** The card and its siblings (reverse, clozes) are suspended. */
-	isSuspended(card: Card): boolean {
-		return !!card.id && this.store.state[card.id]?.st === 'suspended';
-	}
-
-	/** Keys graded today, outside extra sessions. */
-	gradedToday(now = new Date()): Set<string> {
-		const day = now.toDateString();
-		return new Set(this.store.log.filter((e) => !e.extra && new Date(e.t).toDateString() === day).map((e) => e.id));
-	}
-
-	session(scope: string | null, minutes?: number, extra = false, topic: string | null = null): QueueItem[] {
-		const now = new Date();
-		const items = this.items();
-		return buildSession(items, {
-			now,
-			scope,
-			budgetMinutes: minutes ?? this.settings.budgetMinutes,
-			newAllowed: this.quota(now, items).free,
-			secs: this.secs(),
-			interleave: this.settings.interleave,
-			retrievability: (c, n) => this.scheduler.retrievability(c, n),
-			gradedToday: this.gradedToday(now),
-			extra,
-			topic,
-		});
-	}
-
-	/** The catch-up plan for the overdue backlog, or null while the backlog is small. */
-	catchUp(now = new Date(), items = this.items()): { offer: CatchUpOffer; queue: QueueItem[] } | null {
-		const plan = catchUpPlan(toForecastCards(items), this.secs(), {
-			now,
-			budgetMinutes: this.settings.budgetMinutes,
-			retrievability: (c, n) => this.scheduler.retrievability(c, n),
-		});
-		const offer = catchUpOffer(plan, this.settings.budgetMinutes);
-		if (!offer) return null;
-		const byKey = new Map(items.map((it) => [it.key, it]));
-		const queue = offer.todayKeys.map((k) => byKey.get(k)).filter((it): it is QueueItem => !!it);
-		return { offer, queue };
-	}
-
-	/** Starts today's slice of the catch-up plan. */
-	async startCatchUp(): Promise<void> {
-		await this.reload();
-		const plan = this.catchUp();
-		if (!plan) return void new Notice('Revisit: no backlog to catch up on.');
-		await this.startReview(plan.queue, 'Catch-up', false, this.settings.budgetMinutes);
-	}
-
-	/** New cards left today, out of the one daily quota. */
-	quota(now = new Date(), items = this.items()): QuotaStatus {
-		return quotaStatus({
-			dueMinutes: estimateMinutes(dueReviews(items, now), this.secs()),
-			budgetMinutes: this.settings.budgetMinutes,
-			quota: this.settings.newPerDay,
-			used: newToday(this.store.log, now),
-		});
-	}
-
-	async openPanel(): Promise<void> {
-		await this.reload();
-		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PANEL)[0];
-		if (!leaf) {
-			leaf = this.app.workspace.getLeaf('tab');
-			await leaf.setViewState({ type: VIEW_TYPE_PANEL, active: true });
-		}
-		await this.app.workspace.revealLeaf(leaf);
-	}
-
-	private statusTimer: number | null = null;
-
-	/** Debounced: a grade or a settings change touches it, but the recount waits for a quiet moment. */
 	updateStatus(): void {
-		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
-		this.statusTimer = window.setTimeout(() => {
-			this.statusTimer = null;
-			this.updateStatusNow();
-		}, 200);
-	}
-
-	private updateStatusNow(): void {
-		this.redrawNoteCards();
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PANEL)) if (leaf.view instanceof PanelView) leaf.view.draw();
 		if (!this.statusEl) return;
-		const s = this.session(null);
-		const n = s.length;
-		const newCount = s.filter((it) => isNew(it.fsrs)).length;
-		this.statusEl.setText(`Revisit: ${n} ${n === 1 ? 'card' : 'cards'} today${newCount ? ` · ${newCount} new` : ''}`);
+		const items = buildItems(this.store.cards, this.store.state);
+		const n = buildQueue(items, { now: new Date(), log: this.store.log, retrievability: (c, now) => this.scheduler.retrievability(c, now) }).length;
+		this.statusEl.setText(n ? `Revisit: ${n}` : 'Revisit');
 	}
 
-	/** The launcher: "How much time do you have today?" and the session starts; the deck lives on the card. */
-	async chooseReview(scope: string | null, topic: string | null = null): Promise<void> {
-		await this.reload();
-		const now = new Date();
-		const items = this.items();
-		const base = {
-			now,
-			scope,
-			topic,
-			newAllowed: this.quota(now, items).free,
-			secs: this.secs(),
-			interleave: this.settings.interleave,
-			retrievability: (c: FsrsCard, n: Date) => this.scheduler.retrievability(c, n),
-			gradedToday: this.gradedToday(now),
-		};
-		const choices = sessionChoices(items, base, this.secs());
-		const everything = choices[choices.length - 1];
-		if (!everything?.cards) return void new Notice('Revisit: nothing to review now.');
-		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
-		new StartModal(this.app, {
-			title: topic ?? name ? `Review: ${topic ?? name}` : 'Revisit',
-			choices,
-			suggested: this.settings.budgetMinutes,
-			onStart: (minutes) => void this.review(scope, minutes, false, topic),
-		}).open();
-	}
-
-	/** The decks window: every topic with its due and total, one tap picks it and asks for the time. */
-	async openDecks(): Promise<void> {
-		await this.reload();
-		const items = this.items().filter((it) => !it.suspended);
-		const matches = (topic: string): QueueItem[] =>
-			items.filter((it) => it.card.topics.some((x) => x.toLowerCase() === topic.toLowerCase() || x.toLowerCase().startsWith(topic.toLowerCase() + ' > ')));
-		const rows: DeckRow[] = [{ topic: null, label: 'All cards', due: this.session(null).length, total: items.length }];
-		for (const t of this.topics()) {
-			const group = matches(t);
-			rows.push({ topic: t, label: t, due: this.session(null, undefined, false, t).length, total: group.length });
-		}
-		const decks = rows.slice(1).sort((a, b) => b.due - a.due || a.label.localeCompare(b.label));
-		new DecksModal(this.app, [rows[0] as DeckRow, ...decks], (topic) => void this.chooseReview(null, topic)).open();
-	}
-
-	async review(scope: string | null, minutes?: number, extra = false, topic: string | null = null): Promise<void> {
-		await this.reload();
-		const name = scope?.split('/').pop()?.replace(/\.md$/, '');
-		await this.startReview(this.session(scope, minutes, extra, topic), topic ?? name ?? 'All', extra, minutes);
-	}
-
-	async startReview(queue: QueueItem[], label: string, extra: boolean, minutes?: number): Promise<void> {
-		if (!queue.length) {
-			new Notice('Revisit: nothing to review now.');
-			return;
-		}
-		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
-		if (!leaf) {
-			leaf = this.app.workspace.getLeaf('tab');
-			await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
-		}
-		await this.app.workspace.revealLeaf(leaf);
+	async openReview(): Promise<void> {
+		const { workspace } = this.app;
+		const leaf = workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0] ?? workspace.getLeaf('tab');
+		await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
 		const view = leaf.view;
-		if (view instanceof ReviewView) view.start(queue, label, extra, minutes);
+		if (view instanceof ReviewView) await view.begin();
+		await workspace.revealLeaf(leaf);
 	}
 
-	private pickScope(extra = false): void {
-		new ScopeModal(this, extra).open();
-	}
-
-	/** Last note or PDF opened, followed by the side panel. */
-	lastSource: TFile | null = null;
-
-	/** Cards whose source is this file. */
-	cardsOf(file: TFile): Card[] {
-		return this.store.cards.filter((c) => c.id && this.resolveSource(c) === file.path);
-	}
-
-	redrawNoteCards(): void {
-		for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTE)) if (l.view instanceof NoteCardsView) l.view.draw();
-	}
-
-	async openNoteCards(): Promise<void> {
-		const active = this.app.workspace.getActiveFile();
-		if (!this.lastSource && isSource(active)) this.lastSource = active;
-		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTE)[0];
-		if (!leaf) {
-			leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split');
-			await leaf.setViewState({ type: VIEW_TYPE_NOTE, active: true });
-		}
-		await this.app.workspace.revealLeaf(leaf);
-		this.redrawNoteCards();
-	}
-
-	/** Every due or new card of one note, outside the daily caps. */
-	async reviewNote(file: TFile | null): Promise<void> {
-		if (!file) return void new Notice('Revisit: open a note first.');
-		await this.reload();
-		const now = new Date();
-		const items = this.items().filter((it) => this.resolveSource(it.card) === file.path);
-		const queue = buildSession(items, {
-			now,
-			budgetMinutes: 600,
-			newAllowed: items.length,
-			secs: this.secs(),
-			interleave: false,
-			retrievability: (c, n) => this.scheduler.retrievability(c, n),
-			gradedToday: this.gradedToday(now),
-		});
-		await this.startReview(queue, file.basename, false);
-	}
-
-	topics(): string[] {
-		return [...new Set(this.store.cards.flatMap((c) => c.topics))].sort((a, b) => a.localeCompare(b));
-	}
-
-	async capture(): Promise<void> {
-		const ctx = await captureContext(this.app);
-		const selection = ctx?.selection.trim() ?? '';
-		const file = ctx?.file ?? null;
-		const path = file?.path ?? null;
-		// a card whose source is a card file would mirror itself inside the mirror
-		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
-			new Notice('Revisit: the source cannot be a card file of the plugin; open the source note.');
-			return;
-		}
-		const reference = ctx ? bibleReference(ctx.noteText, ctx.cursorLine) : null;
-		const type = initialType({ isPdf: !!ctx?.isPdf, hasReference: !!reference, selection });
-		const folder = folderOf(path);
-		let front = '';
-		let back = selection;
-		if (type === 'Problem') {
-			front = splitAlternatives(selection);
-			back = '';
-		} else if (type === 'Reference') {
-			front = reference ?? '';
-		}
-		const draft: CaptureDraft = {
-			type,
-			front,
-			back,
-			topic: this.settings.lastTopic[folder] ?? '',
-			source: sourceLink(file, ctx?.page ?? null, ctx && !ctx.isPdf ? headingAbove(ctx.noteText, ctx.cursorLine) : null),
-			context: ctx?.context ?? '',
-			sourcePath: path ?? '',
-		};
-		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path), type === 'Problem').open();
-	}
-
-	/** The capture window for a file (or none) without a selection: the source comes filled, the last topic of its folder too. */
-	async captureFor(file: TFile | null, topic = ''): Promise<void> {
-		const path = file?.path ?? null;
-		// a card whose source is a card file would mirror itself inside the mirror
-		if (path && (path === this.settings.folder || path.startsWith(this.settings.folder + '/'))) {
-			new Notice('Revisit: the source cannot be a card file of the plugin; open the source note.');
-			return;
-		}
-		const draft: CaptureDraft = {
-			type: 'Question',
-			front: '',
-			back: '',
-			topic: topic || this.settings.lastTopic[folderOf(path)] || '',
-			source: sourceLink(file, null, null),
-			context: '',
-			sourcePath: path ?? '',
-		};
-		new CaptureModal(this.app, draft, this.topics(), 'New card', (r) => this.saveNew(r, path), false).open();
-	}
-
-	private async saveNew(r: CaptureResult, sourcePath: string | null): Promise<void> {
-		await this.reload();
-		const target = deckPath(r.topics, this.settings.folder);
-		const id = await this.store.addCard(target, {
-			id: null,
-			type: r.type,
-			front: r.front,
-			back: r.back,
-			topics: r.topics,
-			...(r.tags.length ? { tags: r.tags } : {}),
-			...(r.reverse ? { reverse: true } : {}),
-			source: r.source,
-		});
-		this.settings.lastTopic[folderOf(sourcePath)] = r.topics.join('; ');
-		await this.saveSettings();
-		this.updateStatus();
-		new Notice(`Revisit: card created${r.topics.length ? ' in ' + r.topics[0] : ''} (^${id})`);
-	}
-
-	// ---- rereading whole notes ----
-
-	private rereadKey(path: string): string {
-		return `note:${path}`;
-	}
-
-	private hasTag(file: TFile): boolean {
-		return !!this.settings.rereadTag && noteHasTag(this.app, file, this.settings.rereadTag);
-	}
-
-	isReread(path: string): boolean {
-		const st = this.store.state[this.rereadKey(path)];
-		if (st) return st.st === 'active';
-		const f = this.app.vault.getAbstractFileByPath(path);
-		return f instanceof TFile && this.hasTag(f);
-	}
-
-	/** Every note to reread, with its schedule: marked by command, or carrying the tag. */
-	rereadNotes(): { path: string; r?: Reread }[] {
-		const paths = new Set<string>();
-		for (const [k, v] of Object.entries(this.store.state)) if (k.startsWith('note:') && v.st === 'active') paths.add(k.slice(5));
-		if (this.settings.rereadTag) for (const f of this.app.vault.getMarkdownFiles()) if (!f.path.startsWith(this.settings.folder + '/') && this.hasTag(f)) paths.add(f.path);
-		return [...paths]
-			.filter((p) => this.store.state[this.rereadKey(p)]?.st !== 'suspended' && this.app.vault.getAbstractFileByPath(p))
-			.sort()
-			.map((path) => {
-				const r = this.store.state[this.rereadKey(path)]?.reread;
-				return r ? { path, r } : { path };
-			});
-	}
-
-	dueRereads(now = new Date()): string[] {
-		return dueNotes(this.rereadNotes(), now, this.settings.newNotesPerDay);
-	}
-
-	async toggleReread(file: TFile | null): Promise<void> {
-		if (!file || file.extension !== 'md') return void new Notice('Revisit: open a note first.');
-		const key = this.rereadKey(file.path);
-		const on = !this.isReread(file.path);
-		this.store.state[key] = { ...(this.store.state[key] ?? {}), st: on ? 'active' : 'suspended' };
-		await this.store.saveState();
-		this.updateStatus();
-		new Notice(on ? `Revisit: ${file.basename} enters rereading` : `Revisit: ${file.basename} leaves rereading`);
-	}
-
-	/** Note being reread now, shown in the Notes tab of the panel. */
-	reading: string | null = null;
-
-	async openNextReread(): Promise<void> {
-		await this.reload();
-		const next = this.dueRereads()[0];
-		if (!next) {
-			this.reading = null;
-			new Notice('Revisit: no note to reread today.');
-		} else {
-			await this.openReread(next);
-			return;
-		}
-		this.updateStatus();
-	}
-
-	private readLeaf: WorkspaceLeaf | null = null;
-
-	/** Opens a note to reread beside the panel, reusing the same pane each time. */
-	async openReread(path: string): Promise<void> {
-		this.reading = path;
-		const f = this.app.vault.getAbstractFileByPath(path);
-		if (f instanceof TFile) {
-			const alive = this.readLeaf && this.app.workspace.getLeavesOfType('markdown').includes(this.readLeaf);
-			if (!alive) this.readLeaf = this.app.workspace.getLeaf('split', 'vertical');
-			await (this.readLeaf as WorkspaceLeaf).openFile(f);
-		}
-		this.updateStatus();
-	}
-
-	async gradeReread(path: string, l: RereadGrade): Promise<void> {
-		const key = this.rereadKey(path);
-		const prev = this.store.state[key]?.reread;
-		this.store.state[key] = { st: 'active', reread: read(prev, l, new Date()) };
-		await this.store.saveState();
-		new Notice(`Revisit: back at this note in ${daysLabel(this.store.state[key].reread?.days ?? 1)}`);
-		await this.openNextReread();
-	}
-
-	/** Daily reminder: after the set hour, when cards wait and nothing was reviewed today. */
-	private async remind(): Promise<void> {
-		const r = this.settings.reminder;
-		if (!r) return;
-		const now = new Date();
-		const [h, m] = r.split(':').map(Number);
-		if (now.getHours() * 60 + now.getMinutes() < (h ?? 0) * 60 + (m ?? 0)) return;
-		if (this.settings.lastReminder === now.toDateString()) return;
-		if (this.gradedToday(now).size) return;
-		const n = this.session(null).length;
-		if (!n) return;
-		this.settings.lastReminder = now.toDateString();
-		await this.saveSettings();
-		const frag = createFragment();
-		frag.createSpan({ text: `Revisit: ${n} ${n === 1 ? 'card waits' : 'cards wait'} for you today. ` });
-		const btn = frag.createEl('button', { text: 'Review', cls: 'mod-cta' });
-		const notice = new Notice(frag, 0);
-		btn.addEventListener('click', () => {
-			notice.hide();
-			void this.chooseReview(null);
-		});
-	}
-
-	/** Forgets the schedule of a card (and its reverse): it is new again. */
-	async resetCard(card: Card): Promise<void> {
-		if (!card.id) return;
-		for (const k of Object.keys(this.store.state)) if (k === card.id || k.startsWith(card.id + '-')) delete this.store.state[k];
-		await this.store.saveState();
-		this.updateStatus();
-		new Notice('Revisit: card reset, comes back as new');
-	}
-
-	editCard(card: Card, after?: () => void): void {
-		if (card.inline) {
-			new Notice('Revisit: this card is written in the note; change it there.');
-			return;
-		}
-		const draft = draftFromCard(card, card.file ?? '');
-		new CaptureModal(this.app, draft, this.topics(), 'Edit card', async (r) => {
-			await this.store.updateCard(card, {
-				id: card.id,
-				type: r.type,
-				front: r.front,
-				back: r.back,
-				topics: r.topics,
-				tags: r.tags,
-				...(r.reverse ? { reverse: true } : {}),
-				source: r.source,
-			});
+	/** The create window: a new card, or the edit of `card`. */
+	openCreate(o: { card?: Card; draft?: Partial<Draft>; onSaved?: () => void }): void {
+		const { card } = o;
+		const draft: Draft = { front: card?.front ?? '', back: card?.back ?? '', topics: card?.topics ?? [], source: card?.source ?? '', context: '', ...(card ? { card } : {}), ...o.draft };
+		new CreateModal(this.app, draft, async (r) => {
+			const fields = { type: r.type, front: r.front, back: r.back, topics: draft.topics, source: draft.source };
+			if (card) await this.store.updateCard(card, { ...card, ...fields, id: card.id });
+			else {
+				const id = await this.store.addCard({ id: null, ...fields });
+				new Notice(`Revisit: card created (^${id})`);
+			}
 			this.updateStatus();
-			after?.();
+			o.onSaved?.();
 		}).open();
 	}
 
-	/** Removes a card and its schedule; the UI confirms first. */
-	async deleteCard(card: Card): Promise<void> {
-		if (card.inline) return void new Notice('Revisit: this card is written in the note; delete it there.');
-		try {
-			await this.store.deleteCard(card);
-		} catch (e) {
-			return void new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)})`);
+	/** A new card from the active note: the selection goes to Back, the area comes from the note's folder. */
+	private createFromEditor(): void {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = view?.file ?? null;
+		if (file && file.path.startsWith(this.settings.folder + '/')) {
+			new Notice('Revisit: open the source note, not a card file.');
+			return;
 		}
-		this.updateStatus();
-		new Notice('Revisit: card deleted');
-	}
-
-	/** Renames a topic on every card and in the last-topic memory; an empty `to` removes it. */
-	async renameTopic(from: string, to: string): Promise<void> {
-		const n = await this.store.renameTopic(from, to);
-		let touched = false;
-		for (const [folder, v] of Object.entries(this.settings.lastTopic)) {
-			const next = v
-				.split(';')
-				.map((t) => retagTopics([t], from, to)[0] ?? '')
-				.filter(Boolean)
-				.join('; ');
-			if (next !== v) {
-				this.settings.lastTopic[folder] = next;
-				touched = true;
-			}
-		}
-		if (touched) await this.saveSettings();
-		this.updateStatus();
-		new Notice(n ? `Revisit: topic rewritten on ${n} ${n === 1 ? 'card' : 'cards'}` : 'Revisit: no card carried that topic');
-	}
-
-	/** Sets the topics of specific cards (mirror-file cards only); the UI confirms first. */
-	async setCardsTopics(cards: Card[], topics: string[]): Promise<void> {
-		const n = await this.store.setTopics(cards, topics);
-		this.updateStatus();
-		new Notice(n ? `Revisit: topics set on ${n} ${n === 1 ? 'card' : 'cards'}` : 'Revisit: nothing changed; cards written inside notes change in the note.');
-	}
-
-	/** Retires (suspends) or wakes every card of a topic, children included. */
-	async setTopicSuspended(topic: string, suspended: boolean): Promise<void> {
-		const todo = this.items().filter((it) => matchesFilter(it, null, topic) && it.suspended !== suspended);
-		if (!todo.length) return void new Notice('Revisit: nothing to change there.');
-		for (const it of todo) this.store.state[it.key] = { ...(this.store.state[it.key] ?? {}), st: suspended ? 'suspended' : 'active' };
-		await this.store.saveState();
-		this.updateStatus();
-		new Notice(`Revisit: ${todo.length} ${todo.length === 1 ? 'card' : 'cards'} ${suspended ? 'suspended' : 'back to active'}`);
-	}
-
-	onunload(): void {
-		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
-		// no ghost leaves of the view types this plugin registered
-		for (const t of [VIEW_TYPE_REVIEW, VIEW_TYPE_PANEL, VIEW_TYPE_NOTE]) this.app.workspace.detachLeavesOfType(t);
-	}
-}
-
-/** Folder of a source path; the key of the last topic used there. */
-function folderOf(path: string | null): string {
-	return path?.split('/').slice(0, -1).join('/') ?? '';
-}
-
-/** Picks what to review: the open note first, then its folders, then every other source. */
-class ScopeModal extends SuggestModal<string> {
-	constructor(
-		private plugin: RevisitPlugin,
-		private extra = false,
-	) {
-		super(plugin.app);
-		this.setPlaceholder(extra ? 'Extra session: every card of the note or folder, without changing the schedule' : 'Review a note or a folder');
-	}
-	getSuggestions(q: string): string[] {
-		const active = this.app.workspace.getActiveFile() ?? this.plugin.lastSource;
-		const scopes = reviewScopes(this.plugin.items(), active?.path ?? null);
-		return scopes.filter((s) => s.toLowerCase().includes(q.toLowerCase()));
-	}
-	renderSuggestion(scope: string, el: HTMLElement): void {
-		el.setText(`${scope} · ${this.plugin.session(scope, undefined, this.extra).length}`);
-	}
-	onChooseSuggestion(scope: string): void {
-		if (this.extra) void this.plugin.review(scope, undefined, true);
-		else void this.plugin.chooseReview(scope);
+		const editor = view?.editor;
+		const selection = editor?.getSelection().trim() ?? '';
+		const from = editor?.getCursor('from');
+		const to = editor?.getCursor('to');
+		const context = editor && from && to ? Array.from({ length: to.line - from.line + 1 }, (_, i) => editor.getLine(from.line + i)).join('\n') : '';
+		const area = file?.parent && !file.parent.isRoot() ? file.parent.name : '';
+		this.openCreate({ draft: { back: selection, context, topics: area ? [area] : [], source: sourceLink(file?.path ?? null) } });
 	}
 }
