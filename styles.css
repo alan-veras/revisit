@@ -1,172 +1,43 @@
 /* Revisit: a calm column. Theme variables only; the card text uses --revisit-serif, falling back to the text font. */
-.revisit {
-	position: relative;
-	--revisit-serif: var(--font-text, serif);
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	padding: 0;
-	height: 100%;
-	background: var(--background-primary);
-	color: var(--text-normal);
-}
-.revisit-serif {
-	font-family: Georgia, 'Iowan Old Style', var(--revisit-serif);
-}
-.revisit-col {
-	width: 100%;
-	max-width: 560px;
-	margin: auto 0;
-	padding: 0 var(--size-4-4);
-	display: flex;
-	flex-direction: column;
-	gap: var(--size-4-4);
-}
-.revisit-center {
-	align-items: center;
-	text-align: center;
-}
-.revisit-center h2 {
-	font-size: var(--font-ui-larger);
-	font-weight: var(--font-normal);
-	margin: 0;
-}
+.revisit { --revisit-serif: Georgia, 'Iowan Old Style', serif; position: relative; display: flex; flex-direction: column; align-items: center; height: 100%; padding: 0; }
+.revisit-serif { font-family: var(--revisit-serif, var(--font-text)); }
+.revisit-col { width: 100%; max-width: 560px; margin: auto 0; padding: 0 var(--size-4-4); display: flex; flex-direction: column; gap: var(--size-4-4); }
+.revisit-center { align-items: center; text-align: center; }
+.revisit-center h2 { margin: 0; font-size: calc(var(--font-text-size) * 1.75); font-weight: var(--font-normal); }
 
 /* time line */
-.revisit-bar {
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	height: 2px;
-}
-.revisit-bar i {
-	display: block;
-	height: 100%;
-	width: 0;
-	background: var(--interactive-accent);
-	transition: width 1s linear;
-}
+.revisit-bar { position: absolute; inset: 0 0 auto; height: 2px; }
+.revisit-bar i { display: block; width: 0; height: 100%; background: var(--interactive-accent); transition: width 1s linear; }
 
-/* the card */
-.revisit-q {
-	font-size: var(--font-ui-larger);
-	line-height: 1.5;
-	cursor: pointer;
-}
-.revisit-q > :first-child,
-.revisit-a > :first-child {
-	margin-top: 0;
-}
-.revisit-q > :last-child,
-.revisit-a > :last-child {
-	margin-bottom: 0;
-}
-.revisit-answer {
-	opacity: 0;
-	transition: opacity 150ms ease;
-	border-top: 1px solid var(--background-modifier-border);
-	padding-top: var(--size-4-4);
-}
-.revisit.is-flipped .revisit-answer {
-	opacity: 1;
-}
-.revisit-a {
-	font-size: var(--font-ui-medium);
-	line-height: 1.5;
-}
-.revisit-src {
-	margin-top: var(--size-4-2);
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-}
-.revisit-src p {
-	margin: 0;
-}
+/* the card: the answer fades in and never moves the question */
+.revisit-q { font-size: calc(var(--font-text-size) * 1.75); line-height: 1.4; cursor: pointer; }
+.revisit-a { font-size: calc(var(--font-text-size) * 1.35); line-height: 1.5; }
+.revisit-q > :first-child, .revisit-a > :first-child { margin-top: 0; }
+.revisit-q > :last-child, .revisit-a > :last-child { margin-bottom: 0; }
+.revisit-answer { padding-top: var(--size-4-4); border-top: 1px solid var(--background-modifier-border); opacity: 0; visibility: hidden; transition: opacity 150ms ease, visibility 150ms; }
+.revisit.is-flipped .revisit-answer { opacity: 1; visibility: visible; }
+.revisit-src { margin-top: var(--size-4-2); font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.revisit-src p { margin: 0; }
 
-/* grades */
-.revisit-grades {
-	display: flex;
-	justify-content: center;
-	gap: var(--size-4-2);
-	padding: var(--size-4-4) var(--size-4-4) var(--size-4-2);
-	visibility: hidden;
-}
-.revisit.is-flipped .revisit-grades {
-	visibility: visible;
-}
-.revisit-grades button {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	min-width: 76px;
-	height: auto;
-	padding: var(--size-4-2) var(--size-4-3);
-}
-.revisit-grade-int {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-}
-.revisit-grades .mod-cta .revisit-grade-int {
-	color: var(--text-on-accent);
-}
-.revisit-hint {
-	min-height: 1.5em;
-	padding-bottom: var(--size-4-4);
-	text-align: center;
-	font-size: var(--font-ui-smaller);
-	color: var(--text-faint);
-}
+/* grades and hint */
+.revisit-grades { display: flex; justify-content: center; gap: var(--size-4-2); padding: var(--size-4-4); visibility: hidden; }
+.revisit.is-flipped .revisit-grades { visibility: visible; }
+.revisit-grades button { display: flex; flex-direction: column; align-items: center; min-width: 76px; height: auto; padding: var(--size-4-2) var(--size-4-3); }
+.revisit-grade-int { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.revisit-grades .mod-cta .revisit-grade-int { color: var(--text-on-accent); }
+.revisit-hint { min-height: 1.5em; padding-top: var(--size-4-8); font-size: var(--font-ui-smaller); color: var(--text-faint); }
 
 /* start and done */
-.revisit-times {
-	display: flex;
-	gap: var(--size-4-2);
-}
-.revisit-key {
-	margin-left: var(--size-4-2);
-	font-size: var(--font-ui-smaller);
-	opacity: 0.6;
-}
-.revisit-muted {
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-}
-.revisit-link {
-	margin-top: var(--size-4-4);
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-	cursor: pointer;
-}
-.revisit-link:hover {
-	color: var(--text-normal);
-}
+.revisit-times { display: flex; gap: var(--size-4-2); }
+.revisit-key { margin-left: var(--size-4-2); font-size: var(--font-ui-smaller); opacity: 0.6; }
+.revisit-muted, .revisit-link { font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-link { margin-top: var(--size-4-4); cursor: pointer; }
+.revisit-link:hover { color: var(--text-normal); }
 
 /* create window */
-.revisit-field {
-	display: flex;
-	flex-direction: column;
-	gap: var(--size-4-1);
-	margin-bottom: var(--size-4-3);
-}
-.revisit-field label {
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-}
-.revisit-field textarea {
-	width: 100%;
-	resize: vertical;
-}
-.revisit-area {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-	margin-bottom: var(--size-4-3);
-}
-.revisit-create-foot {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-}
-.revisit-create-foot .revisit-area {
-	margin: 0;
-}
+.revisit-field { display: flex; flex-direction: column; gap: var(--size-4-1); margin-bottom: var(--size-4-3); }
+.revisit-field label { font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-field textarea { width: 100%; resize: vertical; }
+.revisit-area { margin-bottom: var(--size-4-3); font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.revisit-create-foot { display: flex; justify-content: space-between; align-items: center; }
+.revisit-create-foot .revisit-area { margin: 0; }
