@@ -10,7 +10,7 @@ Revisit is a spaced repetition plugin for Obsidian built around one small daily 
 
 **1. One question, then you are in.** Every session starts with *How much time today?* (2, 5 or 10 minutes, keys 1 to 3). The session ends by itself when the time is up. Small, fixed sessions are easy to repeat every day, and repeating is what matters: in a study of 96 people doing a daily behaviour, habit strength rose with repetition, and missing a single day did not significantly hurt it ([Lally et al., 2010](https://doi.org/10.1002/ejsp.674)). The same study found the time to form a habit varied a lot, from 18 to 254 days, so the point is to make the daily step cheap, not to promise a number.
 
-**2. No debt.** There is no overdue counter and no queue that grows while you are away. After a missed day you see the cards that are due, for the time you chose. When you finish early, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
+**2. No debt.** There is no overdue counter and no queue that grows while you are away. After a missed day you see the cards that are due, for the time you chose, and the rest simply waits. When the time is up, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
 
 **3. Cards take seconds to make.** Select text, run `New card`, type the question, press `Ctrl+Enter`. A short selection with an empty front becomes a cloze on its own. There is no deck to choose: cards are grouped by the top-level folder of the note.
 
@@ -29,7 +29,6 @@ Checked in November 2026 against each project's README. These are good plugins; 
 | Algorithm | FSRS | FSRS or SM-2 | Anki's | Anki's |
 | Session by time | Yes: 2, 5 or 10 min | Not in README | Not in README | Not in README |
 | Needs Anki | No | No | Yes, with AnkiConnect | Yes, with AnkiConnect |
-| Runs on | Desktop only | See plugin page | Needs desktop Anki | Needs desktop Anki |
 
 Where the others are stronger:
 
@@ -97,7 +96,7 @@ Source: [[CKA study plan]] ^lk7q2a
 
 ## Install
 
-Revisit is awaiting review for the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Desktop only for now.
+Revisit is on its way to the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Desktop only for now.
 
 ## FAQ
 
