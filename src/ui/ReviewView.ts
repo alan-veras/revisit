@@ -8,7 +8,7 @@ export const VIEW_TYPE_REVIEW = 'revisit-review';
 
 // the wording is the design (lowercase, with the key letter), so it is joined here instead of written as one literal
 const NEW_HINT = ['new', 'D discards'].join(' · ');
-const ARMED_HINT = ['press', 'D again to discard'].join(' ');
+const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
 const MORE_TEXT = ['5', 'more min'].join(' ');
 const FLIP_TEXT = ['Space', 'or click to flip'].join(' ');
 
@@ -18,7 +18,7 @@ const KEYS: [string, string][] = [
 	['1 2 3 4', 'Again, Hard, Good, Easy'],
 	['E', 'Edit the card'],
 	['O', 'Open the source note'],
-	['D', 'Discard a new card'],
+	['D D', 'Delete the card'],
 	[(Platform.isMacOS ? 'Cmd' : 'Ctrl') + ' Z', 'Undo the last grade'],
 	['?', 'Show or hide this help'],
 ];
@@ -295,14 +295,14 @@ export class ReviewView extends ItemView {
 	/** D on a new card: asks once more, then deletes it. */
 	private async discard(): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || !isNew(item.fsrs) || this.busy) return;
+		if (this.mode !== 'review' || !item || this.busy) return;
 		window.clearTimeout(this.disarm);
 		if (!this.discardArmed) {
 			this.discardArmed = true;
 			this.hint?.setText(ARMED_HINT);
 			this.disarm = window.setTimeout(() => {
 				this.discardArmed = false;
-				this.hint?.setText(NEW_HINT);
+				this.hint?.setText(isNew(item.fsrs) ? NEW_HINT : '');
 			}, 3000);
 			return;
 		}
