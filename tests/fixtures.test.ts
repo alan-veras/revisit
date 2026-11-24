@@ -29,6 +29,12 @@ describe('0.6.1 data', () => {
 		expect(Object.values(state).every((s) => s.fsrs || s.st === 'suspended')).toBe(true);
 		expect(Object.keys(parseStateText(read('state.backup.json'))).length).toBeGreaterThan(0);
 	});
+	it('writes state.json back byte for byte, unknown fields included', () => {
+		const text = read('state.json').trim();
+		expect(JSON.stringify(parseStateText(text))).toBe(text);
+		const extra = '{"lx":{"st":"active","reread":{"n":1},"fsrs":{"due":"2026-01-01T00:00:00.000Z","state":2,"future":[1]}}}';
+		expect(JSON.stringify(parseStateText(extra))).toBe(extra);
+	});
 	it('reads every line of the log, English or Portuguese', () => {
 		const text = read('review-log.jsonl');
 		const { entries, bad } = parseLogLines(text);
