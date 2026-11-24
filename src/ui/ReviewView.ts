@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Modifier, Scope, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, Modifier, Notice, Scope, WorkspaceLeaf } from 'obsidian';
 import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
@@ -33,7 +33,11 @@ export class ReviewView extends ItemView {
 	private undo: Undo[] = [];
 	private preview: ReturnType<RevisitPlugin['scheduler']['preview']> | null = null;
 	private discardArmed = false;
+	/** a grade, undo or discard is being written: keys wait, so two never overlap */
+	private busy = false;
 	private bar: HTMLElement | null = null;
+	private hint: HTMLElement | null = null;
+	private disarm = 0;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -48,6 +52,10 @@ export class ReviewView extends ItemView {
 		on('o', () => this.openSource());
 		on('d', () => void this.discard());
 		on('z', () => void this.undoLast(), ['Mod']);
+	}
+
+	get reviewing(): boolean {
+		return this.mode === 'review';
 	}
 
 	getViewType(): string {
@@ -121,9 +129,11 @@ export class ReviewView extends ItemView {
 		if (!item) return this.finish();
 		this.flipped = false;
 		this.discardArmed = false;
+		window.clearTimeout(this.disarm);
 		this.preview = this.plugin.scheduler.preview(item.fsrs ?? freshCard(new Date()), new Date());
 		this.bar = root.createDiv({ cls: 'revisit-bar' }).createEl('i');
 		this.tick();
+		const hint = root.createDiv({ cls: 'revisit-hint', text: isNew(item.fsrs) ? NEW_HINT : '' });
 		const col = root.createDiv({ cls: 'revisit-col' });
 		const { front, back } = faces(item);
 		const path = item.card.file ?? '';
@@ -149,7 +159,7 @@ export class ReviewView extends ItemView {
 			b.createSpan({ text: this.preview[grade].label, cls: 'revisit-grade-int' });
 			b.onclick = () => void this.grade(grade);
 		}
-		root.createDiv({ cls: 'revisit-hint', text: isNew(item.fsrs) ? NEW_HINT : '' });
+		this.hint = hint;
 		this.shownAt = Date.now();
 	}
 
@@ -170,7 +180,9 @@ export class ReviewView extends ItemView {
 
 	private async grade(grade: Grade): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || !this.preview) return;
+		if (this.mode !== 'review' || !item || !this.preview || this.busy) return;
+		this.busy = true;
+		this.flipped = false;
 		this.contentEl.removeClass('is-flipped');
 		const { store } = this.plugin;
 		const next = this.preview[grade].card;
@@ -189,15 +201,23 @@ export class ReviewView extends ItemView {
 		this.undo.push(undo);
 		this.graded.set(item.key, (this.graded.get(item.key) ?? 0) + 1);
 		this.index++;
-		await store.saveState();
-		await store.appendLog(entry);
+		try {
+			await store.saveState();
+			await store.appendLog(entry);
+		} catch (e) {
+			new Notice(`Revisit: could not save the grade (${e instanceof Error ? e.message : String(e)}).`);
+		} finally {
+			this.busy = false;
+		}
 		if (Date.now() >= this.endsAt) this.finish();
 		else this.show('review');
 	}
 
 	private async undoLast(): Promise<void> {
+		if (this.busy || this.mode === 'start') return;
 		const u = this.undo.pop();
 		if (!u) return;
+		this.busy = true;
 		const { store } = this.plugin;
 		if (u.inserted >= 0 && this.queue[u.inserted] === u.item) this.queue.splice(u.inserted, 1);
 		if (u.before) store.state[u.item.key] = u.before;
@@ -206,8 +226,14 @@ export class ReviewView extends ItemView {
 		const n = (this.graded.get(u.item.key) ?? 1) - 1;
 		if (n) this.graded.set(u.item.key, n);
 		else this.graded.delete(u.item.key);
-		await store.saveState();
-		await store.popLog();
+		try {
+			await store.saveState();
+			await store.popLog(u.item.key);
+		} catch (e) {
+			new Notice(`Revisit: could not undo (${e instanceof Error ? e.message : String(e)}).`);
+		} finally {
+			this.busy = false;
+		}
 		this.index = u.index;
 		this.show('review');
 	}
@@ -233,18 +259,26 @@ export class ReviewView extends ItemView {
 	/** D on a new card: asks once more, then deletes it. */
 	private async discard(): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || !isNew(item.fsrs)) return;
-		const hint = this.contentEl.querySelector('.revisit-hint');
+		if (this.mode !== 'review' || !item || !isNew(item.fsrs) || this.busy) return;
+		window.clearTimeout(this.disarm);
 		if (!this.discardArmed) {
 			this.discardArmed = true;
-			hint?.setText(ARMED_HINT);
-			window.setTimeout(() => {
+			this.hint?.setText(ARMED_HINT);
+			this.disarm = window.setTimeout(() => {
 				this.discardArmed = false;
-				if (this.mode === 'review' && hint?.isConnected) hint.setText(NEW_HINT);
+				this.hint?.setText(NEW_HINT);
 			}, 3000);
 			return;
 		}
-		await this.plugin.store.deleteCard(item.card);
+		this.busy = true;
+		try {
+			await this.plugin.store.deleteCard(item.card);
+		} catch (e) {
+			new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)}).`);
+			return;
+		} finally {
+			this.busy = false;
+		}
 		this.queue = this.queue.filter((it) => it.card.id !== item.card.id);
 		this.show('review');
 	}
@@ -275,6 +309,7 @@ export class ReviewView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		window.clearTimeout(this.disarm);
 		this.contentEl.empty();
 	}
 }
