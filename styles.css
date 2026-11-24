@@ -1,7 +1,7 @@
 /* Revisit: a calm column. Theme variables only; the card text uses --revisit-serif, falling back to the text font. */
-.revisit { --revisit-serif: Georgia, 'Iowan Old Style', serif; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 0; container-type: inline-size; --rv-ui: clamp(15px, 1.5cqi, 24px); }
+.revisit { --revisit-serif: Georgia, 'Iowan Old Style', serif; position: relative; display: flex; flex-direction: column; align-items: center; height: 100%; padding: 0; container-type: inline-size; --rv-ui: clamp(15px, 1.5cqi, 24px); }
 .revisit-serif { font-family: var(--revisit-serif, var(--font-text)); }
-.revisit-col { width: 100%; max-width: min(960px, 72cqi); margin: 0; padding: 0 var(--size-4-4); display: flex; flex-direction: column; gap: clamp(16px, 2.4cqi, 40px); }
+.revisit-col { width: 100%; max-width: min(960px, 72cqi); margin: auto 0; padding: 0 var(--size-4-4); display: flex; flex-direction: column; gap: clamp(16px, 2.4cqi, 40px); }
 .revisit-center { align-items: center; text-align: center; }
 .revisit-center h2 { margin: 0; font-size: clamp(28px, 4.2cqi, 68px); font-weight: var(--font-normal); }
 
@@ -10,8 +10,6 @@
 .revisit-bar i { display: block; width: 0; height: 100%; background: var(--interactive-accent); transition: width 1s linear; }
 
 /* the card: the answer fades in and never moves the question */
-.revisit-q, .revisit-a { text-align: center; }
-.revisit-a pre, .revisit-a ul, .revisit-a ol, .revisit-a table { text-align: left; display: inline-block; max-width: 100%; }
 .revisit-q { font-size: clamp(26px, 3.6cqi, 60px); line-height: 1.4; cursor: pointer; }
 .revisit-a { font-size: clamp(20px, 2.6cqi, 42px); line-height: 1.5; }
 .revisit-q > :first-child, .revisit-a > :first-child { margin-top: 0; }
