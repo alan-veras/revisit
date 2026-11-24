@@ -163,6 +163,7 @@ export class ReviewView extends ItemView {
 		const item = this.queue[this.index];
 		if (!item) return this.finish();
 		this.flipped = false;
+		this.contentEl.removeClass('is-flipped');
 		this.discardArmed = false;
 		window.clearTimeout(this.disarm);
 		this.preview = this.plugin.scheduler.preview(item.fsrs ?? freshCard(new Date()), new Date());
