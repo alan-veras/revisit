@@ -52,6 +52,8 @@ export class ReviewView extends ItemView {
 	private disarm = 0;
 	/** the length picked at Start; Keep going offers it again */
 	private minutes = TIMES[0] as number;
+	/** what Keep going would review, worked out when Done is drawn */
+	private more: QueueItem[] = [];
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -121,12 +123,23 @@ export class ReviewView extends ItemView {
 	private drawStart(root: HTMLElement): void {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
+		this.drawTimes(col, (m) => this.startSession(m));
+	}
+
+	/** The three lengths, with their keys; the one picked last is highlighted. */
+	private drawTimes(col: HTMLElement, pick: (minutes: number) => void): void {
 		const row = col.createDiv({ cls: 'revisit-times' });
 		TIMES.forEach((m, i) => {
-			const b = row.createEl('button', { text: `${m} min`, cls: i === 0 ? 'mod-cta' : '' });
+			const b = row.createEl('button', { text: `${m} min`, cls: m === this.minutes ? 'mod-cta' : '' });
 			b.createSpan({ text: String(i + 1), cls: 'revisit-key' });
-			b.onclick = () => this.startSession(m);
+			b.onclick = () => pick(m);
 		});
+	}
+
+	private keepGoing(minutes: number): void {
+		if (!this.more.length) return;
+		this.queue = this.more;
+		this.startSession(minutes, true);
 	}
 
 	/** `more` keeps going after Done: the count and the undo history carry on. */
@@ -217,6 +230,7 @@ export class ReviewView extends ItemView {
 
 	private digit(n: number): void {
 		if (this.mode === 'start' && n <= 3) this.startSession(TIMES[n - 1] as number);
+		else if (this.mode === 'done' && n <= 3) this.keepGoing(TIMES[n - 1] as number);
 		else if (this.mode === 'review' && this.flipped && n <= 4) void this.grade(n as Grade);
 	}
 
@@ -342,11 +356,10 @@ export class ReviewView extends ItemView {
 		const next = left.length ? null : nextCardLabel(items, store.log, now);
 		if (next) col.createDiv({ text: next, cls: 'revisit-muted' });
 		const more = extraQueue(items, { now, log: store.log, retrievability: (c, t) => scheduler.retrievability(c, t) });
+		this.more = more;
 		if (more.length) {
-			col.createEl('button', { text: `Keep going +${this.minutes} min`, cls: 'mod-cta' }).onclick = () => {
-				this.queue = more;
-				this.startSession(this.minutes, true);
-			};
+			col.createDiv({ text: 'Keep going?', cls: 'revisit-muted' });
+			this.drawTimes(col, (m) => this.keepGoing(m));
 		}
 		col.createEl('a', { text: 'New card', cls: 'revisit-link' }).onclick = () => this.plugin.openCreate({ onSaved: () => (n ? this.show('done') : void this.begin()) });
 	}
