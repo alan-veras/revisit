@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Modifier, Notice, Scope, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, Modifier, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
@@ -10,6 +10,18 @@ export const VIEW_TYPE_REVIEW = 'revisit-review';
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to discard'].join(' ');
 const MORE_TEXT = ['5', 'more min'].join(' ');
+const FLIP_TEXT = ['Space', 'or click to flip'].join(' ');
+
+/** The keys the review answers to, shown by the ? button. */
+const KEYS: [string, string][] = [
+	['Space', 'Flip the card'],
+	['1 2 3 4', 'Again, Hard, Good, Easy'],
+	['E', 'Edit the card'],
+	['O', 'Open the source note'],
+	['D', 'Discard a new card'],
+	[(Platform.isMacOS ? 'Cmd' : 'Ctrl') + ' Z', 'Undo the last grade'],
+	['?', 'Show or hide this help'],
+];
 
 interface Undo {
 	item: QueueItem;
@@ -52,6 +64,7 @@ export class ReviewView extends ItemView {
 		on('o', () => this.openSource());
 		on('d', () => void this.discard());
 		on('z', () => void this.undoLast(), ['Mod']);
+		on('?', () => this.toggleHelp(), ['Shift']);
 	}
 
 	get reviewing(): boolean {
@@ -97,6 +110,7 @@ export class ReviewView extends ItemView {
 		if (mode === 'start') this.drawStart(root);
 		else if (mode === 'review') this.drawCard(root);
 		else this.drawDone(root);
+		if (mode !== 'done') this.drawHelp(root);
 		this.plugin.updateStatus();
 	}
 
@@ -155,12 +169,34 @@ export class ReviewView extends ItemView {
 		const grades = root.createDiv({ cls: 'revisit-grades' });
 		for (const { grade, name } of GRADES) {
 			const b = grades.createEl('button', { cls: `revisit-g${grade}` });
-			b.createSpan({ text: name, cls: 'revisit-grade-name' });
+			const label = b.createSpan({ text: name, cls: 'revisit-grade-name' });
+			label.createSpan({ text: String(grade), cls: 'revisit-key' });
 			b.createSpan({ text: this.preview[grade].label, cls: 'revisit-grade-int' });
 			b.onclick = () => void this.grade(grade);
 		}
+		grades.createDiv({ cls: 'revisit-flip', text: FLIP_TEXT });
 		this.hint = hint;
 		this.shownAt = Date.now();
+	}
+
+	// ---- Help ----
+
+	/** A quiet ? in the corner; it opens the list of keys, so a first-time user is never stuck. */
+	private drawHelp(root: HTMLElement): void {
+		const btn = root.createEl('button', { cls: 'revisit-help-btn clickable-icon', attr: { 'aria-label': 'Keyboard shortcuts' } });
+		setIcon(btn, 'help-circle');
+		const panel = root.createDiv({ cls: 'revisit-help' });
+		panel.createDiv({ cls: 'revisit-help-title', text: 'Keyboard shortcuts' });
+		for (const [key, what] of KEYS) {
+			const row = panel.createDiv({ cls: 'revisit-help-row' });
+			row.createEl('kbd', { text: key });
+			row.createSpan({ text: what });
+		}
+		btn.onclick = () => this.toggleHelp();
+	}
+
+	private toggleHelp(): void {
+		this.contentEl.toggleClass('is-help', !this.contentEl.hasClass('is-help'));
 	}
 
 	private tick(): void {
