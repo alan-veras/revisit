@@ -1,7 +1,7 @@
 import { App, normalizePath, Notice, TFile } from 'obsidian';
 import { appendCard, deckPath, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../core/format';
 import type { Card, CardState, RevlogEntry } from '../core/types';
-import { parseLogLines, parseStateText } from './data';
+import { DEVICES_DIR, isConflictPath, mergeLogs, mergeStates, newDeviceId, parseLogLines, parseStateText } from './data';
 
 type NewCard = Omit<Card, 'start' | 'end' | 'file'>;
 
@@ -19,6 +19,30 @@ export class Store {
 		private folder: () => string,
 	) {}
 
+	/** this device's id: kept per device (local storage never syncs) */
+	get deviceId(): string {
+		if (this.id) return this.id;
+		const saved: unknown = this.app.loadLocalStorage('revisit-device');
+		if (typeof saved === 'string' && saved) this.id = saved;
+		else {
+			this.id = newDeviceId();
+			this.app.saveLocalStorage('revisit-device', this.id);
+		}
+		return this.id;
+	}
+	private id = '';
+
+	/** true for files this plugin writes for other devices or for itself under devices/ */
+	isDevicePath(path: string): boolean {
+		return path.startsWith(`${this.base}/${DEVICES_DIR}/`);
+	}
+	isOwnPath(path: string): boolean {
+		return path.startsWith(`${this.base}/${DEVICES_DIR}/${this.deviceId}/`);
+	}
+	private get ownDir(): string {
+		return `${DEVICES_DIR}/${this.deviceId}`;
+	}
+
 	private get base(): string {
 		return normalizePath(this.folder());
 	}
@@ -26,30 +50,53 @@ export class Store {
 		return `${this.base}/${name}`;
 	}
 
-	/** The state file first; when it is unreadable, the last good copy written before it. */
-	private async readState(): Promise<Record<string, CardState>> {
+	/** The state file of a folder first; when it is unreadable, the last good copy written before it. */
+	private async readState(dir: string): Promise<Record<string, CardState>> {
 		const adapter = this.app.vault.adapter;
 		for (const name of ['state.json', 'state.backup.json']) {
+			const path = dir ? `${this.base}/${dir}/${name}` : this.path(name);
 			try {
-				if (await adapter.exists(this.path(name))) return parseStateText(await adapter.read(this.path(name)));
+				if (await adapter.exists(path)) return parseStateText(await adapter.read(path));
 			} catch (e) {
-				new Notice(`Revisit: ${name} is unreadable (${e instanceof Error ? e.message : String(e)}); trying the backup.`);
+				new Notice(`Revisit: ${path} is unreadable (${e instanceof Error ? e.message : String(e)}); trying the backup.`);
 			}
 		}
 		return {};
 	}
 
+	private async readLog(dir: string): Promise<RevlogEntry[]> {
+		const path = dir ? `${this.base}/${dir}/review-log.jsonl` : this.path('review-log.jsonl');
+		if (!(await this.app.vault.adapter.exists(path))) return [];
+		const parsed = parseLogLines(await this.app.vault.adapter.read(path));
+		if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in ${path}.`);
+		return parsed.entries;
+	}
+
+	/** Device folders under devices/ (conflict copies skipped). */
+	private async deviceDirs(): Promise<string[]> {
+		const root = `${this.base}/${DEVICES_DIR}`;
+		if (!(await this.app.vault.adapter.exists(root))) return [];
+		const { folders } = await this.app.vault.adapter.list(root);
+		return folders
+			.filter((f) => !isConflictPath(f))
+			.map((f) => `${DEVICES_DIR}/${f.split('/').pop() ?? ''}`)
+			.sort();
+	}
+
+	/** State and log of every layer: the legacy root files and each device. Used on open and when another device's files change. */
+	async loadShared(): Promise<void> {
+		const dirs = ['', ...(await this.deviceDirs())];
+		const states = await Promise.all(dirs.map((d) => this.readState(d)));
+		const logs = await Promise.all(dirs.map((d) => this.readLog(d)));
+		this.state = mergeStates(states);
+		this.log = mergeLogs(logs);
+		const own = dirs.indexOf(this.ownDir);
+		this.lastSaved = own >= 0 ? JSON.stringify(states[own]) : null;
+	}
+
 	/** Reads everything: state, log and cards. Used on open; during a session only the cards are read again, so a grade in flight is never overwritten. */
 	async load(): Promise<void> {
-		const adapter = this.app.vault.adapter;
-		this.state = await this.readState();
-		this.lastSaved = JSON.stringify(this.state);
-		this.log = [];
-		if (await adapter.exists(this.path('review-log.jsonl'))) {
-			const parsed = parseLogLines(await adapter.read(this.path('review-log.jsonl')));
-			this.log = parsed.entries;
-			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in review-log.jsonl.`);
-		}
+		await this.loadShared();
 		await this.loadCards();
 	}
 
@@ -59,7 +106,7 @@ export class Store {
 	}
 
 	private async readCards(): Promise<void> {
-		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/'));
+		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/') && !this.isDevicePath(f.path) && !isConflictPath(f.path));
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		const taken = new Set<string>();
 		texts.forEach((t) => parseCardFile(t).forEach((c) => c.id && taken.add(c.id)));
@@ -124,28 +171,35 @@ export class Store {
 	async saveState(): Promise<void> {
 		const next = JSON.stringify(this.state);
 		if (next === this.lastSaved) return;
-		await this.ensureFolder(this.path('state.json'));
+		await this.ensureFolder(this.path(`${this.ownDir}/state.json`));
 		// the copy written before this one is the recovery point if the write dies halfway
-		if (this.lastSaved !== null) await this.app.vault.adapter.write(this.path('state.backup.json'), this.lastSaved).catch(() => undefined);
-		await this.app.vault.adapter.write(this.path('state.json'), next);
+		if (this.lastSaved !== null) await this.app.vault.adapter.write(this.path(`${this.ownDir}/state.backup.json`), this.lastSaved).catch(() => undefined);
+		await this.app.vault.adapter.write(this.path(`${this.ownDir}/state.json`), next);
 		this.lastSaved = next;
+	}
+
+	private get ownLog(): string {
+		return this.path(`${this.ownDir}/review-log.jsonl`);
 	}
 
 	async appendLog(entry: RevlogEntry): Promise<void> {
 		this.log.push(entry);
-		await this.ensureFolder(this.path('review-log.jsonl'));
-		await this.app.vault.adapter.append(this.path('review-log.jsonl'), JSON.stringify(entry) + '\n');
+		await this.ensureFolder(this.ownLog);
+		await this.app.vault.adapter.append(this.ownLog, JSON.stringify(entry) + '\n');
 	}
 
-	/** Takes back the last log line (undo) when it is the grade of `id`; every other line keeps its bytes. */
+	/** Takes back the last line of THIS device's log (undo) when it is the grade of `id`; every other line keeps its bytes. */
 	async popLog(id: string): Promise<void> {
-		if (this.log.at(-1)?.id === id) this.log.pop();
-		const path = this.path('review-log.jsonl');
+		const path = this.ownLog;
+		if (!(await this.app.vault.adapter.exists(path))) return;
 		const lines = (await this.app.vault.adapter.read(path)).split('\n');
 		while (lines.length && !(lines.at(-1) ?? '').trim()) lines.pop();
 		const last = lines.at(-1);
 		if (last === undefined || !last.includes(`"id":"${id}"`)) return;
 		lines.pop();
+		const gone = parseLogLines(last).entries[0];
+		const i = this.log.findLastIndex((e) => e.id === id && (!gone || e.t === gone.t));
+		if (i >= 0) this.log.splice(i, 1);
 		await this.app.vault.adapter.write(path, lines.map((l) => l + '\n').join(''));
 	}
 }
