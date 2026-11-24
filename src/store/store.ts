@@ -1,4 +1,4 @@
-import { App, normalizePath, Notice, TFile } from 'obsidian';
+import { App, normalizePath, Notice, TFile, Vault } from 'obsidian';
 import { appendCard, deckPath, ensureIds, newId, parseCardFile, removeCard, replaceCard, serializeCard } from '../core/format';
 import type { Card, CardState, RevlogEntry } from '../core/types';
 import { parseLogLines, parseStateText } from './data';
@@ -58,8 +58,18 @@ export class Store {
 		return this.loading;
 	}
 
+	/** Markdown files under the Revisit folder only: the rest of the vault is never listed. */
+	private folderFiles(): TFile[] {
+		const files: TFile[] = [];
+		const root = this.app.vault.getFolderByPath(this.base);
+		if (root) Vault.recurseChildren(root, (f) => {
+			if (f instanceof TFile && f.extension === 'md') files.push(f);
+		});
+		return files;
+	}
+
 	private async readCards(): Promise<void> {
-		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/'));
+		const files = this.folderFiles();
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		const taken = new Set<string>();
 		texts.forEach((t) => parseCardFile(t).forEach((c) => c.id && taken.add(c.id)));
@@ -139,11 +149,11 @@ export class Store {
 
 	/** Takes back the last log line (undo) when it is the grade of `id`; every other line keeps its bytes. */
 	async popLog(id: string): Promise<void> {
-		if (this.log.at(-1)?.id === id) this.log.pop();
+		if (this.log[this.log.length - 1]?.id === id) this.log.pop();
 		const path = this.path('review-log.jsonl');
 		const lines = (await this.app.vault.adapter.read(path)).split('\n');
-		while (lines.length && !(lines.at(-1) ?? '').trim()) lines.pop();
-		const last = lines.at(-1);
+		while (lines.length && !(lines[lines.length - 1] ?? '').trim()) lines.pop();
+		const last = lines[lines.length - 1];
 		if (last === undefined || !last.includes(`"id":"${id}"`)) return;
 		lines.pop();
 		await this.app.vault.adapter.write(path, lines.map((l) => l + '\n').join(''));

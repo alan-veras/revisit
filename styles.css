@@ -24,7 +24,7 @@
 .revisit.is-flipped .revisit-grades { visibility: visible; }
 .revisit-grades button { --g: var(--color-base-50-rgb, 128,128,128); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 7.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); font-weight: var(--font-semibold); color: rgb(var(--g)); background: rgba(var(--g), 0.12); border: 1px solid rgba(var(--g), 0.35); box-shadow: none; }
 .revisit-grades button:hover { background: rgba(var(--g), 0.22); }
-.revisit-g1 { --g: var(--color-red-rgb) !important; } .revisit-g2 { --g: var(--color-orange-rgb) !important; } .revisit-g3 { --g: var(--color-green-rgb) !important; } .revisit-g4 { --g: var(--color-blue-rgb) !important; }
+.revisit-grades .revisit-g1 { --g: var(--color-red-rgb); } .revisit-grades .revisit-g2 { --g: var(--color-orange-rgb); } .revisit-grades .revisit-g3 { --g: var(--color-green-rgb); } .revisit-grades .revisit-g4 { --g: var(--color-blue-rgb); }
 .revisit-grade-int { font-size: 0.75em; font-weight: var(--font-normal); color: var(--text-muted); }
 .revisit-hint { min-height: 1.5em; padding-top: var(--size-4-8); font-size: calc(var(--rv-ui) * 0.75); color: var(--text-faint); }
 
