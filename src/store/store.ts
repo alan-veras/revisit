@@ -10,9 +10,9 @@ export class Store {
 	cards: Card[] = [];
 	state: Record<string, CardState> = {};
 	log: RevlogEntry[] = [];
-	/** log lines as read, so undo rewrites the file without touching the bytes of the kept lines */
-	private rawLog: string[] = [];
 	private lastSaved: string | null = null;
+	/** card loads run one at a time: two of them at once could give the same card two ids */
+	private loading: Promise<void> = Promise.resolve();
 
 	constructor(
 		private app: App,
@@ -39,18 +39,26 @@ export class Store {
 		return {};
 	}
 
+	/** Reads everything: state, log and cards. Used on open; during a session only the cards are read again, so a grade in flight is never overwritten. */
 	async load(): Promise<void> {
 		const adapter = this.app.vault.adapter;
 		this.state = await this.readState();
 		this.lastSaved = JSON.stringify(this.state);
 		this.log = [];
-		this.rawLog = [];
 		if (await adapter.exists(this.path('review-log.jsonl'))) {
 			const parsed = parseLogLines(await adapter.read(this.path('review-log.jsonl')));
 			this.log = parsed.entries;
-			this.rawLog = parsed.lines;
 			if (parsed.bad) new Notice(`Revisit: ${parsed.bad} unreadable line(s) ignored in review-log.jsonl.`);
 		}
+		await this.loadCards();
+	}
+
+	loadCards(): Promise<void> {
+		this.loading = this.loading.catch(() => undefined).then(() => this.readCards());
+		return this.loading;
+	}
+
+	private async readCards(): Promise<void> {
 		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(this.base + '/'));
 		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		const taken = new Set<string>();
@@ -87,7 +95,7 @@ export class Store {
 			await this.ensureFolder(path);
 			await this.app.vault.create(path, appendCard('', block));
 		}
-		await this.load();
+		await this.loadCards();
 		return id;
 	}
 
@@ -100,7 +108,7 @@ export class Store {
 			if (!fresh) throw new Error('Card not found in the file.');
 			return edit(text, fresh);
 		});
-		await this.load();
+		await this.loadCards();
 	}
 
 	async updateCard(card: Card, next: NewCard): Promise<void> {
@@ -125,15 +133,19 @@ export class Store {
 
 	async appendLog(entry: RevlogEntry): Promise<void> {
 		this.log.push(entry);
-		this.rawLog.push(JSON.stringify(entry));
 		await this.ensureFolder(this.path('review-log.jsonl'));
 		await this.app.vault.adapter.append(this.path('review-log.jsonl'), JSON.stringify(entry) + '\n');
 	}
 
-	/** Takes back the last log line (undo). */
-	async popLog(): Promise<void> {
-		this.log.pop();
-		this.rawLog.pop();
-		await this.app.vault.adapter.write(this.path('review-log.jsonl'), this.rawLog.map((l) => l + '\n').join(''));
+	/** Takes back the last log line (undo) when it is the grade of `id`; every other line keeps its bytes. */
+	async popLog(id: string): Promise<void> {
+		if (this.log.at(-1)?.id === id) this.log.pop();
+		const path = this.path('review-log.jsonl');
+		const lines = (await this.app.vault.adapter.read(path)).split('\n');
+		while (lines.length && !(lines.at(-1) ?? '').trim()) lines.pop();
+		const last = lines.at(-1);
+		if (last === undefined || !last.includes(`"id":"${id}"`)) return;
+		lines.pop();
+		await this.app.vault.adapter.write(path, lines.map((l) => l + '\n').join(''));
 	}
 }

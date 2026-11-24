@@ -31,10 +31,9 @@ describe('0.6.1 data', () => {
 	});
 	it('reads every line of the log, English or Portuguese', () => {
 		const text = read('review-log.jsonl');
-		const { entries, bad, lines } = parseLogLines(text);
+		const { entries, bad } = parseLogLines(text);
 		expect(bad).toBe(0);
 		expect(entries).toHaveLength(text.split('\n').filter(Boolean).length);
-		expect(lines.join('\n') + '\n').toBe(text);
 		expect(entries.every((e) => e.id && e.grade >= 1 && e.grade <= 4 && e.type)).toBe(true);
 	});
 	it('every card of the folder has a state entry or is new, and builds items', () => {

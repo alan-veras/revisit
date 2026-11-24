@@ -26,12 +26,10 @@ function toEntry(raw: Record<string, unknown>): RevlogEntry {
 }
 
 /**
- * Reads review-log.jsonl skipping lines that do not parse. The raw lines come back
- * too, so undo can rewrite the file without touching the bytes of the kept lines.
+ * Reads review-log.jsonl skipping lines that do not parse.
  */
-export function parseLogLines(text: string): { entries: RevlogEntry[]; lines: string[]; bad: number } {
+export function parseLogLines(text: string): { entries: RevlogEntry[]; bad: number } {
 	const entries: RevlogEntry[] = [];
-	const lines: string[] = [];
 	let bad = 0;
 	for (const line of text.split('\n')) {
 		if (!line.trim()) continue;
@@ -39,10 +37,9 @@ export function parseLogLines(text: string): { entries: RevlogEntry[]; lines: st
 			const parsed: unknown = JSON.parse(line);
 			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
 			entries.push(toEntry(parsed as Record<string, unknown>));
-			lines.push(line);
 		} catch {
 			bad++;
 		}
 	}
-	return { entries, lines, bad };
+	return { entries, bad };
 }

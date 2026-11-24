@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { MarkdownView, normalizePath, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import { buildItems, buildQueue } from './core/queue';
 import { Scheduler } from './core/scheduler';
 import type { Card } from './core/types';
@@ -44,7 +44,7 @@ export default class RevisitPlugin extends Plugin {
 			// a card file edited by hand is read again
 			this.registerEvent(
 				this.app.vault.on('modify', (f) => {
-					if (f instanceof TFile && f.path.startsWith(this.settings.folder + '/') && f.extension === 'md') void this.refresh();
+					if (f instanceof TFile && f.path.startsWith(normalizePath(this.settings.folder) + '/') && f.extension === 'md') void this.store.loadCards().then(() => this.updateStatus());
 				}),
 			);
 		});
