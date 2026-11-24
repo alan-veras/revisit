@@ -204,9 +204,9 @@ export class ReviewView extends ItemView {
 	}
 
 	private flip(): void {
-		if (this.mode !== 'review' || this.flipped) return;
-		this.flipped = true;
-		this.contentEl.addClass('is-flipped');
+		if (this.mode !== 'review' || this.busy) return;
+		this.flipped = !this.flipped;
+		this.contentEl.toggleClass('is-flipped', this.flipped);
 	}
 
 	private digit(n: number): void {
