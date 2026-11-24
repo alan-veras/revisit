@@ -154,7 +154,7 @@ export class ReviewView extends ItemView {
 		);
 		const grades = root.createDiv({ cls: 'revisit-grades' });
 		for (const { grade, name } of GRADES) {
-			const b = grades.createEl('button', { cls: grade === 3 ? 'mod-cta' : '' });
+			const b = grades.createEl('button', { cls: `revisit-g${grade}` });
 			b.createSpan({ text: name, cls: 'revisit-grade-name' });
 			b.createSpan({ text: this.preview[grade].label, cls: 'revisit-grade-int' });
 			b.onclick = () => void this.grade(grade);
