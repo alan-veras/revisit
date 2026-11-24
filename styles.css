@@ -30,7 +30,7 @@
 
 /* start and done */
 .revisit-times { display: flex; gap: var(--size-4-3); }
-.revisit-times button { min-width: 6.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); }
+.revisit-center > button, .revisit-times button { min-width: 6.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); }
 .revisit-key { margin-left: var(--size-4-2); font-size: var(--font-ui-smaller); opacity: 0.6; }
 .revisit-muted, .revisit-link { font-size: calc(var(--rv-ui) * 0.85); color: var(--text-muted); }
 .revisit-link { margin-top: var(--size-4-4); cursor: pointer; }
