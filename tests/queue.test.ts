@@ -99,3 +99,11 @@ describe('keep going', () => {
 		expect(extra([], {})).toEqual([]);
 	});
 });
+
+describe('next card label', () => {
+	it('says tomorrow when a sibling due today was held back', () => {
+		const cloze = card('lclz002', { type: 'Cloze', front: '==a== ==b==', back: '' });
+		const items = buildItems([cloze], { lclz002: reviewed(at(5)), 'lclz002-c2': reviewed(at(-1)) });
+		expect(nextCardLabel(items, [entry('lclz002', false)], now)).toBe('Next card tomorrow');
+	});
+});

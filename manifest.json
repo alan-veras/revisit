@@ -1,10 +1,10 @@
 {
 	"id": "revisit",
 	"name": "Revisit",
-	"version": "1.0.0-beta",
+	"version": "1.0.0",
 	"minAppVersion": "1.13.0",
 	"description": "Spaced repetition flashcards with FSRS. Pick your time and review.",
 	"author": "Alan Veras",
 	"fundingUrl": "https://www.buymeacoffee.com/alanveras",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }

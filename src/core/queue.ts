@@ -115,8 +115,10 @@ export function nextCardLabel(items: QueueItem[], log: RevlogEntry[], now: Date)
 	const dues = live.filter((it) => !isNew(it.fsrs)).map((it) => (it.fsrs as FsrsCard).due.getTime());
 	const newLeft = introduced >= NEW_PER_DAY && live.some((it) => isNew(it.fsrs));
 	const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-	const days = new Set(dues.filter((t) => t > endOfDay(now).getTime()).map((t) => Math.round((startOf(new Date(t)) - startOf(now)) / 86400000)));
-	if (newLeft) days.add(1);
+	const end = endOfDay(now).getTime();
+	const days = new Set(dues.filter((t) => t > end).map((t) => Math.round((startOf(new Date(t)) - startOf(now)) / 86400000)));
+	// due today but held back (a sibling of a card graded today): it comes tomorrow
+	if (newLeft || dues.some((t) => t <= end)) days.add(1);
 	if (!days.size) return null;
 	const d = Math.min(...days);
 	return d <= 1 ? 'Next card tomorrow' : `Next card in ${d} days`;
