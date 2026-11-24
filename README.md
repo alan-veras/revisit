@@ -1,14 +1,57 @@
 # Revisit
 
-Flashcards for Obsidian with FSRS, kept small: pick your time, review, done.
+Flashcards that become a habit: pick your time, review, done.
+
+Revisit is a spaced repetition plugin for Obsidian built around one small daily session. It is for people who want to remember what they read and write in their vault, and who have tried flashcards before and watched the pile of due cards grow until they stopped. There is no deck to set up, no backlog to fear and no syntax to learn.
+
+<!-- demo.gif -->
+
+## Why Revisit
+
+**1. One question, then you are in.** Every session starts with *How much time today?* (2, 5 or 10 minutes, keys 1 to 3). The session ends by itself when the time is up. Small, fixed sessions are easy to repeat every day, and repeating is what matters: in a study of 96 people doing a daily behaviour, habit strength rose with repetition, and missing a single day did not significantly hurt it ([Lally et al., 2010](https://doi.org/10.1002/ejsp.674)). The same study found the time to form a habit varied a lot, from 18 to 254 days, so the point is to make the daily step cheap, not to promise a number.
+
+**2. No debt.** There is no overdue counter and no queue that grows while you are away. After a missed day you see the cards that are due, for the time you chose. When you finish early, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
+
+**3. Cards take seconds to make.** Select text, run `New card`, type the question, press `Ctrl+Enter`. A short selection with an empty front becomes a cloze on its own. There is no deck to choose: cards are grouped by the top-level folder of the note.
+
+**4. Your notes stay clean.** Revisit writes nothing to the note a card came from. Cards are plain markdown in their own folder (`Revisit/` by default), readable without the plugin. Scheduling lives in `state.json` and the review log in `review-log.jsonl`.
+
+**5. A modern scheduler, without tuning.** Revisit uses [FSRS](https://github.com/open-spaced-repetition/ts-fsrs) with one setting: desired retention (default 90%). At most 10 new cards enter per day.
+
+## How it compares
+
+Checked in November 2026 against each project's README. These are good plugins; they solve different problems.
+
+| | **Revisit** | [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) | [Obsidian_to_Anki](https://github.com/ObsidianToAnki/Obsidian_to_Anki) | [Flashcards (v2)](https://github.com/reuseman/flashcards-obsidian) |
+|---|---|---|---|---|
+| Create a card | Select text, `New card`, type the question | Write inline syntax in a note (`Question::Answer`, multi-line `?`) under a `#flashcards` tag | Write notes in markdown, then send them to Anki | Write `Question::Answer` in a note, then run an update command |
+| Marks your note | No | Yes: scheduling is kept as an HTML comment next to the card | Yes: writes an ID, in an HTML comment by default | Yes: adds a `^q-xxxx` anchor and a `flashcards` property |
+| Algorithm | FSRS | FSRS or SM-2 | Anki's | Anki's |
+| Session by time | Yes: 2, 5 or 10 min | Not in README | Not in README | Not in README |
+| Needs Anki | No | No | Yes, with AnkiConnect | Yes, with AnkiConnect |
+| Runs on | Desktop only | See plugin page | Needs desktop Anki | Needs desktop Anki |
+
+Where the others are stronger:
+
+- **Anki users.** If you already live in Anki, or want its mobile apps, add-ons and sync, use Obsidian_to_Anki or Flashcards. Revisit does not talk to Anki.
+- **Cards inside notes.** If you like writing `Question::Answer` next to your prose, or want whole-note review, Spaced Repetition is built for that. Revisit keeps cards out of your notes on purpose.
+- **Mobile.** Revisit is desktop only for now.
+
+Revisit is not for you if you need Anki sync, inline card syntax, or review on your phone today. It is for you if you would rather open one small session each day and be done.
+
+## Quick start
+
+1. Select a sentence in any note and run `New card` (command palette, right-click, or the Done screen). Type the question. Press `Ctrl+Enter`.
+2. Open Revisit from the ribbon icon, the status bar or the `Review` command. Choose 2, 5 or 10 minutes.
+3. Flip with Space, grade with 1 to 4. When the time is up, you are done.
 
 ## How it works
 
-1. **Start.** Open Revisit from the ribbon icon, the status bar or the `Review` command and answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3).
-2. **Review.** One card at a time. Space or a click flips it (and flips it back); grade with Again, Hard, Good or Easy (keys 1 to 4), each showing its next interval. The session ends by itself when the time is up. `E` edits the card, `O` opens its source, `D` twice deletes the card, `Ctrl+Z` undoes the last grade. The `?` in the corner lists every key.
-3. **Done.** A calm screen: how many cards you did and when the next one comes back. If cards of today were left over, *Keep going?* offers 2, 5 or 10 more minutes; if not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day.
+1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3).
+2. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up.
+3. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. A `New card` link sits here too.
 
-New cards enter at most 10 per day.
+Reviews always mix every deck. There is no overdue counter.
 
 ## Creating cards
 
@@ -17,6 +60,21 @@ New cards enter at most 10 per day.
 `New card` (command, the editor context menu or the Done screen) opens two fields, Front and Back. A selection in the editor goes to Back. With the front left empty and a short selection (up to 8 words), the card is saved as a cloze of the sentence around it. `Ctrl+Enter` saves, `Esc` cancels.
 
 There is no deck to pick. Cards are grouped by the top-level folder of the note you were in (a note at the vault root groups by its own name; with no note open, cards go to `Inbox`). Grouping only decides the file the card is kept in: a review always mixes every deck.
+
+## Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| 1, 2, 3 | Choose 2, 5 or 10 minutes (Start and Keep going) |
+| Space | Flip the card, and flip it back |
+| 1, 2, 3, 4 | Again, Hard, Good, Easy |
+| E | Edit the card |
+| O | Open the source note |
+| D D | Delete the card (press twice) |
+| Ctrl/Cmd+Z | Undo the last grade |
+| ? | List every key |
+| Ctrl/Cmd+Enter | Save a new card |
+| Esc | Cancel a new card |
 
 ## Card format
 
@@ -34,11 +92,22 @@ Source: [[CKA study plan]] ^lk7q2a
 
 ## Settings
 
-Cards folder and desired retention (default 90%).
+- **Cards folder.** Where the card files, `state.json` and `review-log.jsonl` live. Default `Revisit`.
+- **Desired retention.** 70 to 95%, default 90%. Higher means more reviews.
 
 ## Install
 
-Manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins.
+Revisit is awaiting review for the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Desktop only for now.
+
+## FAQ
+
+**Where is my data?** In your vault, in the cards folder. Revisit makes no network requests and has no telemetry.
+
+**Can I edit cards by hand?** Yes. They are markdown files. Press `E` in a review to edit one there.
+
+**Does it work on mobile?** Not yet. It is desktop only.
+
+**Can I move over from another plugin?** There is no importer. Cards are plain markdown with a simple format (above), so you can write them into the cards folder yourself. Revisit does not read the scheduling data of other plugins.
 
 ## Support
 
