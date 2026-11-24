@@ -236,14 +236,25 @@ export function ensureIds(text: string, taken: Set<string>, random?: () => numbe
 /** Characters a vault file name cannot carry (they break sync on mobile). */
 const FORBIDDEN = /[:_"<>|?*\\/]/g;
 
-/** File of a deck: the first topic becomes the path under the folder (`A > B` is `A/B.md`); no topic goes to `No deck.md`. */
+/** File of a deck: the first topic becomes the path under the folder (`A > B` is `A/B.md`); no topic goes to `Inbox.md`. */
 export function deckPath(topics: readonly string[], folder: string): string {
 	const rel = (topics[0] ?? '')
 		.split(' > ')
 		.map((part) => part.replace(FORBIDDEN, '-').trim())
 		.filter(Boolean)
 		.join('/');
-	return `${folder.replace(/\/+$/, '')}/${rel || 'No deck'}.md`;
+	return `${folder.replace(/\/+$/, '')}/${rel || 'Inbox'}.md`;
+}
+
+/**
+ * The deck of a new card, with no question asked: the note's top-level folder
+ * (`Bible/NT/Luke/Luke 1.md` is `Bible`), the note's name when it sits at the root,
+ * and no deck (Inbox) when there is no note.
+ */
+export function deckFor(notePath: string | null): string {
+	if (!notePath) return '';
+	const parts = notePath.split('/');
+	return (parts.length > 1 ? (parts[0] as string) : (parts[0] as string).replace(/\.[^.]+$/, '')).replace(/ > /g, ' - ').trim();
 }
 
 /** Vault path the link inside a `Source:` points to (without `#page` or alias). */

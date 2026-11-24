@@ -2,7 +2,7 @@ import { MarkdownView, normalizePath, Notice, Plugin, TFile, WorkspaceLeaf } fro
 import { buildItems, buildQueue } from './core/queue';
 import { Scheduler } from './core/scheduler';
 import type { Card } from './core/types';
-import { sourceLink } from './core/format';
+import { deckFor, sourceLink } from './core/format';
 import { Store } from './store/store';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { CreateModal, Draft } from './ui/CreateModal';
@@ -96,7 +96,7 @@ export default class RevisitPlugin extends Plugin {
 		}).open();
 	}
 
-	/** A new card from the active note: the selection goes to Back, the area comes from the note's folder. */
+	/** A new card from the active note: the selection goes to Back, the deck comes from the note's top-level folder. */
 	private createFromEditor(): void {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		const file = view?.file ?? null;
@@ -109,7 +109,7 @@ export default class RevisitPlugin extends Plugin {
 		const from = editor?.getCursor('from');
 		const to = editor?.getCursor('to');
 		const context = editor && from && to ? Array.from({ length: to.line - from.line + 1 }, (_, i) => editor.getLine(from.line + i)).join('\n') : '';
-		const area = file?.parent && !file.parent.isRoot() ? file.parent.name : '';
-		this.openCreate({ draft: { back: selection, context, topics: area ? [area] : [], source: sourceLink(file?.path ?? null) } });
+		const deck = deckFor(file?.path ?? null);
+		this.openCreate({ draft: { back: selection, context, topics: deck ? [deck] : [], source: sourceLink(file?.path ?? null) } });
 	}
 }

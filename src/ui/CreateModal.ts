@@ -5,7 +5,7 @@ import type { Card } from '../core/types';
 export interface Draft {
 	front: string;
 	back: string;
-	/** topics, shown as small read-only text; they come from the note path or the card being edited */
+	/** topics (the deck), never shown: they come from the note path or the card being edited */
 	topics: string[];
 	source: string;
 	/** paragraph around the selection, for a cloze */
@@ -28,7 +28,6 @@ export class CreateModal extends Modal {
 		const { contentEl, draft } = this;
 		this.modalEl.addClass('revisit-create');
 		this.setTitle(draft.card ? 'Edit card' : 'New card');
-		contentEl.createDiv({ cls: 'revisit-area', text: draft.topics.length ? `Area: ${draft.topics.join('; ')}` : 'No area' });
 		const front = this.box('Front', draft.front, (v) => (draft.front = v));
 		const back = this.box('Back', draft.back, (v) => (draft.back = v));
 		let saving = false;

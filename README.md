@@ -4,15 +4,19 @@ Flashcards for Obsidian with FSRS, kept small: pick your time, review, done.
 
 ## How it works
 
-1. **Start.** Open Revisit from the ribbon icon, the status bar or the `Review` command and answer one question: *How much time today?* (5, 10 or 15 min, keys 1 to 3).
-2. **Review.** One card at a time. Space or a click flips it; grade with Again, Hard, Good or Easy (keys 1 to 4), each showing its next interval. The session ends by itself when the time is up. `E` edits the card, `O` opens its source, `D` discards a new card, `Ctrl+Z` undoes the last grade.
-3. **Done.** A calm screen: how many cards you did, when the next one comes back, and a `5 more min` button if something was left.
+1. **Start.** Open Revisit from the ribbon icon, the status bar or the `Review` command and answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3).
+2. **Review.** One card at a time. Space or a click flips it (and flips it back); grade with Again, Hard, Good or Easy (keys 1 to 4), each showing its next interval. The session ends by itself when the time is up. `E` edits the card, `O` opens its source, `D` twice deletes the card, `Ctrl+Z` undoes the last grade. The `?` in the corner lists every key.
+3. **Done.** A calm screen: how many cards you did and when the next one comes back. If cards of today were left over, *Keep going?* offers 2, 5 or 10 more minutes; if not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day.
 
 New cards enter at most 10 per day.
 
 ## Creating cards
 
-`New card` (command, or the editor context menu) opens two fields, Front and Back. A selection in the editor goes to Back. With the front left empty and a short selection (up to 8 words), the card is saved as a cloze of the sentence around it. The area comes from the note's folder. `Ctrl+Enter` saves, `Esc` cancels.
+**Select the text, run `New card`, write the question, press `Ctrl+Enter`.** That is the whole rule.
+
+`New card` (command, the editor context menu or the Done screen) opens two fields, Front and Back. A selection in the editor goes to Back. With the front left empty and a short selection (up to 8 words), the card is saved as a cloze of the sentence around it. `Ctrl+Enter` saves, `Esc` cancels.
+
+There is no deck to pick. Cards are grouped by the top-level folder of the note you were in (a note at the vault root groups by its own name; with no note open, cards go to `Inbox`). Grouping only decides the file the card is kept in: a review always mixes every deck.
 
 ## Card format
 

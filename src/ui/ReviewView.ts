@@ -358,7 +358,8 @@ export class ReviewView extends ItemView {
 		const more = extraQueue(items, { now, log: store.log, retrievability: (c, t) => scheduler.retrievability(c, t) });
 		this.more = more;
 		if (more.length) {
-			col.createDiv({ text: 'Keep going?', cls: 'revisit-muted' });
+			// cards of today left over: keep going; otherwise only new past the cap or ahead of their day
+			col.createDiv({ text: left.length ? 'Keep going?' : 'Ahead of schedule?', cls: 'revisit-muted' });
 			this.drawTimes(col, (m) => this.keepGoing(m));
 		}
 		col.createEl('a', { text: 'New card', cls: 'revisit-link' }).onclick = () => this.plugin.openCreate({ onSaved: () => (n ? this.show('done') : void this.begin()) });

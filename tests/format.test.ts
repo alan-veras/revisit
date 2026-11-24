@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendCard, clozes, deckPath, ensureIds, hideCloze, linkPath, newId, parseBlock, parseCardFile, removeCard, replaceCard, resolveOnSave, serializeCard, sourceLink, splitBlocks } from '../src/core/format';
+import { appendCard, clozes, deckFor, deckPath, ensureIds, hideCloze, linkPath, newId, parseBlock, parseCardFile, removeCard, replaceCard, resolveOnSave, serializeCard, sourceLink, splitBlocks } from '../src/core/format';
 
 const FILE = `Front: What is 2 + 2?
 Back: 4
@@ -75,7 +75,7 @@ describe('cloze, links and decks', () => {
 	});
 	it('builds deck paths and source links', () => {
 		expect(deckPath(['A > B: c'], 'Revisit')).toBe('Revisit/A/B- c.md');
-		expect(deckPath([], 'Revisit/')).toBe('Revisit/No deck.md');
+		expect(deckPath([], 'Revisit/')).toBe('Revisit/Inbox.md');
 		expect(sourceLink('Notes/Geo.md')).toBe('[[Notes/Geo|Geo]]');
 		expect(sourceLink('a/b.pdf', 3)).toBe('[[a/b.pdf#page=3|b, p. 3]]');
 		expect(linkPath('[[Notes/Geo#Sec|Geo]]')).toBe('Notes/Geo');
@@ -95,5 +95,16 @@ describe('resolveOnSave', () => {
 	});
 	it('highlights without a back make a cloze', () => {
 		expect(resolveOnSave({ front: 'A ==b==', back: '', context: '' })).toMatchObject({ type: 'Cloze' });
+	});
+});
+
+describe('deckFor', () => {
+	it('takes the top-level folder, so Luke and John land in one deck', () => {
+		expect(deckFor('2_The Bible/NT/Luke/Luke 1.md')).toBe('2_The Bible');
+		expect(deckFor('2_The Bible/NT/John/John 3.md')).toBe('2_The Bible');
+	});
+	it('takes the note name at the root and nothing without a note', () => {
+		expect(deckFor('Ideas.md')).toBe('Ideas');
+		expect(deckFor(null)).toBe('');
 	});
 });
