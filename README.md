@@ -4,7 +4,7 @@ Flashcards that become a habit: pick your time, review, done.
 
 Revisit is a spaced repetition plugin for Obsidian built around one small daily session. It is for people who want to remember what they read and write in their vault, and who have tried flashcards before and watched the pile of due cards grow until they stopped. There is no deck to set up, no backlog to fear and no syntax to learn.
 
-<!-- demo.gif -->
+![A card being reviewed in Revisit: question, answer and the four colored grade buttons with their next intervals](docs/screenshots/3-answer.png)
 
 ## Why Revisit
 
