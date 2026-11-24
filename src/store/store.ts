@@ -10,6 +10,8 @@ export class Store {
 	cards: Card[] = [];
 	state: Record<string, CardState> = {};
 	log: RevlogEntry[] = [];
+	/** only what THIS device wrote: the file it saves; the merged `state` is never written back */
+	private own: Record<string, CardState> = {};
 	private lastSaved: string | null = null;
 	/** card loads run one at a time: two of them at once could give the same card two ids */
 	private loading: Promise<void> = Promise.resolve();
@@ -91,6 +93,7 @@ export class Store {
 		this.state = mergeStates(states);
 		this.log = mergeLogs(logs);
 		const own = dirs.indexOf(this.ownDir);
+		this.own = own >= 0 ? { ...states[own] } : {};
 		this.lastSaved = own >= 0 ? JSON.stringify(states[own]) : null;
 	}
 
@@ -164,12 +167,23 @@ export class Store {
 
 	async deleteCard(card: Card): Promise<void> {
 		await this.withCard(card, (text, fresh) => removeCard(text, fresh));
-		for (const k of Object.keys(this.state)) if (card.id && (k === card.id || k.startsWith(card.id + '-'))) delete this.state[k];
+		for (const k of Object.keys(this.state)) if (card.id && (k === card.id || k.startsWith(card.id + '-'))) this.setEntry(k, undefined);
 		await this.saveState();
 	}
 
+	/** A grade (or the undo of one) on this device: lands in the merged state and in this device's own file. */
+	setEntry(key: string, entry: CardState | undefined): void {
+		if (entry) {
+			this.state[key] = entry;
+			this.own[key] = entry;
+		} else {
+			delete this.state[key];
+			delete this.own[key];
+		}
+	}
+
 	async saveState(): Promise<void> {
-		const next = JSON.stringify(this.state);
+		const next = JSON.stringify(this.own);
 		if (next === this.lastSaved) return;
 		await this.ensureFolder(this.path(`${this.ownDir}/state.json`));
 		// the copy written before this one is the recovery point if the write dies halfway

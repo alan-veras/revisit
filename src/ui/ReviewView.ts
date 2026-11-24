@@ -278,7 +278,7 @@ export class ReviewView extends ItemView {
 		const next = this.preview[grade].card;
 		const entry = { id: item.key, t: new Date().toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
 		const before = store.state[item.key];
-		store.state[item.key] = { ...before, st: before?.st ?? 'active', fsrs: toStored(next) };
+		store.setEntry(item.key, { ...before, st: before?.st ?? 'active', fsrs: toStored(next) });
 		const undo: Undo = { item, index: this.index, inserted: -1, before, fsrs: item.fsrs };
 		item.fsrs = next;
 		// a card still due today comes back a few cards later
@@ -310,8 +310,7 @@ export class ReviewView extends ItemView {
 		this.busy = true;
 		const { store } = this.plugin;
 		if (u.inserted >= 0 && this.queue[u.inserted] === u.item) this.queue.splice(u.inserted, 1);
-		if (u.before) store.state[u.item.key] = u.before;
-		else delete store.state[u.item.key];
+		store.setEntry(u.item.key, u.before);
 		u.item.fsrs = u.fsrs;
 		const n = (this.graded.get(u.item.key) ?? 1) - 1;
 		if (n) this.graded.set(u.item.key, n);

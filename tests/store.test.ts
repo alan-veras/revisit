@@ -67,3 +67,26 @@ describe('store with two devices', () => {
 		expect(changed.length).toBeGreaterThan(0);
 	});
 });
+
+describe('own state layer', () => {
+	const entry = (due: string, last: string) => ({ st: 'active' as const, fsrs: { state: 2, due, last_review: last } as never });
+	it('writes only what this device changed, so an undo is not brought back by a copy', async () => {
+		const files = new Map<string, string>([['R/devices/bbbbbb/state.json', JSON.stringify({ x: entry('2026-12-01T00:00:00Z', '2026-11-04T10:00:00Z') })]]);
+		const s = new Store(fakeApp(files, 'aaaaaa'), () => 'R');
+		await s.loadShared();
+		s.setEntry('y', entry('2026-12-02T00:00:00Z', '2026-11-05T10:00:00Z'));
+		await s.saveState();
+		expect(Object.keys(JSON.parse(files.get('R/devices/aaaaaa/state.json') ?? '{}') as object)).toEqual(['y']);
+		expect(Object.keys(s.state).sort()).toEqual(['x', 'y']);
+		s.setEntry('y', undefined);
+		await s.saveState();
+		expect(JSON.parse(files.get('R/devices/aaaaaa/state.json') ?? '{}') as object).toEqual({});
+		expect(Object.keys(s.state)).toEqual(['x']);
+	});
+	it('a cleared local storage is a new device and the old files still count', async () => {
+		const files = new Map<string, string>([['R/devices/old111/state.json', JSON.stringify({ x: entry('2026-12-01T00:00:00Z', '2026-11-04T10:00:00Z') })]]);
+		const s = new Store(fakeApp(files, 'new222'), () => 'R');
+		await s.loadShared();
+		expect(s.state.x?.fsrs?.due).toBe('2026-12-01T00:00:00Z');
+	});
+});
