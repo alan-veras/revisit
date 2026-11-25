@@ -108,3 +108,21 @@ describe('deckFor', () => {
 		expect(deckFor(null)).toBe('');
 	});
 });
+
+describe('fields that look like file syntax', () => {
+	it('a --- line inside a back never splits the card, and the id stays on it', async () => {
+		const { serializeCard, parseCardFile, appendCard } = await import('../src/core/format');
+		const card = { id: 'lhr001', type: 'Question', front: 'Q', back: 'top\n---\nbottom', topics: [], source: '' };
+		const text = appendCard(appendCard('', serializeCard(card)), serializeCard({ ...card, id: 'lhr002', front: 'Q2' }));
+		const cards = parseCardFile(text);
+		expect(cards.map((c) => c.id)).toEqual(['lhr001', 'lhr002']);
+		expect(cards[0]?.back).toContain('bottom');
+	});
+
+	it('== inside inline code is not a cloze', async () => {
+		const { clozes, hideCloze, resolveOnSave } = await import('../src/core/format');
+		expect(clozes('In JS `a == b == c` is ==chained== comparison')).toEqual(['chained']);
+		expect(hideCloze('`a == b == c` and ==x==', 0)).toBe('`a == b == c` and ___');
+		expect(resolveOnSave({ front: 'What does `a == b == c` do?', back: 'compares', context: '' })).toMatchObject({ type: 'Question' });
+	});
+});

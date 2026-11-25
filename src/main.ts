@@ -113,7 +113,7 @@ export default class RevisitPlugin extends Plugin {
 	private createFromEditor(): void {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		const file = view?.file ?? null;
-		if (file && file.path.startsWith(this.settings.folder + '/')) {
+		if (file && file.path.startsWith(normalizePath(this.settings.folder) + '/')) {
 			new Notice('Revisit: open the source note, not a card file.');
 			return;
 		}

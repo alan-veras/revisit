@@ -16,7 +16,8 @@ const LABEL_RE = new RegExp(`^(${LABELS}):[ \\t]?(.*)$`);
 const BARE_LABEL_RE = new RegExp(`^(${LABELS}):[ \\t]?$`, 'i');
 const ID_RE = /\s\^(l[a-z0-9]{5})\s*$/;
 const FENCE_RE = /^\s*(```|~~~)/;
-const CLOZE_RE = /==([^=\n]+?)==/g;
+// inline code is matched first and skipped, so `a == b == c` is never a highlight
+const CLOZE_RE = /`[^`\n]*`|==([^=\n]+?)==/g;
 
 export interface Block {
 	start: number;
@@ -46,13 +47,13 @@ export function splitBlocks(text: string): Block[] {
 }
 
 export function clozes(text: string): string[] {
-	return [...text.matchAll(CLOZE_RE)].map((m) => (m[1] as string).trim());
+	return [...text.matchAll(CLOZE_RE)].filter((m) => m[1] !== undefined).map((m) => (m[1] as string).trim());
 }
 
 /** The front with highlight `i` hidden as `___` and the others shown as plain text. */
 export function hideCloze(text: string, i: number): string {
 	let n = 0;
-	return text.replace(CLOZE_RE, (_m, inner: string) => (n++ === i ? '___' : inner));
+	return text.replace(CLOZE_RE, (m: string, inner: string | undefined) => (inner === undefined ? m : n++ === i ? '___' : inner));
 }
 
 /** `a >b>  c` becomes `a > b > c`. */
@@ -121,14 +122,17 @@ export function parseCardFile(text: string): Card[] {
 
 /**
  * A line that reads like a label (`Source: Wikipedia` in the middle of a back)
- * would start a new field on the next read. One leading space keeps it inside.
+ * would start a new field on the next read: one leading space keeps it inside.
+ * A `---` line would split the card in two: it becomes `- - -`, the same rule in markdown.
  */
 function escapeLabels(lines: string[]): string[] {
 	let fence = false;
 	return lines.map((line) => {
-		const hit = !fence && LABEL_RE.test(line);
+		const inside = fence;
 		if (FENCE_RE.test(line)) fence = !fence;
-		return hit ? ` ${line}` : line;
+		if (inside) return line;
+		if (line.trim() === '---') return '- - -';
+		return LABEL_RE.test(line) ? ` ${line}` : line;
 	});
 }
 
