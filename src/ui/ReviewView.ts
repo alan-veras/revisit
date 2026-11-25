@@ -8,6 +8,8 @@ import type RevisitPlugin from '../main';
 export const VIEW_TYPE_REVIEW = 'revisit-review';
 
 const ALL = '*';
+/** rows drawn in an opened folder; the rest is only counted */
+const MAX_ROWS = 200;
 const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 type Mode = 'start' | 'review' | 'done' | 'decks';
@@ -531,9 +533,18 @@ export class ReviewView extends ItemView {
 		setIcon(back, 'arrow-left');
 		back.onclick = () => this.showDecks();
 		head.createEl('h3', { text: deck ? (decks[0]?.name ?? '') : 'All decks', cls: 'revisit-serif' });
+		// Start sits by the title, so a deck of a thousand cards never hides it
+		const ahead = queue.length ? [] : this.aheadQueue(deck);
+		if (queue.length || ahead.length) {
+			const go = head.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
+			go.onclick = () => this.reviewDeck();
+		} else head.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
 		const list = panel.createDiv({ cls: 'revisit-deck-rows' });
 		const NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
-		for (const r of decks.flatMap((d) => d.rows)) {
+		// today first, then the soonest back; new cards last
+		const rank = (r: { today: boolean; due: Date | null }) => (r.today ? -Infinity : (r.due?.getTime() ?? Infinity));
+		const rows = decks.flatMap((d) => d.rows).sort((a, b) => rank(a) - rank(b));
+		for (const r of rows.slice(0, MAX_ROWS)) {
 			const row = list.createDiv({ cls: 'revisit-deck-row' });
 			row.createDiv({ text: r.front, cls: 'revisit-deck-q revisit-serif' });
 			const info = row.createDiv({ cls: 'revisit-deck-info' });
@@ -542,11 +553,7 @@ export class ReviewView extends ItemView {
 			info.createSpan({ text: r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—', cls: r.today ? 'is-due' : '' });
 			info.createSpan({ text: r.memory === null ? '—' : `${Math.round(r.memory * 100)}%` });
 		}
-		const ahead = queue.length ? [] : this.aheadQueue(deck);
-		if (queue.length || ahead.length) {
-			const go = panel.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
-			go.onclick = () => this.reviewDeck();
-		} else panel.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
+		if (rows.length > MAX_ROWS) list.createDiv({ text: `and ${rows.length - MAX_ROWS} more`, cls: 'revisit-muted revisit-deck-more' });
 
 		const from = this.openFrom;
 		this.openFrom = null;
@@ -555,8 +562,8 @@ export class ReviewView extends ItemView {
 			const to = panel.getBoundingClientRect();
 			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
 		}
-		[head, ...Array.from(list.children), panel.lastElementChild].forEach((c, i) => {
-			if (c instanceof HTMLElement) c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
+		[head, ...Array.from(list.children).slice(0, 20)].forEach((c, i) => {
+			c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
 		});
 	}
 
