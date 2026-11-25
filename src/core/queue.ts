@@ -1,6 +1,6 @@
 import type { Card as FsrsCard } from 'ts-fsrs';
 import { clozes, hideCloze } from './format';
-import { fromStored, isNew } from './scheduler';
+import { formatInterval, fromStored, isNew, State } from './scheduler';
 import { Card, CardState, NEW_PER_DAY, RevlogEntry } from './types';
 
 export interface QueueItem {
@@ -59,10 +59,17 @@ export function interleave(items: QueueItem[]): QueueItem[] {
 	return out;
 }
 
-/** Cards that are due today (not new). */
+/** A card in its first short steps (minutes, not days): it waits for its exact time. */
+const learning = (c: FsrsCard): boolean => c.state === State.Learning || c.state === State.Relearning;
+
+/** Cards that are due (not new): reviews any time today, learning steps only once their minutes are up. */
 export function dueReviews(items: QueueItem[], now: Date): QueueItem[] {
 	const limit = endOfDay(now).getTime();
-	return items.filter((it) => !it.suspended && !isNew(it.fsrs) && (it.fsrs as FsrsCard).due.getTime() <= limit);
+	return items.filter((it) => {
+		if (it.suspended || isNew(it.fsrs)) return false;
+		const c = it.fsrs as FsrsCard;
+		return c.due.getTime() <= (learning(c) ? now.getTime() : limit);
+	});
 }
 
 /** Siblings of one card (other highlights) never meet on the same day: the later ones are left out. */
@@ -116,6 +123,9 @@ export function nextCardLabel(items: QueueItem[], log: RevlogEntry[], now: Date)
 	const newLeft = introduced >= NEW_PER_DAY && live.some((it) => isNew(it.fsrs));
 	const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 	const end = endOfDay(now).getTime();
+	// a learning step later today (Hard 6m): say when, so it is not mistaken for tomorrow
+	const soon = live.filter((it) => !isNew(it.fsrs) && learning(it.fsrs as FsrsCard)).map((it) => (it.fsrs as FsrsCard).due.getTime()).filter((t) => t > now.getTime() && t <= end);
+	if (soon.length) return `Next card in ${formatInterval(Math.min(...soon) - now.getTime())}`;
 	const days = new Set(dues.filter((t) => t > end).map((t) => Math.round((startOf(new Date(t)) - startOf(now)) / 86400000)));
 	// due today but held back (a sibling of a card graded today): it comes tomorrow
 	if (newLeft || dues.some((t) => t <= end)) days.add(1);

@@ -27,7 +27,6 @@ interface Undo {
 	item: QueueItem;
 	index: number;
 	/** where the card was put back in the queue, -1 when it was not */
-	inserted: number;
 	before: CardState | undefined;
 	fsrs: QueueItem['fsrs'];
 }
@@ -42,6 +41,8 @@ export class ReviewView extends ItemView {
 	private startedAt = 0;
 	private endsAt = 0;
 	private graded = new Map<string, number>();
+	/** graded cards that come back later today: they rejoin the queue only once their time has come */
+	private waiting: QueueItem[] = [];
 	private undo: Undo[] = [];
 	private preview: ReturnType<RevisitPlugin['scheduler']['preview']> | null = null;
 	private discardArmed = false;
@@ -95,6 +96,7 @@ export class ReviewView extends ItemView {
 		await this.plugin.refresh();
 		this.graded.clear();
 		this.undo = [];
+		this.waiting = [];
 		this.queue = this.todayQueue();
 		if (this.queue.length) this.show('start');
 		else this.show('done');
@@ -151,6 +153,7 @@ export class ReviewView extends ItemView {
 		if (!more) {
 			this.graded.clear();
 			this.undo = [];
+			this.waiting = [];
 		}
 		this.startedAt = Date.now();
 		this.endsAt = this.startedAt + minutes * 60_000;
@@ -160,6 +163,12 @@ export class ReviewView extends ItemView {
 	// ---- Review ----
 
 	private drawCard(root: HTMLElement): void {
+		const now = Date.now();
+		const ready = this.waiting.filter((it) => (it.fsrs?.due.getTime() ?? 0) <= now);
+		if (ready.length) {
+			this.waiting = this.waiting.filter((it) => !ready.includes(it));
+			this.queue.splice(this.index, 0, ...ready);
+		}
 		const item = this.queue[this.index];
 		if (!item) return this.finish();
 		this.flipped = false;
@@ -280,15 +289,12 @@ export class ReviewView extends ItemView {
 		const entry = { id: item.key, t: new Date().toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
 		const before = store.state[item.key];
 		store.setEntry(item.key, { ...before, st: before?.st ?? 'active', fsrs: toStored(next) });
-		const undo: Undo = { item, index: this.index, inserted: -1, before, fsrs: item.fsrs };
+		const undo: Undo = { item, index: this.index, before, fsrs: item.fsrs };
 		item.fsrs = next;
-		// a card still due today comes back a few cards later
+		// a card still due today waits for its time (Again 1m, Hard 6m), never earlier
 		const end = new Date();
 		end.setHours(23, 59, 59, 999);
-		if (next.due <= end) {
-			undo.inserted = Math.min(this.queue.length, this.index + 4);
-			this.queue.splice(undo.inserted, 0, item);
-		}
+		if (next.due <= end) this.waiting.push(item);
 		this.undo.push(undo);
 		this.graded.set(item.key, (this.graded.get(item.key) ?? 0) + 1);
 		this.index++;
@@ -310,7 +316,9 @@ export class ReviewView extends ItemView {
 		if (!u) return;
 		this.busy = true;
 		const { store } = this.plugin;
-		if (u.inserted >= 0 && this.queue[u.inserted] === u.item) this.queue.splice(u.inserted, 1);
+		this.waiting = this.waiting.filter((it) => it !== u.item);
+		const again = this.queue.lastIndexOf(u.item);
+		if (again > u.index) this.queue.splice(again, 1);
 		store.setEntry(u.item.key, u.before);
 		u.item.fsrs = u.fsrs;
 		const n = (this.graded.get(u.item.key) ?? 1) - 1;

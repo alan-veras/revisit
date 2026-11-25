@@ -106,4 +106,19 @@ describe('next card label', () => {
 		const items = buildItems([cloze], { lclz002: reviewed(at(5)), 'lclz002-c2': reviewed(at(-1)) });
 		expect(nextCardLabel(items, [entry('lclz002', false)], now)).toBe('Next card tomorrow');
 	});
+
+	it('a learning step (Hard 6m) waits for its minutes; a review due tonight is shown now', () => {
+		const step = (min: number): CardState => ({ st: 'active', fsrs: toStored({ ...freshCard(now), state: 1, due: new Date(now.getTime() + min * 60000), last_review: now, stability: 1, difficulty: 5, reps: 1 }) });
+		const q = queue([card('lstp001'), card('lstp002'), card('lrev001')], { lstp001: step(6), lstp002: step(-1), lrev001: { st: 'active', fsrs: toStored({ ...freshCard(now), state: 2, due: new Date(2026, 10, 24, 20, 0), last_review: at(-5), stability: 5, difficulty: 5, reps: 2 }) } });
+		expect(q.map((i) => i.key).sort()).toEqual(['lrev001', 'lstp002']);
+		expect(nextCardLabel(buildItems([card('lstp001')], { lstp001: step(6) }), [entry('lstp001', true)], now)).toBe('Next card in 6m');
+	});
+
+	it('grading Hard on a new card schedules it minutes ahead, not right away', () => {
+		const p = sched.preview(freshCard(now), now);
+		expect(p[2].card.due.getTime() - now.getTime()).toBeGreaterThanOrEqual(5 * 60000);
+		const items = buildItems([card('lhrd001')], { lhrd001: { st: 'active', fsrs: toStored(p[2].card) } });
+		expect(buildQueue(items, { now: new Date(now.getTime() + 60000), log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(0);
+		expect(buildQueue(items, { now: p[2].card.due, log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(1);
+	});
 });
