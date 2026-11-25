@@ -1,10 +1,13 @@
-import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
-import { freshCard, isNew, toStored } from '../core/scheduler';
+import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
+import { groupDecks } from '../core/decks';
+import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
+
+type Mode = 'start' | 'review' | 'done' | 'decks';
 
 // the wording is the design (lowercase, with the key letter), so it is joined here instead of written as one literal
 const NEW_HINT = ['new', 'D discards'].join(' · ');
@@ -33,7 +36,12 @@ interface Undo {
 
 /** One view, three moments: Start (pick the time), Review, Done. */
 export class ReviewView extends ItemView {
-	private mode: 'start' | 'review' | 'done' = 'start';
+	private mode: Mode = 'start';
+	/** the deck opened on the Decks screen */
+	private openDeck = '';
+	/** begin() is reading the cards; Decks asked meanwhile waits for it */
+	private starting = false;
+	private decksNext = false;
 	private queue: QueueItem[] = [];
 	private index = 0;
 	private flipped = false;
@@ -93,12 +101,20 @@ export class ReviewView extends ItemView {
 
 	/** Back to the start: reads the cards again; nothing to review goes straight to Done. */
 	async begin(): Promise<void> {
-		await this.plugin.refresh();
+		this.starting = true;
+		try {
+			await this.plugin.refresh();
+		} finally {
+			this.starting = false;
+		}
 		this.graded.clear();
 		this.undo = [];
 		this.waiting = [];
 		this.queue = this.todayQueue();
-		if (this.queue.length) this.show('start');
+		if (this.decksNext) {
+			this.decksNext = false;
+			this.show('decks');
+		} else if (this.queue.length) this.show('start');
 		else this.show('done');
 	}
 
@@ -107,7 +123,7 @@ export class ReviewView extends ItemView {
 		return buildQueue(buildItems(store.cards, store.state), { now: new Date(), log: store.log, retrievability: (c, n) => scheduler.retrievability(c, n) });
 	}
 
-	private show(mode: 'start' | 'review' | 'done'): void {
+	private show(mode: Mode): void {
 		this.mode = mode;
 		const root = this.contentEl;
 		root.empty();
@@ -116,9 +132,10 @@ export class ReviewView extends ItemView {
 		this.bar = null;
 		if (mode === 'start') this.drawStart(root);
 		else if (mode === 'review') this.drawCard(root);
+		else if (mode === 'decks') this.drawDecks(root);
 		else this.drawDone(root);
 		if (mode === 'review' && Platform.isMobile) this.drawMenu(root);
-		else if (mode !== 'done' && !Platform.isMobile) this.drawHelp(root);
+		else if ((mode === 'start' || mode === 'review') && !Platform.isMobile) this.drawHelp(root);
 		this.plugin.updateStatus();
 	}
 
@@ -128,6 +145,7 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
 		this.drawTimes(col, (m) => this.startSession(m));
+		this.decksLink(col);
 	}
 
 	/** The three lengths, with their keys; the one picked last is highlighted. */
@@ -404,7 +422,94 @@ export class ReviewView extends ItemView {
 			col.createDiv({ text: left.length ? 'Keep going?' : 'Ahead of schedule?', cls: 'revisit-muted' });
 			this.drawTimes(col, (m) => this.keepGoing(m));
 		}
-		col.createEl('a', { text: 'New card', cls: 'revisit-link' }).onclick = () => this.plugin.openCreate({ onSaved: () => (n ? this.show('done') : void this.begin()) });
+		const links = col.createDiv({ cls: 'revisit-links' });
+		links.createEl('a', { text: 'New card', cls: 'revisit-link' }).onclick = () => this.plugin.openCreate({ onSaved: () => (n ? this.show('done') : void this.begin()) });
+		this.decksLink(links);
+	}
+
+	// ---- Decks ----
+
+	private decksLink(parent: HTMLElement): void {
+		parent.createEl('a', { text: 'Decks', cls: 'revisit-link' }).onclick = () => this.showDecks();
+	}
+
+	/** Opens the Decks screen, unless a session is running. */
+	showDecks(): void {
+		if (this.mode === 'review') return;
+		if (this.starting) this.decksNext = true;
+		else this.show('decks');
+	}
+
+	/** Every deck as a folder with its cards: only to look; Review always mixes them all. */
+	private drawDecks(root: HTMLElement): void {
+		const { store, scheduler } = this.plugin;
+		const now = new Date();
+		const queue = this.todayQueue();
+		const decks = groupDecks(buildItems(store.cards, store.state), normalizePath(this.plugin.settings.folder), new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		const col = root.createDiv({ cls: 'revisit-col revisit-decks' });
+
+		const head = col.createDiv({ cls: 'revisit-decks-today' });
+		const text = head.createDiv();
+		const n = queue.length;
+		text.createEl('h2', { text: n ? `${n} ${n === 1 ? 'card' : 'cards'} today` : 'Nothing due today', cls: 'revisit-serif' });
+		if (n) {
+			const fresh = queue.filter((it) => isNew(it.fsrs)).length;
+			const recent = store.log.slice(-200).map((e) => e.seconds).filter((x) => x > 0);
+			const avg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 10;
+			const minutes = Math.max(1, Math.round((n * avg) / 60));
+			const parts = [n - fresh ? `${n - fresh} to review` : '', fresh ? `${fresh} new` : ''].filter(Boolean).join(', ');
+			text.createDiv({ text: `${parts}. About ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`, cls: 'revisit-muted' });
+		}
+		head.createEl('button', { text: n ? 'Review' : 'Back', cls: 'mod-cta' }).onclick = () => void this.begin();
+
+		if (!decks.length) {
+			col.createDiv({ text: 'No cards yet. Select text in a note and run New card.', cls: 'revisit-muted' });
+			return;
+		}
+		const legend = col.createDiv({ cls: 'revisit-decks-legend' });
+		for (const [cls, label] of [['is-new', 'New'], ['is-learning', 'Learning'], ['is-review', 'Review']]) legend.createSpan({ text: label, cls });
+
+		if (!decks.some((d) => d.file === this.openDeck)) this.openDeck = decks[0]?.file ?? '';
+		const grid = col.createDiv({ cls: 'revisit-decks-grid' });
+		for (const d of decks) {
+			const total = d.rows.length;
+			const f = grid.createEl('button', { cls: 'revisit-folder' + (d.file === this.openDeck ? ' is-open' : ''), attr: { 'aria-expanded': String(d.file === this.openDeck) } });
+			f.createDiv({ text: d.name, cls: 'revisit-folder-name revisit-serif' });
+			f.createDiv({ text: `${total} ${total === 1 ? 'card' : 'cards'}`, cls: 'revisit-folder-count' });
+			const bar = f.createDiv({ cls: 'revisit-folder-bar' });
+			for (const [cls, k] of [['is-new', d.counts.new], ['is-learning', d.counts.learning], ['is-review', d.counts.review]] as const) bar.createSpan({ cls }).style.width = `${(k / total) * 100}%`;
+			f.createDiv({ text: d.today ? `${d.today} due today` : 'Nothing today', cls: 'revisit-folder-due' + (d.today ? ' is-due' : '') });
+			f.onclick = () => {
+				this.openDeck = d.file;
+				this.show('decks');
+			};
+		}
+
+		const open = decks.find((d) => d.file === this.openDeck);
+		if (!open) return;
+		const sec = col.createDiv({ cls: 'revisit-deck' });
+		const h = sec.createDiv({ cls: 'revisit-deck-head' });
+		h.createEl('h3', { text: open.name, cls: 'revisit-serif' });
+		h.createSpan({ text: open.folder ? `${open.folder}/${open.name}.md` : `${open.name}.md`, cls: 'revisit-muted' });
+		const table = sec.createDiv({ cls: 'revisit-deck-list' }).createEl('table');
+		const tr = table.createEl('tr');
+		for (const t of ['Card', 'State', 'Back in', 'Memory']) tr.createEl('th', { text: t });
+		const STATE_NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
+		for (const r of open.rows) {
+			const row = table.createEl('tr');
+			row.createEl('td', { text: r.front, cls: 'revisit-deck-q revisit-serif' });
+			const [name, cls] = STATE_NAME[r.state] ?? ['New', 'is-new'];
+			row.createEl('td').createSpan({ text: name, cls: `revisit-pill ${cls}` });
+			const when = r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—';
+			row.createEl('td', { text: when, cls: r.today ? 'is-due' : '' });
+			const m = row.createEl('td');
+			if (r.memory === null) m.setText('—');
+			else {
+				const mem = m.createDiv({ cls: 'revisit-mem' + (r.memory < 0.85 ? ' is-low' : '') });
+				mem.createDiv({ cls: 'revisit-mem-track' }).createSpan().style.width = `${Math.round(r.memory * 100)}%`;
+				mem.createSpan({ text: `${Math.round(r.memory * 100)}%` });
+			}
+		}
 	}
 
 	async onClose(): Promise<void> {

@@ -57,3 +57,41 @@
 
 /* touch screens: comfortable targets (desktop untouched) */
 .revisit.is-touch button { min-height: 44px; }
+
+/* decks: a look at every deck, as folders */
+.revisit-links { display: flex; gap: var(--size-4-6); justify-content: center; }
+.revisit-decks { margin: 0; padding-block: clamp(24px, 4cqi, 56px); gap: clamp(20px, 3cqi, 36px); }
+.revisit-decks-today { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--size-4-4); }
+.revisit-decks-today h2 { margin: 0; font-size: clamp(24px, 3cqi, 40px); font-weight: var(--font-normal); }
+.revisit-decks-today button { font-size: var(--rv-ui); height: auto; padding: 0.5em 1.4em; }
+.revisit-decks-legend { display: flex; flex-wrap: wrap; gap: var(--size-4-4); font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-decks-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 2px; background: rgb(var(--d)); }
+.revisit .is-new { --d: var(--color-base-50-rgb, 128,128,128); }
+.revisit .is-learning { --d: var(--color-orange-rgb); }
+.revisit .is-review { --d: var(--color-green-rgb); }
+.revisit-decks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 26px 18px; }
+.revisit-decks-grid .revisit-folder { position: relative; display: grid; gap: 10px; justify-content: stretch; align-items: start; align-content: start; height: auto; margin-top: 12px; padding: 18px 16px 14px; text-align: left; white-space: normal; color: var(--text-normal); background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 4px 10px 10px 10px; box-shadow: none; transition: transform 150ms ease; }
+.revisit-folder::before { content: ''; position: absolute; left: -1px; top: -13px; width: 42%; height: 13px; background: var(--background-secondary-alt, var(--background-secondary)); border: 1px solid var(--background-modifier-border); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.revisit-decks-grid .revisit-folder:hover { transform: translateY(-2px); background: var(--background-secondary); }
+.revisit-decks-grid .revisit-folder.is-open, .revisit-folder.is-open::before { border-color: var(--interactive-accent); }
+.revisit-folder-name { font-size: 1.2em; font-weight: var(--font-semibold); line-height: 1.2; }
+.revisit-folder-count { font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-folder-bar { display: flex; height: 6px; overflow: hidden; border-radius: 3px; background: var(--background-modifier-border); }
+.revisit-folder-bar span { background: rgb(var(--d)); }
+.revisit-folder-bar .is-new { opacity: 0.7; }
+.revisit-folder-due { font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-folder-due.is-due, .revisit-deck td.is-due { color: rgb(var(--color-green-rgb)); font-weight: var(--font-medium); }
+.revisit-deck { display: flex; flex-direction: column; gap: var(--size-4-3); }
+.revisit-deck-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--size-4-2); }
+.revisit-deck-head h3 { margin: 0; }
+.revisit-deck-list { overflow-x: auto; }
+.revisit-deck table { width: 100%; border-collapse: collapse; font-size: var(--font-ui-medium); }
+.revisit-deck th { text-align: left; font-size: var(--font-ui-smaller); font-weight: var(--font-medium); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); padding: 6px 10px; border-bottom: 1px solid var(--background-modifier-border); }
+.revisit-deck td { padding: 10px; border-bottom: 1px solid var(--background-modifier-border); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.revisit-deck td.revisit-deck-q { white-space: normal; min-width: 16ch; font-size: 1.05em; }
+.revisit-pill { display: inline-block; padding: 1px 9px; font-size: var(--font-ui-smaller); border-radius: 99px; color: rgb(var(--d)); background: rgba(var(--d), 0.08); border: 1px solid rgba(var(--d), 0.45); }
+.revisit-mem { display: flex; align-items: center; gap: 8px; font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-mem-track { width: 64px; height: 5px; overflow: hidden; border-radius: 3px; background: var(--background-modifier-border); }
+.revisit-mem-track span { display: block; height: 100%; background: rgb(var(--color-green-rgb)); }
+.revisit-mem.is-low .revisit-mem-track span { background: rgb(var(--color-orange-rgb)); }
+@media (prefers-reduced-motion: reduce) { .revisit-decks-grid .revisit-folder { transition: none; } }

@@ -34,6 +34,7 @@ export default class RevisitPlugin extends Plugin {
 
 		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.openReview() });
 		this.addCommand({ id: 'new-card', name: 'New card', callback: () => void this.createFromEditor() });
+		this.addCommand({ id: 'decks', name: 'Decks', callback: () => void this.openDecks() });
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				const title = editor.getSelection() ? 'New card from selection' : 'New card';
@@ -82,6 +83,12 @@ export default class RevisitPlugin extends Plugin {
 		if (!open) await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
 		else if (open.view instanceof ReviewView && !open.view.reviewing) await open.view.begin();
 		await workspace.revealLeaf(leaf);
+	}
+
+	async openDecks(): Promise<void> {
+		await this.openReview();
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0]?.view;
+		if (view instanceof ReviewView) view.showDecks();
 	}
 
 	/** The create window: a new card, or the edit of `card`. */
