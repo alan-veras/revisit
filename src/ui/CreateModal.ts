@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, Platform } from 'obsidian';
 import { resolveOnSave } from '../core/format';
 import type { Card } from '../core/types';
 
@@ -49,7 +49,7 @@ export class CreateModal extends Modal {
 			}
 		};
 		const row = contentEl.createDiv({ cls: 'revisit-create-foot' });
-		row.createSpan({ cls: 'revisit-area', text: 'Ctrl+Enter saves' });
+		if (!Platform.isMobile) row.createSpan({ cls: 'revisit-area', text: `${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Enter saves` });
 		row.createEl('button', { text: 'Save', cls: 'mod-cta' }).onclick = () => void save();
 		this.scope.register(['Mod'], 'Enter', () => {
 			void save();

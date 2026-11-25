@@ -9,6 +9,10 @@ export interface RevisitSettings {
 export const DEFAULT_SETTINGS: RevisitSettings = { folder: 'Revisit', retention: 0.9 };
 
 export class RevisitSettingTab extends PluginSettingTab {
+	/** the folder being typed: it only counts once typing stops, so a half-typed parent folder is never read (nor given card ids) */
+	private pendingFolder: string | null = null;
+	private folderTimer = 0;
+
 	constructor(
 		app: App,
 		private plugin: RevisitPlugin,
@@ -38,13 +42,33 @@ export class RevisitSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
+		if (key === 'folder' && this.pendingFolder !== null) return this.pendingFolder;
 		return key === 'retention' ? Math.round(s.retention * 100) : s[key as keyof RevisitSettings];
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
-		if (key === 'folder') s.folder = String(value).trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
-		else if (key === 'retention') s.retention = Math.min(95, Math.max(70, Number(value) || 90)) / 100;
+		if (key === 'folder') {
+			this.pendingFolder = String(value);
+			window.clearTimeout(this.folderTimer);
+			this.folderTimer = window.setTimeout(() => {
+				s.folder = (this.pendingFolder ?? '').trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
+				this.pendingFolder = null;
+				void this.plugin.saveSettings();
+			}, 1000);
+			return;
+		} else if (key === 'retention') s.retention = Math.min(95, Math.max(70, Number(value) || 90)) / 100;
 		await this.plugin.saveSettings();
+	}
+
+	hide(): void {
+		// closing the settings right after typing still saves the folder
+		if (this.pendingFolder !== null) {
+			window.clearTimeout(this.folderTimer);
+			this.plugin.settings.folder = this.pendingFolder.trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.folder;
+			this.pendingFolder = null;
+			void this.plugin.saveSettings();
+		}
+		super.hide();
 	}
 }

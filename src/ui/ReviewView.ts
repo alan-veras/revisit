@@ -340,8 +340,10 @@ export class ReviewView extends ItemView {
 		this.flipped = false;
 		this.contentEl.removeClass('is-flipped');
 		const { store } = this.plugin;
-		const next = this.preview[grade].card;
-		const entry = { id: item.key, t: new Date().toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
+		// scheduled from the moment of the grade: a card left open for a while is not dated back
+		const now = new Date();
+		const next = this.plugin.scheduler.preview(item.fsrs ?? freshCard(now), now)[grade].card;
+		const entry = { id: item.key, t: now.toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
 		const before = store.state[item.key];
 		store.setEntry(item.key, { ...before, st: before?.st ?? 'active', fsrs: toStored(next) });
 		const undo: Undo = { item, index: this.index, before, fsrs: item.fsrs };
@@ -366,14 +368,17 @@ export class ReviewView extends ItemView {
 	}
 
 	private async undoLast(): Promise<void> {
-		if (this.busy || this.mode === 'start') return;
+		if (this.busy || (this.mode !== 'review' && this.mode !== 'done')) return;
 		const u = this.undo.pop();
 		if (!u) return;
 		this.busy = true;
 		const { store } = this.plugin;
-		this.waiting = this.waiting.filter((it) => it !== u.item);
-		const again = this.queue.lastIndexOf(u.item);
-		if (again > u.index) this.queue.splice(again, 1);
+		this.waiting = this.waiting.filter((it) => it.key !== u.item.key);
+		// the same queue: the card goes back to its place; a queue rebuilt by Keep going: it comes next
+		const same = this.queue[u.index] === u.item;
+		const at = same ? u.index : Math.min(this.index, this.queue.length);
+		this.queue = this.queue.filter((it, i) => i <= at - (same ? 0 : 1) || it.key !== u.item.key);
+		if (!same) this.queue.splice(at, 0, u.item);
 		store.setEntry(u.item.key, u.before);
 		u.item.fsrs = u.fsrs;
 		const n = (this.graded.get(u.item.key) ?? 1) - 1;
@@ -387,7 +392,7 @@ export class ReviewView extends ItemView {
 		} finally {
 			this.busy = false;
 		}
-		this.index = u.index;
+		this.index = at;
 		this.show('review');
 	}
 
