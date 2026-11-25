@@ -1,11 +1,14 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { groupDecks } from '../core/decks';
 import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
-import { buildItems, buildQueue, extraQueue, faces, nextCardLabel, QueueItem } from '../core/queue';
+import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
+
+const ALL = '*';
+const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 type Mode = 'start' | 'review' | 'done' | 'decks';
 
@@ -37,8 +40,12 @@ interface Undo {
 /** One view, three moments: Start (pick the time), Review, Done. */
 export class ReviewView extends ItemView {
 	private mode: Mode = 'start';
-	/** the deck opened on the Decks screen */
+	/** the folder opened on the Decks screen: a card file, ALL, or '' for the folders */
 	private openDeck = '';
+	/** the deck being reviewed (card file); null reviews every deck */
+	private deck: string | null = null;
+	/** the next Decks drawing animates the opened folder out of this box */
+	private openFrom: DOMRect | null = null;
 	/** begin() is reading the cards; Decks asked meanwhile waits for it */
 	private starting = false;
 	private decksNext = false;
@@ -78,6 +85,8 @@ export class ReviewView extends ItemView {
 		on('d', () => void this.discard());
 		on('z', () => void this.undoLast(), ['Mod']);
 		on('?', () => this.toggleHelp(), ['Shift']);
+		on('Enter', () => this.enter());
+		on('Escape', () => this.escape());
 	}
 
 	get reviewing(): boolean {
@@ -110,6 +119,8 @@ export class ReviewView extends ItemView {
 		this.graded.clear();
 		this.undo = [];
 		this.waiting = [];
+		this.deck = null;
+		this.openDeck = '';
 		this.queue = this.todayQueue();
 		if (this.decksNext) {
 			this.decksNext = false;
@@ -118,9 +129,20 @@ export class ReviewView extends ItemView {
 		else this.show('done');
 	}
 
-	private todayQueue(): QueueItem[] {
+	/** The cards of `deck` (a card file), or of every deck. */
+	private items(deck: string | null = this.deck): QueueItem[] {
+		const { store } = this.plugin;
+		return itemsFor(buildItems(store.cards, store.state), deck);
+	}
+
+	private todayQueue(deck: string | null = this.deck): QueueItem[] {
 		const { store, scheduler } = this.plugin;
-		return buildQueue(buildItems(store.cards, store.state), { now: new Date(), log: store.log, retrievability: (c, n) => scheduler.retrievability(c, n) });
+		return buildQueue(this.items(deck), { now: new Date(), log: store.log, retrievability: (c, n) => scheduler.retrievability(c, n) });
+	}
+
+	private aheadQueue(deck: string | null = this.deck): QueueItem[] {
+		const { store, scheduler } = this.plugin;
+		return extraQueue(this.items(deck), { now: new Date(), log: store.log, retrievability: (c, n) => scheduler.retrievability(c, n) });
 	}
 
 	private show(mode: Mode): void {
@@ -144,8 +166,14 @@ export class ReviewView extends ItemView {
 	private drawStart(root: HTMLElement): void {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
-		this.drawTimes(col, (m) => this.startSession(m));
-		this.decksLink(col);
+		this.drawTimes(col, (m) => this.pickTime(m));
+	}
+
+	/** The time is picked: the decks come next. */
+	private pickTime(minutes: number): void {
+		this.minutes = minutes;
+		this.openDeck = '';
+		this.show('decks');
 	}
 
 	/** The three lengths, with their keys; the one picked last is highlighted. */
@@ -285,13 +313,15 @@ export class ReviewView extends ItemView {
 	}
 
 	private flip(): void {
+		if (this.mode === 'decks') return this.enter();
 		if (this.mode !== 'review' || this.busy) return;
 		this.flipped = !this.flipped;
 		this.contentEl.toggleClass('is-flipped', this.flipped);
 	}
 
 	private digit(n: number): void {
-		if (this.mode === 'start' && n <= 3) this.startSession(TIMES[n - 1] as number);
+		if (this.mode === 'start' && n <= 3) this.pickTime(TIMES[n - 1] as number);
+		else if (this.mode === 'decks' && !this.openDeck && n === 1) this.openFolder(ALL);
 		else if (this.mode === 'done' && n <= 3) this.keepGoing(TIMES[n - 1] as number);
 		else if (this.mode === 'review' && this.flipped && n <= 4) void this.grade(n as Grade);
 	}
@@ -408,7 +438,7 @@ export class ReviewView extends ItemView {
 	private drawDone(root: HTMLElement): void {
 		const { store, scheduler } = this.plugin;
 		const now = new Date();
-		const items = buildItems(store.cards, store.state);
+		const items = this.items();
 		const left = buildQueue(items, { now, log: store.log, retrievability: (c, n) => scheduler.retrievability(c, n) });
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		const n = this.graded.size;
@@ -433,83 +463,101 @@ export class ReviewView extends ItemView {
 		parent.createEl('a', { text: 'Decks', cls: 'revisit-link' }).onclick = () => this.showDecks();
 	}
 
-	/** Opens the Decks screen, unless a session is running. */
+	/** Opens the folders, unless a session is running. */
 	showDecks(): void {
 		if (this.mode === 'review') return;
+		this.openDeck = '';
 		if (this.starting) this.decksNext = true;
 		else this.show('decks');
 	}
 
-	/** Every deck as a folder with its cards: only to look; Review always mixes them all. */
+	private openFolder(file: string, from: HTMLElement | null = null): void {
+		this.openFrom = from?.getBoundingClientRect() ?? null;
+		this.openDeck = file;
+		this.show('decks');
+	}
+
+	/** Enter: All decks on the folders, Start in an opened folder. */
+	private enter(): void {
+		if (this.mode !== 'decks') return;
+		if (!this.openDeck) this.openFolder(ALL, this.contentEl.querySelector<HTMLElement>('.revisit-folder.is-all'));
+		else this.reviewDeck();
+	}
+
+	private escape(): void {
+		if (this.mode === 'decks' && this.openDeck) this.showDecks();
+	}
+
+	/** Reviews the opened folder: today's cards, or ahead of schedule when it has none. */
+	private reviewDeck(): void {
+		const deck = this.openDeck === ALL ? null : this.openDeck;
+		const queue = this.todayQueue(deck);
+		const next = queue.length ? queue : this.aheadQueue(deck);
+		if (!next.length) return;
+		this.deck = deck;
+		this.queue = next;
+		this.startSession(this.minutes);
+	}
+
 	private drawDecks(root: HTMLElement): void {
+		if (this.openDeck) return this.drawDeck(root);
 		const { store, scheduler } = this.plugin;
-		const now = new Date();
-		const queue = this.todayQueue();
-		const decks = groupDecks(buildItems(store.cards, store.state), normalizePath(this.plugin.settings.folder), new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		const decks = groupDecks(this.items(null), normalizePath(this.plugin.settings.folder), new Set(), new Date(), (c, t) => scheduler.retrievability(c, t));
 		const col = root.createDiv({ cls: 'revisit-col revisit-decks' });
-
-		const head = col.createDiv({ cls: 'revisit-decks-today' });
-		const text = head.createDiv();
-		const n = queue.length;
-		text.createEl('h2', { text: n ? `${n} ${n === 1 ? 'card' : 'cards'} today` : 'Nothing due today', cls: 'revisit-serif' });
-		if (n) {
-			const fresh = queue.filter((it) => isNew(it.fsrs)).length;
-			const recent = store.log.slice(-200).map((e) => e.seconds).filter((x) => x > 0);
-			const avg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 10;
-			const minutes = Math.max(1, Math.round((n * avg) / 60));
-			const parts = [n - fresh ? `${n - fresh} to review` : '', fresh ? `${fresh} new` : ''].filter(Boolean).join(', ');
-			text.createDiv({ text: `${parts}. About ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`, cls: 'revisit-muted' });
-		}
-		head.createEl('button', { text: n ? 'Review' : 'Back', cls: 'mod-cta' }).onclick = () => void this.begin();
-
-		if (!decks.length) {
+		if (!store.cards.length) {
 			col.createDiv({ text: 'No cards yet. Select text in a note and run New card.', cls: 'revisit-muted' });
 			return;
 		}
-		const legend = col.createDiv({ cls: 'revisit-decks-legend' });
-		for (const [cls, label] of [['is-new', 'New'], ['is-learning', 'Learning'], ['is-review', 'Review']]) legend.createSpan({ text: label, cls });
-
-		if (!decks.some((d) => d.file === this.openDeck)) this.openDeck = decks[0]?.file ?? '';
 		const grid = col.createDiv({ cls: 'revisit-decks-grid' });
-		for (const d of decks) {
-			const total = d.rows.length;
-			const f = grid.createEl('button', { cls: 'revisit-folder' + (d.file === this.openDeck ? ' is-open' : ''), attr: { 'aria-expanded': String(d.file === this.openDeck) } });
-			f.createDiv({ text: d.name, cls: 'revisit-folder-name revisit-serif' });
-			f.createDiv({ text: `${total} ${total === 1 ? 'card' : 'cards'}`, cls: 'revisit-folder-count' });
-			const bar = f.createDiv({ cls: 'revisit-folder-bar' });
-			for (const [cls, k] of [['is-new', d.counts.new], ['is-learning', d.counts.learning], ['is-review', d.counts.review]] as const) bar.createSpan({ cls }).style.width = `${(k / total) * 100}%`;
-			f.createDiv({ text: d.today ? `${d.today} due today` : 'Nothing today', cls: 'revisit-folder-due' + (d.today ? ' is-due' : '') });
-			f.onclick = () => {
-				this.openDeck = d.file;
-				this.show('decks');
-			};
-		}
+		const folders = [{ file: ALL, name: 'All decks' }, ...decks];
+		folders.forEach((d, i) => {
+			const f = grid.createEl('button', { text: d.name, cls: 'revisit-folder revisit-serif' + (d.file === ALL ? ' is-all' : '') });
+			f.onclick = () => this.openFolder(d.file, f);
+			if (!still()) f.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: i * 40, easing: 'ease-out', fill: 'backwards' });
+		});
+	}
 
-		const open = decks.find((d) => d.file === this.openDeck);
-		if (!open) return;
-		const sec = col.createDiv({ cls: 'revisit-deck' });
-		const h = sec.createDiv({ cls: 'revisit-deck-head' });
-		h.createEl('h3', { text: open.name, cls: 'revisit-serif' });
-		h.createSpan({ text: open.folder ? `${open.folder}/${open.name}.md` : `${open.name}.md`, cls: 'revisit-muted' });
-		const table = sec.createDiv({ cls: 'revisit-deck-list' }).createEl('table');
-		const tr = table.createEl('tr');
-		for (const t of ['Card', 'State', 'Back in', 'Memory']) tr.createEl('th', { text: t });
-		const STATE_NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
-		for (const r of open.rows) {
-			const row = table.createEl('tr');
-			row.createEl('td', { text: r.front, cls: 'revisit-deck-q revisit-serif' });
-			const [name, cls] = STATE_NAME[r.state] ?? ['New', 'is-new'];
-			row.createEl('td').createSpan({ text: name, cls: `revisit-pill ${cls}` });
-			const when = r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—';
-			row.createEl('td', { text: when, cls: r.today ? 'is-due' : '' });
-			const m = row.createEl('td');
-			if (r.memory === null) m.setText('—');
-			else {
-				const mem = m.createDiv({ cls: 'revisit-mem' + (r.memory < 0.85 ? ' is-low' : '') });
-				mem.createDiv({ cls: 'revisit-mem-track' }).createSpan().style.width = `${Math.round(r.memory * 100)}%`;
-				mem.createSpan({ text: `${Math.round(r.memory * 100)}%` });
-			}
+	/** One folder opened: its cards, and Start. */
+	private drawDeck(root: HTMLElement): void {
+		const { scheduler } = this.plugin;
+		const now = new Date();
+		const deck = this.openDeck === ALL ? null : this.openDeck;
+		const queue = this.todayQueue(deck);
+		const decks = groupDecks(this.items(deck), normalizePath(this.plugin.settings.folder), new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		if (deck && !decks.length) return this.showDecks();
+		const panel = root.createDiv({ cls: 'revisit-deck' });
+		const head = panel.createDiv({ cls: 'revisit-deck-head' });
+		const back = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Back to decks' } });
+		setIcon(back, 'arrow-left');
+		back.onclick = () => this.showDecks();
+		head.createEl('h3', { text: deck ? (decks[0]?.name ?? '') : 'All decks', cls: 'revisit-serif' });
+		const list = panel.createDiv({ cls: 'revisit-deck-rows' });
+		const NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
+		for (const r of decks.flatMap((d) => d.rows)) {
+			const row = list.createDiv({ cls: 'revisit-deck-row' });
+			row.createDiv({ text: r.front, cls: 'revisit-deck-q revisit-serif' });
+			const info = row.createDiv({ cls: 'revisit-deck-info' });
+			const [name, cls] = NAME[r.state] ?? ['New', 'is-new'];
+			info.createSpan({ text: name, cls: `revisit-dot ${cls}` });
+			info.createSpan({ text: r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—', cls: r.today ? 'is-due' : '' });
+			info.createSpan({ text: r.memory === null ? '—' : `${Math.round(r.memory * 100)}%` });
 		}
+		const ahead = queue.length ? [] : this.aheadQueue(deck);
+		if (queue.length || ahead.length) {
+			const go = panel.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
+			go.onclick = () => this.reviewDeck();
+		} else panel.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
+
+		const from = this.openFrom;
+		this.openFrom = null;
+		if (still()) return;
+		if (from) {
+			const to = panel.getBoundingClientRect();
+			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
+		}
+		[head, ...Array.from(list.children), panel.lastElementChild].forEach((c, i) => {
+			if (c instanceof HTMLElement) c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
+		});
 	}
 
 	async onClose(): Promise<void> {

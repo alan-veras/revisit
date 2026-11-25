@@ -29,6 +29,11 @@ export function buildItems(cards: Card[], state: Record<string, CardState>): Que
 	return out;
 }
 
+/** The items of one card file; null keeps every deck. The daily cap of new cards stays shared, since it counts the log. */
+export function itemsFor(items: QueueItem[], file: string | null): QueueItem[] {
+	return file === null ? items : items.filter((it) => it.card.file === file);
+}
+
 /** What is asked and what answers it. */
 export function faces(item: QueueItem): { front: string; back: string } {
 	const { card, cloze } = item;
