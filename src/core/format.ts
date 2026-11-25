@@ -15,7 +15,19 @@ const LABELS = 'Front|Back|Type|Topic|Tags|Reverse|Source';
 const LABEL_RE = new RegExp(`^(${LABELS}):[ \\t]?(.*)$`);
 const BARE_LABEL_RE = new RegExp(`^(${LABELS}):[ \\t]?$`, 'i');
 const ID_RE = /\s\^(l[a-z0-9]{5})\s*$/;
-const FENCE_RE = /^\s*(```|~~~)/;
+const FENCE_RE = /^\s*(`{3,}|~{3,})(.*)$/;
+
+/**
+ * The open code fence after `line` ('' outside one). A fence closes only with the same
+ * mark, at least as long and alone on its line: ~~~ inside ``` is code, as in markdown.
+ */
+function fenceAfter(line: string, open: string): string {
+	const m = FENCE_RE.exec(line);
+	if (!m) return open;
+	const mark = m[1] as string;
+	if (!open) return mark;
+	return mark[0] === open[0] && mark.length >= open.length && !(m[2] ?? '').trim() ? '' : open;
+}
 // inline code is matched first and skipped, so `a == b == c` is never a highlight
 const CLOZE_RE = /`[^`\n]*`|==([^=\n]+?)==/g;
 
@@ -29,14 +41,14 @@ export interface Block {
 export function splitBlocks(text: string): Block[] {
 	const lines = text.split('\n');
 	const blocks: Block[] = [];
-	let fence = false;
+	let fence = '';
 	let start = 0;
 	const push = (end: number) => {
 		const chunk = lines.slice(start, end + 1);
 		if (chunk.some((l) => l.trim() !== '')) blocks.push({ start, end, lines: chunk });
 	};
 	lines.forEach((line, i) => {
-		if (FENCE_RE.test(line)) fence = !fence;
+		fence = fenceAfter(line, fence);
 		if (!fence && line.trim() === '---') {
 			push(i - 1);
 			start = i + 1;
@@ -71,7 +83,7 @@ const trimBlock = (value: string) => value.replace(/^\n+/, '').replace(/\s+$/, '
 export function parseBlock(block: Block): Card | null {
 	const fields: Partial<Record<Label, string[]>> = {};
 	let current: Label | null = null;
-	let fence = false;
+	let fence = '';
 	let id: string | null = null;
 	for (const raw of block.lines) {
 		let line = raw;
@@ -87,7 +99,7 @@ export function parseBlock(block: Block): Card | null {
 		} else if (current) {
 			(fields[current] as string[]).push(line);
 		}
-		if (FENCE_RE.test(raw)) fence = !fence;
+		fence = fenceAfter(raw, fence);
 	}
 	const get = (label: Label) => trimBlock((fields[label] ?? []).join('\n'));
 	const front = get('Front');
@@ -126,14 +138,17 @@ export function parseCardFile(text: string): Card[] {
  * A `---` line would split the card in two: it becomes `- - -`, the same rule in markdown.
  */
 function escapeLabels(lines: string[]): string[] {
-	let fence = false;
-	return lines.map((line) => {
+	let fence = '';
+	const out = lines.map((line) => {
 		const inside = fence;
-		if (FENCE_RE.test(line)) fence = !fence;
+		fence = fenceAfter(line, fence);
 		if (inside) return line;
 		if (line.trim() === '---') return '- - -';
 		return LABEL_RE.test(line) ? ` ${line}` : line;
 	});
+	// a code block left open would swallow Type, Topic and Source on the next read: it is closed here
+	if (fence) out.push(fence);
+	return out;
 }
 
 const field = (label: Label, value: string) => (value.includes('\n') ? `${label}:\n${escapeLabels(value.split('\n')).join('\n')}` : `${label}: ${value}`);
@@ -206,13 +221,14 @@ export function newId(taken: Set<string>, random: () => number = Math.random): s
 
 /** Line that carries the block id: the last one outside a code fence, never a bare label. */
 function idLineFor(lines: string[], start: number, end: number): number {
-	let fence = false;
+	let fence = '';
 	const candidates: number[] = [];
 	for (let i = start; i <= end; i++) {
 		const line = lines[i] ?? '';
+		const next = fenceAfter(line, fence);
 		const isFence = FENCE_RE.test(line);
 		if (!fence && !isFence && line.trim() !== '') candidates.push(i);
-		if (isFence) fence = !fence;
+		fence = next;
 	}
 	while (candidates.length) {
 		const at = candidates[candidates.length - 1] as number;

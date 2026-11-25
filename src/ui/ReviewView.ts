@@ -34,7 +34,8 @@ const KEYS: [string, string][] = [
 interface Undo {
 	item: QueueItem;
 	index: number;
-	/** where the card was put back in the queue, -1 when it was not */
+	/** the session it was graded in: a queue rebuilt since then puts the card back elsewhere */
+	gen: number;
 	before: CardState | undefined;
 	fsrs: QueueItem['fsrs'];
 }
@@ -51,6 +52,10 @@ export class ReviewView extends ItemView {
 	/** begin() is reading the cards; Decks asked meanwhile waits for it */
 	private starting = false;
 	private decksNext = false;
+	/** bumped by begin() and every session start: a begin() that finishes late sees it changed and stops */
+	private gen = 0;
+	/** undo just put a card back: the waiting cards let it be shown first */
+	private holdWaiting = false;
 	private queue: QueueItem[] = [];
 	private index = 0;
 	private flipped = false;
@@ -112,11 +117,17 @@ export class ReviewView extends ItemView {
 
 	/** Back to the start: reads the cards again; nothing to review goes straight to Done. */
 	async begin(): Promise<void> {
+		const gen = ++this.gen;
 		this.starting = true;
 		try {
 			await this.plugin.refresh();
 		} finally {
 			this.starting = false;
+		}
+		// a session started while the cards were read (Keep going on Done): it is not thrown away
+		if (gen !== this.gen) {
+			this.decksNext = false;
+			return;
 		}
 		this.graded.clear();
 		this.undo = [];
@@ -158,6 +169,8 @@ export class ReviewView extends ItemView {
 		else if (mode === 'review') this.drawCard(root);
 		else if (mode === 'decks') this.drawDecks(root);
 		else this.drawDone(root);
+		// the last card graded: drawCard already moved on to Done, which drew itself
+		if (this.mode !== mode) return;
 		if (mode === 'review' && Platform.isMobile) this.drawMenu(root);
 		else if ((mode === 'start' || mode === 'review') && !Platform.isMobile) this.drawHelp(root);
 		this.plugin.updateStatus();
@@ -201,6 +214,7 @@ export class ReviewView extends ItemView {
 	private startSession(minutes: number, more = false): void {
 		this.minutes = minutes;
 		this.index = 0;
+		this.gen++;
 		if (!more) {
 			this.graded.clear();
 			this.undo = [];
@@ -216,7 +230,9 @@ export class ReviewView extends ItemView {
 	private drawCard(root: HTMLElement): void {
 		const now = Date.now();
 		const ready = this.waiting.filter((it) => (it.fsrs?.due.getTime() ?? 0) <= now);
-		if (ready.length) {
+		const hold = this.holdWaiting;
+		this.holdWaiting = false;
+		if (ready.length && !hold) {
 			this.waiting = this.waiting.filter((it) => !ready.includes(it));
 			// a card already ahead in the queue (Keep going rebuilt it) is not asked twice
 			const ahead = new Set(this.queue.slice(this.index).map((it) => it.key));
@@ -346,7 +362,7 @@ export class ReviewView extends ItemView {
 		const entry = { id: item.key, t: now.toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
 		const before = store.state[item.key];
 		store.setEntry(item.key, { ...before, st: before?.st ?? 'active', fsrs: toStored(next) });
-		const undo: Undo = { item, index: this.index, before, fsrs: item.fsrs };
+		const undo: Undo = { item, index: this.index, gen: this.gen, before, fsrs: item.fsrs };
 		item.fsrs = next;
 		// a card still due today waits for its time (Again 1m, Hard 6m), never earlier
 		const end = new Date();
@@ -375,7 +391,7 @@ export class ReviewView extends ItemView {
 		const { store } = this.plugin;
 		this.waiting = this.waiting.filter((it) => it.key !== u.item.key);
 		// the same queue: the card goes back to its place; a queue rebuilt by Keep going: it comes next
-		const same = this.queue[u.index] === u.item;
+		const same = u.gen === this.gen && this.queue[u.index] === u.item;
 		const at = same ? u.index : Math.min(this.index, this.queue.length);
 		this.queue = this.queue.filter((it, i) => i <= at - (same ? 0 : 1) || it.key !== u.item.key);
 		if (!same) this.queue.splice(at, 0, u.item);
@@ -393,6 +409,7 @@ export class ReviewView extends ItemView {
 			this.busy = false;
 		}
 		this.index = at;
+		this.holdWaiting = true;
 		this.show('review');
 	}
 
@@ -433,11 +450,17 @@ export class ReviewView extends ItemView {
 			await this.plugin.store.deleteCard(item.card);
 		} catch (e) {
 			new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)}).`);
+			// the next D asks again
+			this.discardArmed = false;
+			this.hint?.setText(isNew(item.fsrs) ? NEW_HINT : '');
 			return;
 		} finally {
 			this.busy = false;
 		}
-		this.queue = this.queue.filter((it) => it.card.id !== item.card.id);
+		// copies of it earlier in the queue (graded, then back from waiting) go too: the index moves back by as many
+		const gone = (it: QueueItem) => it.card.id === item.card.id;
+		this.index -= this.queue.slice(0, this.index).filter(gone).length;
+		this.queue = this.queue.filter((it) => !gone(it));
 		this.waiting = this.waiting.filter((it) => it.card.id !== item.card.id);
 		// the queue shifted and the card is gone: earlier grades can no longer be undone safely
 		this.undo = [];
@@ -458,7 +481,7 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		const n = this.graded.size;
 		col.createEl('h2', { text: n ? `Done. ${n} ${n === 1 ? 'card' : 'cards'}.` : 'All caught up.', cls: 'revisit-serif' });
-		const next = left.length ? null : nextCardLabel(items, store.log, now);
+		const next = left.length ? null : nextCardLabel(items, now);
 		if (next) col.createDiv({ text: next, cls: 'revisit-muted' });
 		const more = extraQueue(items, { now, log: store.log, retrievability: (c, t) => scheduler.retrievability(c, t) });
 		this.more = more;
