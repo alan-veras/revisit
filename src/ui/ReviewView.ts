@@ -191,6 +191,9 @@ export class ReviewView extends ItemView {
 	private keepGoing(minutes: number): void {
 		if (!this.more.length) return;
 		this.queue = this.more;
+		// a waiting card that Keep going already holds is asked once, from the fresh queue
+		const keys = new Set(this.more.map((it) => it.key));
+		this.waiting = this.waiting.filter((it) => !keys.has(it.key));
 		this.startSession(minutes, true);
 	}
 
@@ -215,7 +218,9 @@ export class ReviewView extends ItemView {
 		const ready = this.waiting.filter((it) => (it.fsrs?.due.getTime() ?? 0) <= now);
 		if (ready.length) {
 			this.waiting = this.waiting.filter((it) => !ready.includes(it));
-			this.queue.splice(this.index, 0, ...ready);
+			// a card already ahead in the queue (Keep going rebuilt it) is not asked twice
+			const ahead = new Set(this.queue.slice(this.index).map((it) => it.key));
+			this.queue.splice(this.index, 0, ...ready.filter((it) => !ahead.has(it.key)));
 		}
 		const item = this.queue[this.index];
 		if (!item) return this.finish();
@@ -394,7 +399,7 @@ export class ReviewView extends ItemView {
 	/** Cards edited from the session: the queue keeps its order, with the fresh text. */
 	private refreshCards(): void {
 		const byId = new Map(this.plugin.store.cards.map((c) => [c.id, c]));
-		this.queue.forEach((it) => (it.card = byId.get(it.card.id) ?? it.card));
+		[...this.queue, ...this.waiting].forEach((it) => (it.card = byId.get(it.card.id) ?? it.card));
 		this.show('review');
 	}
 
@@ -428,6 +433,9 @@ export class ReviewView extends ItemView {
 			this.busy = false;
 		}
 		this.queue = this.queue.filter((it) => it.card.id !== item.card.id);
+		this.waiting = this.waiting.filter((it) => it.card.id !== item.card.id);
+		// the queue shifted and the card is gone: earlier grades can no longer be undone safely
+		this.undo = [];
 		this.show('review');
 	}
 

@@ -145,4 +145,9 @@ describe('next card label', () => {
 		const q = extra([card('lahd001'), card('lahd002')], { lahd001: reviewed(at(3)), lahd002: reviewed(at(29)) });
 		expect(q.map((i) => i.key)).toEqual(['lahd001']);
 	});
+
+	it('ahead of schedule never asks a learning step early', () => {
+		const step: CardState = { st: 'active', fsrs: toStored({ ...freshCard(now), state: 1, due: new Date(now.getTime() + 6 * 60000), last_review: at(-1), stability: 1, difficulty: 5, reps: 1 }) };
+		expect(extra([card('lstp009')], { lstp009: step })).toHaveLength(0);
+	});
 });

@@ -157,6 +157,7 @@ export function extraQueue(items: QueueItem[], o: { now: Date; log: RevlogEntry[
 	// graded today is checked by item key (a cloze highlight is `id-c2`); only cards due within a week,
 	// since an early review of a card weeks away only stretches its interval further
 	const week = endOfDay(o.now).getTime() + AHEAD_DAYS * 86400000;
-	const ahead = pool.filter((it) => !isNew(it.fsrs) && !graded.has(it.key) && (it.fsrs as FsrsCard).due.getTime() <= week);
+	// a learning step (minutes) is never asked early: it waits for its time
+	const ahead = pool.filter((it) => !isNew(it.fsrs) && !learning(it.fsrs as FsrsCard) && !graded.has(it.key) && (it.fsrs as FsrsCard).due.getTime() <= week);
 	return burySiblings(ahead.sort((a, b) => (a.fsrs as FsrsCard).due.getTime() - (b.fsrs as FsrsCard).due.getTime()), graded);
 }
