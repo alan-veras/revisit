@@ -242,6 +242,8 @@ export function deckPath(topics: readonly string[], folder: string): string {
 		.split(' > ')
 		.map((part) => part.replace(FORBIDDEN, '-').trim())
 		.filter(Boolean)
+		// `devices/` belongs to the per-device files and is never read as a deck
+		.map((part, i) => (i === 0 && part.toLowerCase() === 'devices' ? 'Devices (deck)' : part))
 		.join('/');
 	return `${folder.replace(/\/+$/, '')}/${rel || 'Inbox'}.md`;
 }

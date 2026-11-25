@@ -4,6 +4,7 @@ import { Scheduler } from './core/scheduler';
 import type { Card } from './core/types';
 import { deckFor, sourceLink } from './core/format';
 import { Store } from './store/store';
+import { isConflictPath } from './store/data';
 import { DEFAULT_SETTINGS, RevisitSettings, RevisitSettingTab } from './settings';
 import { CreateModal, Draft } from './ui/CreateModal';
 import { ReviewView, VIEW_TYPE_REVIEW } from './ui/ReviewView';
@@ -33,6 +34,7 @@ export default class RevisitPlugin extends Plugin {
 
 		this.addCommand({ id: 'review', name: 'Review', callback: () => void this.openReview() });
 		this.addCommand({ id: 'new-card', name: 'New card', callback: () => void this.createFromEditor() });
+		this.addCommand({ id: 'decks', name: 'Decks', callback: () => void this.openDecks() });
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
 				const title = editor.getSelection() ? 'New card from selection' : 'New card';
@@ -42,11 +44,16 @@ export default class RevisitPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => {
 			void this.refresh();
 			// a card file edited by hand is read again
-			this.registerEvent(
-				this.app.vault.on('modify', (f) => {
-					if (f instanceof TFile && f.path.startsWith(normalizePath(this.settings.folder) + '/') && f.extension === 'md') void this.store.loadCards().then(() => this.updateStatus());
-				}),
-			);
+			const changed = (f: unknown) => {
+				if (!(f instanceof TFile) || !f.path.startsWith(normalizePath(this.settings.folder) + '/') || isConflictPath(f.path)) return;
+				if (this.store.isDevicePath(f.path)) {
+					// another device's state or log: read again, but never in the middle of a session
+					const reviewing = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW).some((l) => l.view instanceof ReviewView && l.view.reviewing);
+					if (!this.store.isOwnPath(f.path) && !reviewing) void this.store.loadShared().then(() => this.updateStatus());
+				} else if (f.extension === 'md') void this.store.loadCards().then(() => this.updateStatus());
+			};
+			this.registerEvent(this.app.vault.on('modify', changed));
+			this.registerEvent(this.app.vault.on('create', changed));
 		});
 	}
 
@@ -76,6 +83,12 @@ export default class RevisitPlugin extends Plugin {
 		if (!open) await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
 		else if (open.view instanceof ReviewView && !open.view.reviewing) await open.view.begin();
 		await workspace.revealLeaf(leaf);
+	}
+
+	async openDecks(): Promise<void> {
+		await this.openReview();
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0]?.view;
+		if (view instanceof ReviewView) view.showDecks();
 	}
 
 	/** The create window: a new card, or the edit of `card`. */

@@ -47,10 +47,11 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 ## How it works
 
 1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3).
-2. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up.
-3. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. A `New card` link sits here too.
+2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its cards, how each is going and when it comes back, with a Start button for that deck alone. Esc goes back.
+3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up.
+4. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. `New card` and `Decks` links sit here too.
 
-Reviews always mix every deck. There is no overdue counter.
+There is no overdue counter.
 
 ## Creating cards
 
@@ -58,7 +59,7 @@ Reviews always mix every deck. There is no overdue counter.
 
 `New card` (command, the editor context menu or the Done screen) opens two fields, Front and Back. A selection in the editor goes to Back. With the front left empty and a short selection (up to 8 words), the card is saved as a cloze of the sentence around it. `Ctrl+Enter` saves, `Esc` cancels.
 
-There is no deck to pick. Cards are grouped by the top-level folder of the note you were in (a note at the vault root groups by its own name; with no note open, cards go to `Inbox`). Grouping only decides the file the card is kept in: a review always mixes every deck.
+There is no deck to pick. Cards are grouped by the top-level folder of the note you were in (a note at the vault root groups by its own name; with no note open, cards go to `Inbox`). Each group is a deck: review it alone, or pick *All decks* to mix them.
 
 ## Keyboard shortcuts
 
@@ -96,7 +97,7 @@ Source: [[CKA study plan]] ^lk7q2a
 
 ## Install
 
-Revisit is on its way to the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins. Desktop only for now.
+Revisit is on its way to the Community plugins list. Until it appears there, install it manually: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases) into `<vault>/.obsidian/plugins/revisit/`, then enable Revisit under Settings → Community plugins.
 
 ## FAQ
 
@@ -104,7 +105,9 @@ Revisit is on its way to the Community plugins list. Until it appears there, ins
 
 **Can I edit cards by hand?** Yes. They are markdown files. Press `E` in a review to edit one there.
 
-**Does it work on mobile?** Not yet. It is desktop only.
+**Does it work on mobile?** Yes. On a phone the `?` becomes a `⋯` menu (edit, open source note, delete, undo), buttons are larger and you tap to flip.
+
+**Two devices?** Yes, with Syncthing or any file sync. Each device writes only its own files, `devices/<id>/state.json` and `devices/<id>/review-log.jsonl` inside the cards folder, and Revisit merges them when reading (the latest review of each card wins; logs are joined by time). Files from older versions in the folder root are still read and never touched. `*.sync-conflict-*` files are ignored. Reviewing on two devices is safe. One limit: creating or editing cards in the *same deck file* on both devices before they sync can still make Syncthing create a conflict in that file.
 
 **Can I move over from another plugin?** There is no importer. Cards are plain markdown with a simple format (above), so you can write them into the cards folder yourself. Revisit does not read the scheduling data of other plugins.
 

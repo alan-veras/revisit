@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildItems, buildQueue, burySiblings, extraQueue, faces, interleave, nextCardLabel } from '../src/core/queue';
+import { buildItems, buildQueue, burySiblings, extraQueue, faces, interleave, itemsFor, nextCardLabel } from '../src/core/queue';
 import { formatInterval, freshCard, fromStored, Scheduler, toStored } from '../src/core/scheduler';
 import { Card, CardState, RevlogEntry } from '../src/core/types';
 
@@ -92,7 +92,7 @@ describe('keep going', () => {
 		expect(extra([...news, card('lfut001')], { ...state, lfut001: reviewed(at(3)) }, log).map((i) => i.card.id)).toEqual(['lnew010', 'lnew011']);
 	});
 	it('then cards ahead of their day, soonest first, leaving out those graded today', () => {
-		const q = extra([card('lfar001'), card('lsoon01'), card('ldone01')], { lfar001: reviewed(at(9)), lsoon01: reviewed(at(2)), ldone01: reviewed(at(1)) }, [entry('ldone01', false)]);
+		const q = extra([card('lfar001'), card('lsoon01'), card('ldone01')], { lfar001: reviewed(at(5)), lsoon01: reviewed(at(2)), ldone01: reviewed(at(1)) }, [entry('ldone01', false)]);
 		expect(q.map((i) => i.card.id)).toEqual(['lsoon01', 'lfar001']);
 	});
 	it('is empty when there is nothing at all', () => {
@@ -105,5 +105,49 @@ describe('next card label', () => {
 		const cloze = card('lclz002', { type: 'Cloze', front: '==a== ==b==', back: '' });
 		const items = buildItems([cloze], { lclz002: reviewed(at(5)), 'lclz002-c2': reviewed(at(-1)) });
 		expect(nextCardLabel(items, [entry('lclz002', false)], now)).toBe('Next card tomorrow');
+	});
+
+	it('a learning step (Hard 6m) waits for its minutes; a review due tonight is shown now', () => {
+		const step = (min: number): CardState => ({ st: 'active', fsrs: toStored({ ...freshCard(now), state: 1, due: new Date(now.getTime() + min * 60000), last_review: now, stability: 1, difficulty: 5, reps: 1 }) });
+		const q = queue([card('lstp001'), card('lstp002'), card('lrev001')], { lstp001: step(6), lstp002: step(-1), lrev001: { st: 'active', fsrs: toStored({ ...freshCard(now), state: 2, due: new Date(2026, 10, 24, 20, 0), last_review: at(-5), stability: 5, difficulty: 5, reps: 2 }) } });
+		expect(q.map((i) => i.key).sort()).toEqual(['lrev001', 'lstp002']);
+		expect(nextCardLabel(buildItems([card('lstp001')], { lstp001: step(6) }), [entry('lstp001', true)], now)).toBe('Next card in 6m');
+	});
+
+	it('grading Hard on a new card schedules it minutes ahead, not right away', () => {
+		const p = sched.preview(freshCard(now), now);
+		expect(p[2].card.due.getTime() - now.getTime()).toBeGreaterThanOrEqual(5 * 60000);
+		const items = buildItems([card('lhrd001')], { lhrd001: { st: 'active', fsrs: toStored(p[2].card) } });
+		expect(buildQueue(items, { now: new Date(now.getTime() + 60000), log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(0);
+		expect(buildQueue(items, { now: p[2].card.due, log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(1);
+	});
+
+	it('a deck reviews only its own file, and the daily cap of new cards stays shared', () => {
+		const cards = [...Array.from({ length: 6 }, (_, i) => card(`la${i}`, { file: 'R/A.md' })), ...Array.from({ length: 6 }, (_, i) => card(`lb${i}`, { file: 'R/B.md' }))];
+		const items = buildItems(cards, {});
+		const opts = { now, log: Array.from({ length: 7 }, (_, i) => entry(`old${i}`, true)), retrievability: (c: Parameters<typeof sched.retrievability>[0], n: Date) => sched.retrievability(c, n) };
+		const a = buildQueue(itemsFor(items, 'R/A.md'), opts);
+		expect(a).toHaveLength(3);
+		expect(a.every((it) => it.card.file === 'R/A.md')).toBe(true);
+		expect(itemsFor(items, null)).toHaveLength(12);
+		expect(extraQueue(itemsFor(items, 'R/B.md'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
+	});
+
+	it('a cloze highlight graded today never comes back as ahead of schedule, nor its sibling', () => {
+		const cloze = card('lsib001', { type: 'Cloze', front: '==a== ==b==', back: '' });
+		const graded = { st: 'active' as const, fsrs: toStored({ ...freshCard(now), state: 2, due: at(29), last_review: now, stability: 29, difficulty: 1, reps: 4 }) };
+		const items = buildItems([cloze], { lsib001: reviewed(at(2)), 'lsib001-c2': graded });
+		expect(extra([cloze], { lsib001: reviewed(at(2)), 'lsib001-c2': graded }, [entry('lsib001-c2', false)])).toHaveLength(0);
+		expect(items).toHaveLength(2);
+	});
+
+	it('ahead of schedule only offers cards due within a week', () => {
+		const q = extra([card('lahd001'), card('lahd002')], { lahd001: reviewed(at(3)), lahd002: reviewed(at(29)) });
+		expect(q.map((i) => i.key)).toEqual(['lahd001']);
+	});
+
+	it('ahead of schedule never asks a learning step early', () => {
+		const step: CardState = { st: 'active', fsrs: toStored({ ...freshCard(now), state: 1, due: new Date(now.getTime() + 6 * 60000), last_review: at(-1), stability: 1, difficulty: 5, reps: 1 }) };
+		expect(extra([card('lstp009')], { lstp009: step })).toHaveLength(0);
 	});
 });
