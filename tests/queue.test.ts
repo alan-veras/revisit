@@ -92,7 +92,7 @@ describe('keep going', () => {
 		expect(extra([...news, card('lfut001')], { ...state, lfut001: reviewed(at(3)) }, log).map((i) => i.card.id)).toEqual(['lnew010', 'lnew011']);
 	});
 	it('then cards ahead of their day, soonest first, leaving out those graded today', () => {
-		const q = extra([card('lfar001'), card('lsoon01'), card('ldone01')], { lfar001: reviewed(at(9)), lsoon01: reviewed(at(2)), ldone01: reviewed(at(1)) }, [entry('ldone01', false)]);
+		const q = extra([card('lfar001'), card('lsoon01'), card('ldone01')], { lfar001: reviewed(at(5)), lsoon01: reviewed(at(2)), ldone01: reviewed(at(1)) }, [entry('ldone01', false)]);
 		expect(q.map((i) => i.card.id)).toEqual(['lsoon01', 'lfar001']);
 	});
 	it('is empty when there is nothing at all', () => {
@@ -131,5 +131,18 @@ describe('next card label', () => {
 		expect(a.every((it) => it.card.file === 'R/A.md')).toBe(true);
 		expect(itemsFor(items, null)).toHaveLength(12);
 		expect(extraQueue(itemsFor(items, 'R/B.md'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
+	});
+
+	it('a cloze highlight graded today never comes back as ahead of schedule, nor its sibling', () => {
+		const cloze = card('lsib001', { type: 'Cloze', front: '==a== ==b==', back: '' });
+		const graded = { st: 'active' as const, fsrs: toStored({ ...freshCard(now), state: 2, due: at(29), last_review: now, stability: 29, difficulty: 1, reps: 4 }) };
+		const items = buildItems([cloze], { lsib001: reviewed(at(2)), 'lsib001-c2': graded });
+		expect(extra([cloze], { lsib001: reviewed(at(2)), 'lsib001-c2': graded }, [entry('lsib001-c2', false)])).toHaveLength(0);
+		expect(items).toHaveLength(2);
+	});
+
+	it('ahead of schedule only offers cards due within a week', () => {
+		const q = extra([card('lahd001'), card('lahd002')], { lahd001: reviewed(at(3)), lahd002: reviewed(at(29)) });
+		expect(q.map((i) => i.key)).toEqual(['lahd001']);
 	});
 });

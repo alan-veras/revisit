@@ -45,6 +45,9 @@ export function faces(item: QueueItem): { front: string; back: string } {
 /** Card id of an item key: `lxxxxx` and `lxxxxx-c2` share it. */
 export const baseOf = (key: string): string => key.replace(/-.*$/, '');
 
+/** How far ahead of schedule "Ahead of schedule?" may reach. */
+const AHEAD_DAYS = 7;
+
 function endOfDay(now: Date): Date {
 	const d = new Date(now);
 	d.setHours(23, 59, 59, 999);
@@ -151,6 +154,9 @@ export function extraQueue(items: QueueItem[], o: { now: Date; log: RevlogEntry[
 	const pool = items.filter((it) => !it.suspended);
 	const fresh = burySiblings(pool.filter((it) => isNew(it.fsrs)), graded);
 	if (fresh.length) return interleave(fresh);
-	const ahead = pool.filter((it) => !isNew(it.fsrs) && !graded.has(it.card.id ?? ''));
+	// graded today is checked by item key (a cloze highlight is `id-c2`); only cards due within a week,
+	// since an early review of a card weeks away only stretches its interval further
+	const week = endOfDay(o.now).getTime() + AHEAD_DAYS * 86400000;
+	const ahead = pool.filter((it) => !isNew(it.fsrs) && !graded.has(it.key) && (it.fsrs as FsrsCard).due.getTime() <= week);
 	return burySiblings(ahead.sort((a, b) => (a.fsrs as FsrsCard).due.getTime() - (b.fsrs as FsrsCard).due.getTime()), graded);
 }
