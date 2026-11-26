@@ -1,6 +1,7 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { groupDecks } from '../core/decks';
 import { estimateMinutes, parseMinutes } from '../core/estimate';
+import { minutesLeft, shiftClock } from '../core/pause';
 import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
@@ -22,6 +23,7 @@ const TIMES = [2, 5, 10];
 /** the last custom length, kept per device */
 const CUSTOM_KEY = 'revisit-minutes';
 const CUSTOM_DEFAULT = 15;
+const RESUME_TEXT = Platform.isMobile ? 'Tap to resume' : ['P', 'or tap to resume'].join(' ');
 const FLIP_TEXT = Platform.isMobile ? 'Tap to flip' : ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
@@ -29,6 +31,7 @@ const KEYS: [string, string][] = [
 	['4 5', 'Custom time, time to clear (start)'],
 	['Space', 'Flip the card'],
 	['1 2 3 4', 'Again, Hard, Good, Easy'],
+	['P', 'Pause or resume'],
 	['E', 'Edit the card'],
 	['O', 'Open the source note'],
 	['D D', 'Delete the card'],
@@ -67,6 +70,8 @@ export class ReviewView extends ItemView {
 	private shownAt = 0;
 	private startedAt = 0;
 	private endsAt = 0;
+	/** when the review was paused; 0 while it runs */
+	private pausedAt = 0;
 	private graded = new Map<string, number>();
 	/** graded cards that come back later today: they rejoin the queue only once their time has come */
 	private waiting: QueueItem[] = [];
@@ -99,6 +104,7 @@ export class ReviewView extends ItemView {
 			});
 		['1', '2', '3', '4', '5'].forEach((k) => on(k, () => this.digit(Number(k))));
 		on(' ', () => this.flip());
+		on('p', () => this.togglePause());
 		on('e', () => this.editCard());
 		on('o', () => this.openSource());
 		on('d', () => void this.discard());
@@ -174,6 +180,9 @@ export class ReviewView extends ItemView {
 		this.mode = mode;
 		const root = this.contentEl;
 		root.empty();
+		// a screen drawn anew is never paused
+		this.pausedAt = 0;
+		root.removeClass('is-paused');
 		root.addClass('revisit');
 		root.toggleClass('is-touch', Platform.isMobile);
 		this.bar = null;
@@ -309,6 +318,7 @@ export class ReviewView extends ItemView {
 		this.preview = this.plugin.scheduler.preview(item.fsrs ?? freshCard(new Date()), new Date());
 		this.bar = root.createDiv({ cls: 'revisit-bar' }).createEl('i');
 		this.tick();
+		if (!Platform.isMobile) this.drawPauseButton(root);
 		const hint = root.createDiv({ cls: 'revisit-hint', text: isNew(item.fsrs) ? NEW_HINT : '' });
 		const col = root.createDiv({ cls: 'revisit-col' });
 		const { front, back } = faces(item);
@@ -341,6 +351,47 @@ export class ReviewView extends ItemView {
 		this.shownAt = Date.now();
 	}
 
+	// ---- Pause ----
+
+	/** A faint ⏸ under the time line, seen only when the pointer is up there. */
+	private drawPauseButton(root: HTMLElement): void {
+		const zone = root.createDiv({ cls: 'revisit-pause-zone' });
+		const btn = zone.createEl('button', { cls: 'revisit-pause-btn clickable-icon', attr: { 'aria-label': 'Pause' } });
+		setIcon(btn, 'pause');
+		btn.onclick = () => this.pause();
+	}
+
+	private togglePause(): void {
+		if (this.pausedAt) this.resume();
+		else this.pause();
+	}
+
+	/** The card is hidden, not redrawn: it comes back on the same side. */
+	private pause(): void {
+		const item = this.queue[this.index];
+		if (this.mode !== 'review' || !item || this.busy || this.pausedAt) return;
+		this.pausedAt = Date.now();
+		// a delete waiting for its second D is forgotten
+		window.clearTimeout(this.disarm);
+		this.discardArmed = false;
+		this.hint?.setText(isNew(item.fsrs) ? NEW_HINT : '');
+		this.contentEl.addClass('is-paused');
+		const cover = this.contentEl.createDiv({ cls: 'revisit-paused' });
+		cover.createDiv({ text: 'Paused', cls: 'revisit-paused-title revisit-serif' });
+		cover.createDiv({ text: `${minutesLeft(this.endsAt, this.pausedAt)} min left · ${RESUME_TEXT}`, cls: 'revisit-muted' });
+		cover.onclick = () => this.resume();
+	}
+
+	private resume(): void {
+		if (!this.pausedAt) return;
+		const clock = shiftClock({ startedAt: this.startedAt, endsAt: this.endsAt, shownAt: this.shownAt }, Date.now() - this.pausedAt);
+		({ startedAt: this.startedAt, endsAt: this.endsAt, shownAt: this.shownAt } = clock);
+		this.pausedAt = 0;
+		this.contentEl.removeClass('is-paused');
+		this.contentEl.querySelector('.revisit-paused')?.remove();
+		this.tick();
+	}
+
 	// ---- Help ----
 
 	/** A quiet ? in the corner; it opens the list of keys, so a first-time user is never stuck. */
@@ -363,6 +414,7 @@ export class ReviewView extends ItemView {
 		setIcon(btn, 'more-horizontal');
 		btn.onclick = (ev) => {
 			const menu = new Menu();
+			menu.addItem((i) => i.setTitle('Pause').setIcon('pause').onClick(() => this.pause()));
 			menu.addItem((i) => i.setTitle('Edit card').setIcon('pencil').onClick(() => this.editCard()));
 			menu.addItem((i) => i.setTitle('Open source note').setIcon('file-text').onClick(() => this.openSource()));
 			menu.addItem((i) => i.setTitle('Delete card').setIcon('trash').onClick(() => void this.confirmDelete()));
@@ -394,12 +446,12 @@ export class ReviewView extends ItemView {
 	}
 
 	private tick(): void {
-		if (this.bar && this.mode === 'review') this.bar.style.width = `${Math.min(100, ((Date.now() - this.startedAt) / (this.endsAt - this.startedAt)) * 100)}%`;
+		if (this.bar && this.mode === 'review' && !this.pausedAt) this.bar.style.width = `${Math.min(100, ((Date.now() - this.startedAt) / (this.endsAt - this.startedAt)) * 100)}%`;
 	}
 
 	private flip(): void {
 		if (this.mode === 'decks') return this.enter();
-		if (this.mode !== 'review' || this.busy) return;
+		if (this.mode !== 'review' || this.busy || this.pausedAt) return;
 		this.flipped = !this.flipped;
 		this.contentEl.toggleClass('is-flipped', this.flipped);
 	}
@@ -422,7 +474,7 @@ export class ReviewView extends ItemView {
 
 	private async grade(grade: Grade): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || !this.preview || this.busy) return;
+		if (this.mode !== 'review' || !item || !this.preview || this.busy || this.pausedAt) return;
 		this.busy = true;
 		this.flipped = false;
 		this.contentEl.removeClass('is-flipped');
@@ -455,7 +507,7 @@ export class ReviewView extends ItemView {
 	}
 
 	private async undoLast(): Promise<void> {
-		if (this.busy || (this.mode !== 'review' && this.mode !== 'done')) return;
+		if (this.busy || this.pausedAt || (this.mode !== 'review' && this.mode !== 'done')) return;
 		const u = this.undo.pop();
 		if (!u) return;
 		this.busy = true;
@@ -486,7 +538,7 @@ export class ReviewView extends ItemView {
 
 	private editCard(): void {
 		const item = this.queue[this.index];
-		if (this.mode === 'review' && item) this.plugin.openCreate({ card: item.card, onSaved: () => this.refreshCards() });
+		if (this.mode === 'review' && item && !this.pausedAt) this.plugin.openCreate({ card: item.card, onSaved: () => this.refreshCards() });
 	}
 
 	/** Cards edited from the session: the queue keeps its order, with the fresh text. */
@@ -499,13 +551,13 @@ export class ReviewView extends ItemView {
 	private openSource(): void {
 		const item = this.queue[this.index];
 		const target = /\[\[([^\]|]+)/.exec(item?.card.source ?? '')?.[1];
-		if (this.mode === 'review' && target) void this.app.workspace.openLinkText(target, item?.card.file ?? '', 'split');
+		if (this.mode === 'review' && target && !this.pausedAt) void this.app.workspace.openLinkText(target, item?.card.file ?? '', 'split');
 	}
 
 	/** D on a new card: asks once more, then deletes it. */
 	private async discard(): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || this.busy) return;
+		if (this.mode !== 'review' || !item || this.busy || this.pausedAt) return;
 		window.clearTimeout(this.disarm);
 		if (!this.discardArmed) {
 			this.discardArmed = true;
@@ -586,8 +638,9 @@ export class ReviewView extends ItemView {
 		this.show('decks');
 	}
 
-	/** Enter: All decks on the folders, Start in an opened folder. */
+	/** Enter: resume when paused, All decks on the folders, Start in an opened folder. */
 	private enter(): void {
+		if (this.pausedAt) return this.resume();
 		if (this.mode !== 'decks') return;
 		if (!this.openDeck) this.openFolder(ALL, this.contentEl.querySelector<HTMLElement>('.revisit-folder.is-all'));
 		else this.reviewDeck();
@@ -676,6 +729,8 @@ export class ReviewView extends ItemView {
 
 	async onClose(): Promise<void> {
 		window.clearTimeout(this.disarm);
+		this.pausedAt = 0;
+		this.contentEl.removeClass('is-paused');
 		this.contentEl.empty();
 	}
 }

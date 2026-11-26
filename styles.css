@@ -9,6 +9,17 @@
 .revisit-bar { position: absolute; inset: 0 0 auto; height: 2px; }
 .revisit-bar i { display: block; width: 0; height: 100%; background: var(--interactive-accent); transition: width 1s linear; }
 
+/* pause: a faint button under the time line; paused, the card is out of sight */
+.revisit-pause-zone { position: absolute; top: 2px; left: 0; right: 64px; height: 44px; }
+.revisit-pause-btn { position: absolute; top: var(--size-4-2); left: var(--size-4-3); opacity: 0; color: var(--text-muted); transition: opacity 150ms ease; }
+.revisit-pause-zone:hover .revisit-pause-btn, .revisit-pause-btn:focus-visible { opacity: 0.6; }
+.revisit-pause-zone .revisit-pause-btn:hover { opacity: 1; }
+.revisit.is-paused > .revisit-col, .revisit.is-paused > .revisit-grades, .revisit.is-paused > .revisit-hint { opacity: 0; }
+.revisit.is-paused > .revisit-help-btn, .revisit.is-paused > .revisit-help, .revisit.is-paused > .revisit-pause-zone { display: none; }
+.revisit-paused { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--size-4-3); padding: var(--size-4-4); text-align: center; cursor: pointer; }
+.revisit-paused-title { font-size: clamp(28px, 4.2cqi, 68px); }
+@media (prefers-reduced-motion: reduce) { .revisit-pause-btn { transition: none; } }
+
 /* the card: the answer fades in and never moves the question */
 .revisit-q { font-size: clamp(26px, 3.6cqi, 60px); line-height: 1.4; cursor: pointer; }
 .revisit-a { font-size: clamp(20px, 2.6cqi, 42px); line-height: 1.5; }

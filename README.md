@@ -48,7 +48,7 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 
 1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3). Below them, *Custom* (key 4) takes 1 to 180 minutes and remembers the last value on each device, and *~N min to clear* (key 5) estimates, from your own review log, the time to go through today's cards of every deck. It is hidden when there are none.
 2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its cards, how each is going and when it comes back, with a Start button for that deck alone. Esc goes back.
-3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up.
+3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up. To pause, press P (on a computer, a faint ⏸ also shows when the pointer is near the time line; on a phone, *Pause* is in the `⋯` menu): the card is hidden and the time stops until you press P or Enter, or tap.
 4. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. `New card` and `Decks` links sit here too.
 
 ## Creating cards
@@ -68,6 +68,7 @@ There is no deck to pick. Cards are grouped by the top-level folder of the note 
 | 5 | Time to clear today's cards (Start) |
 | Space | Flip the card, and flip it back |
 | 1, 2, 3, 4 | Again, Hard, Good, Easy |
+| P | Pause the review; P or Enter resumes |
 | E | Edit the card |
 | O | Open the source note |
 | D D | Delete the card (press twice) |
@@ -105,7 +106,7 @@ Revisit is on its way to the Community plugins list. Until it appears there, ins
 
 **Can I edit cards by hand?** Yes. They are markdown files. Press `E` in a review to edit one there.
 
-**Does it work on mobile?** Yes. On a phone the `?` becomes a `⋯` menu (edit, open source note, delete, undo), buttons are larger and you tap to flip.
+**Does it work on mobile?** Yes. On a phone the `?` becomes a `⋯` menu (pause, edit, open source note, delete, undo), buttons are larger and you tap to flip.
 
 **Two devices?** Yes, with Syncthing or any file sync. Each device writes only its own files, `devices/<id>/state.json` and `devices/<id>/review-log.jsonl` inside the cards folder, and Revisit merges them when reading (the latest review of each card wins; logs are joined by time). Files from older versions in the folder root are still read and never touched. `*.sync-conflict-*` files are ignored. Reviewing on two devices is safe. One limit: creating or editing cards in the *same deck file* on both devices before they sync can still make Syncthing create a conflict in that file.
 
