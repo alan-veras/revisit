@@ -1,15 +1,17 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
-import { groupDecks } from '../core/decks';
-import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
+import { browseOrder } from '../core/browse';
+import { childDecks, crumbs, deckName, deckOf, groupDecks, nearestDeck, parentDeck, subdeckName } from '../core/decks';
+import { estimateMinutes, parseMinutes } from '../core/estimate';
+import { minutesLeft, shiftClock } from '../core/pause';
+import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
+import { CardGrid, GridCard } from './CardGrid';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
 
 const ALL = '*';
-/** rows drawn in an opened folder; the rest is only counted */
-const MAX_ROWS = 200;
 const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 type Mode = 'start' | 'review' | 'done' | 'decks';
@@ -18,12 +20,18 @@ type Mode = 'start' | 'review' | 'done' | 'decks';
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
 const TIMES = [2, 5, 10];
+/** the last custom length, kept per device */
+const CUSTOM_KEY = 'revisit-minutes';
+const CUSTOM_DEFAULT = 15;
+const RESUME_TEXT = Platform.isMobile ? 'Tap to resume' : ['P', 'or tap to resume'].join(' ');
 const FLIP_TEXT = Platform.isMobile ? 'Tap to flip' : ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
 const KEYS: [string, string][] = [
+	['4 5', 'Custom time, time to clear (start)'],
 	['Space', 'Flip the card'],
 	['1 2 3 4', 'Again, Hard, Good, Easy'],
+	['P', 'Pause or resume'],
 	['E', 'Edit the card'],
 	['O', 'Open the source note'],
 	['D D', 'Delete the card'],
@@ -34,7 +42,8 @@ const KEYS: [string, string][] = [
 interface Undo {
 	item: QueueItem;
 	index: number;
-	/** where the card was put back in the queue, -1 when it was not */
+	/** the session it was graded in: a queue rebuilt since then puts the card back elsewhere */
+	gen: number;
 	before: CardState | undefined;
 	fsrs: QueueItem['fsrs'];
 }
@@ -42,21 +51,29 @@ interface Undo {
 /** One view, three moments: Start (pick the time), Review, Done. */
 export class ReviewView extends ItemView {
 	private mode: Mode = 'start';
-	/** the folder opened on the Decks screen: a card file, ALL, or '' for the folders */
+	/** the folder opened on the Decks screen: a deck path (`AWS/EC2`), ALL, or '' for the folders */
 	private openDeck = '';
-	/** the deck being reviewed (card file); null reviews every deck */
+	/** the deck being reviewed (deck path, with its subdecks); null reviews every deck */
 	private deck: string | null = null;
 	/** the next Decks drawing animates the opened folder out of this box */
 	private openFrom: DOMRect | null = null;
+	/** the next Decks drawing has no entrance: going up a level, or cards moved underneath */
+	private quiet = false;
 	/** begin() is reading the cards; Decks asked meanwhile waits for it */
 	private starting = false;
 	private decksNext = false;
+	/** bumped by begin() and every session start: a begin() that finishes late sees it changed and stops */
+	private gen = 0;
+	/** undo just put a card back: the waiting cards let it be shown first */
+	private holdWaiting = false;
 	private queue: QueueItem[] = [];
 	private index = 0;
 	private flipped = false;
 	private shownAt = 0;
 	private startedAt = 0;
 	private endsAt = 0;
+	/** when the review was paused; 0 while it runs */
+	private pausedAt = 0;
 	private graded = new Map<string, number>();
 	/** graded cards that come back later today: they rejoin the queue only once their time has come */
 	private waiting: QueueItem[] = [];
@@ -72,6 +89,9 @@ export class ReviewView extends ItemView {
 	private minutes = TIMES[0] as number;
 	/** what Keep going would review, worked out when Done is drawn */
 	private more: QueueItem[] = [];
+	/** the flip cards of the opened folder */
+	private grid: CardGrid | null = null;
+	private answersBtn: HTMLElement | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -79,9 +99,17 @@ export class ReviewView extends ItemView {
 	) {
 		super(leaf);
 		const scope = (this.scope = new Scope(this.app.scope));
-		const on = (key: string, fn: () => void, mods: Modifier[] = []) => scope.register(mods, key, () => (fn(), false));
-		['1', '2', '3', '4'].forEach((k) => on(k, () => this.digit(Number(k))));
+		// a key typed into a field stays with the field
+		const typing = (el: Node | null) => !!el && (el.instanceOf(HTMLInputElement) || el.instanceOf(HTMLTextAreaElement));
+		const on = (key: string, fn: () => void, mods: Modifier[] = []) =>
+			scope.register(mods, key, (evt) => {
+				if (typing(evt.target as Node | null)) return true;
+				fn();
+				return false;
+			});
+		['1', '2', '3', '4', '5'].forEach((k) => on(k, () => this.digit(Number(k))));
 		on(' ', () => this.flip());
+		on('p', () => this.togglePause());
 		on('e', () => this.editCard());
 		on('o', () => this.openSource());
 		on('d', () => void this.discard());
@@ -112,11 +140,17 @@ export class ReviewView extends ItemView {
 
 	/** Back to the start: reads the cards again; nothing to review goes straight to Done. */
 	async begin(): Promise<void> {
+		const gen = ++this.gen;
 		this.starting = true;
 		try {
 			await this.plugin.refresh();
 		} finally {
 			this.starting = false;
+		}
+		// a session started while the cards were read (Keep going on Done): it is not thrown away
+		if (gen !== this.gen) {
+			this.decksNext = false;
+			return;
 		}
 		this.graded.clear();
 		this.undo = [];
@@ -131,10 +165,21 @@ export class ReviewView extends ItemView {
 		else this.show('done');
 	}
 
-	/** The cards of `deck` (a card file), or of every deck. */
+	private get base(): string {
+		return normalizePath(this.plugin.settings.folder);
+	}
+
+	/** The cards of `deck` and its subdecks, or of every deck. */
 	private items(deck: string | null = this.deck): QueueItem[] {
 		const { store } = this.plugin;
-		return itemsFor(buildItems(store.cards, store.state), deck);
+		return itemsFor(buildItems(store.cards, store.state), deck, this.base);
+	}
+
+	/** Deck paths that have something to show: a deck of suspended cards only is not listed. */
+	private deckPaths(): string[] {
+		return this.items(null)
+			.filter((it) => !it.suspended)
+			.map((it) => deckOf(it.card.file ?? '', this.base));
 	}
 
 	private todayQueue(deck: string | null = this.deck): QueueItem[] {
@@ -150,7 +195,11 @@ export class ReviewView extends ItemView {
 	private show(mode: Mode): void {
 		this.mode = mode;
 		const root = this.contentEl;
+		this.dropGrid();
 		root.empty();
+		// a screen drawn anew is never paused
+		this.pausedAt = 0;
+		root.removeClass('is-paused');
 		root.addClass('revisit');
 		root.toggleClass('is-touch', Platform.isMobile);
 		this.bar = null;
@@ -158,6 +207,8 @@ export class ReviewView extends ItemView {
 		else if (mode === 'review') this.drawCard(root);
 		else if (mode === 'decks') this.drawDecks(root);
 		else this.drawDone(root);
+		// the last card graded: drawCard already moved on to Done, which drew itself
+		if (this.mode !== mode) return;
 		if (mode === 'review' && Platform.isMobile) this.drawMenu(root);
 		else if ((mode === 'start' || mode === 'review') && !Platform.isMobile) this.drawHelp(root);
 		this.plugin.updateStatus();
@@ -169,6 +220,56 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
 		this.drawTimes(col, (m) => this.pickTime(m));
+		this.drawExtraTimes(col);
+	}
+
+	/** Under the three lengths, quieter: a length of your own, and the time today's cards ask for. */
+	private drawExtraTimes(col: HTMLElement): void {
+		const row = col.createDiv({ cls: 'revisit-times-extra' });
+		const last = this.lastCustom();
+		const custom = row.createEl('button', { text: last === null ? 'Custom' : `Custom · ${last} min`, cls: 'revisit-custom-btn' + (TIMES.includes(this.minutes) ? '' : ' mod-cta') });
+		if (!Platform.isMobile) custom.createSpan({ text: '4', cls: 'revisit-key' });
+		custom.onclick = () => this.editCustom(custom);
+		const clear = this.clearMinutes();
+		if (clear === null) return;
+		const b = row.createEl('button', { text: `~${clear} min to clear` });
+		if (!Platform.isMobile) b.createSpan({ text: '5', cls: 'revisit-key' });
+		b.onclick = () => this.pickTime(clear);
+	}
+
+	private lastCustom(): number | null {
+		const saved: unknown = this.app.loadLocalStorage(CUSTOM_KEY);
+		return typeof saved === 'number' || typeof saved === 'string' ? parseMinutes(String(saved)) : null;
+	}
+
+	/** Minutes to go through today's cards of every deck; null when there are none. */
+	private clearMinutes(): number | null {
+		return estimateMinutes(this.todayQueue(null).length, this.plugin.store.log);
+	}
+
+	/** The Custom button turns into a minutes field: Enter or OK picks, Esc gives the button back. */
+	private editCustom(button: HTMLElement): void {
+		const box = createDiv({ cls: 'revisit-custom' });
+		const input = box.createEl('input', { type: 'number', attr: { inputmode: 'numeric', min: '1', max: '180', 'aria-label': 'Minutes' } });
+		input.value = String(this.lastCustom() ?? CUSTOM_DEFAULT);
+		box.createSpan({ text: 'min', cls: 'revisit-muted' });
+		const ok = box.createEl('button', { text: 'OK' });
+		const confirm = () => {
+			const minutes = parseMinutes(input.value);
+			if (minutes === null) return input.focus();
+			this.app.saveLocalStorage(CUSTOM_KEY, minutes);
+			this.pickTime(minutes);
+		};
+		ok.onclick = confirm;
+		input.onkeydown = (e) => {
+			if (e.key !== 'Enter' && e.key !== 'Escape') return;
+			e.preventDefault();
+			if (e.key === 'Enter') confirm();
+			else this.show('start');
+		};
+		button.replaceWith(box);
+		input.focus();
+		input.select();
 	}
 
 	/** The time is picked: the decks come next. */
@@ -201,6 +302,7 @@ export class ReviewView extends ItemView {
 	private startSession(minutes: number, more = false): void {
 		this.minutes = minutes;
 		this.index = 0;
+		this.gen++;
 		if (!more) {
 			this.graded.clear();
 			this.undo = [];
@@ -216,7 +318,9 @@ export class ReviewView extends ItemView {
 	private drawCard(root: HTMLElement): void {
 		const now = Date.now();
 		const ready = this.waiting.filter((it) => (it.fsrs?.due.getTime() ?? 0) <= now);
-		if (ready.length) {
+		const hold = this.holdWaiting;
+		this.holdWaiting = false;
+		if (ready.length && !hold) {
 			this.waiting = this.waiting.filter((it) => !ready.includes(it));
 			// a card already ahead in the queue (Keep going rebuilt it) is not asked twice
 			const ahead = new Set(this.queue.slice(this.index).map((it) => it.key));
@@ -231,6 +335,7 @@ export class ReviewView extends ItemView {
 		this.preview = this.plugin.scheduler.preview(item.fsrs ?? freshCard(new Date()), new Date());
 		this.bar = root.createDiv({ cls: 'revisit-bar' }).createEl('i');
 		this.tick();
+		if (!Platform.isMobile) this.drawPauseButton(root);
 		const hint = root.createDiv({ cls: 'revisit-hint', text: isNew(item.fsrs) ? NEW_HINT : '' });
 		const col = root.createDiv({ cls: 'revisit-col' });
 		const { front, back } = faces(item);
@@ -263,6 +368,47 @@ export class ReviewView extends ItemView {
 		this.shownAt = Date.now();
 	}
 
+	// ---- Pause ----
+
+	/** A faint ⏸ under the time line, seen only when the pointer is up there. */
+	private drawPauseButton(root: HTMLElement): void {
+		const zone = root.createDiv({ cls: 'revisit-pause-zone' });
+		const btn = zone.createEl('button', { cls: 'revisit-pause-btn clickable-icon', attr: { 'aria-label': 'Pause' } });
+		setIcon(btn, 'pause');
+		btn.onclick = () => this.pause();
+	}
+
+	private togglePause(): void {
+		if (this.pausedAt) this.resume();
+		else this.pause();
+	}
+
+	/** The card is hidden, not redrawn: it comes back on the same side. */
+	private pause(): void {
+		const item = this.queue[this.index];
+		if (this.mode !== 'review' || !item || this.busy || this.pausedAt) return;
+		this.pausedAt = Date.now();
+		// a delete waiting for its second D is forgotten
+		window.clearTimeout(this.disarm);
+		this.discardArmed = false;
+		this.hint?.setText(isNew(item.fsrs) ? NEW_HINT : '');
+		this.contentEl.addClass('is-paused');
+		const cover = this.contentEl.createDiv({ cls: 'revisit-paused' });
+		cover.createDiv({ text: 'Paused', cls: 'revisit-paused-title revisit-serif' });
+		cover.createDiv({ text: `${minutesLeft(this.endsAt, this.pausedAt)} min left · ${RESUME_TEXT}`, cls: 'revisit-muted' });
+		cover.onclick = () => this.resume();
+	}
+
+	private resume(): void {
+		if (!this.pausedAt) return;
+		const clock = shiftClock({ startedAt: this.startedAt, endsAt: this.endsAt, shownAt: this.shownAt }, Date.now() - this.pausedAt);
+		({ startedAt: this.startedAt, endsAt: this.endsAt, shownAt: this.shownAt } = clock);
+		this.pausedAt = 0;
+		this.contentEl.removeClass('is-paused');
+		this.contentEl.querySelector('.revisit-paused')?.remove();
+		this.tick();
+	}
+
 	// ---- Help ----
 
 	/** A quiet ? in the corner; it opens the list of keys, so a first-time user is never stuck. */
@@ -285,6 +431,7 @@ export class ReviewView extends ItemView {
 		setIcon(btn, 'more-horizontal');
 		btn.onclick = (ev) => {
 			const menu = new Menu();
+			menu.addItem((i) => i.setTitle('Pause').setIcon('pause').onClick(() => this.pause()));
 			menu.addItem((i) => i.setTitle('Edit card').setIcon('pencil').onClick(() => this.editCard()));
 			menu.addItem((i) => i.setTitle('Open source note').setIcon('file-text').onClick(() => this.openSource()));
 			menu.addItem((i) => i.setTitle('Delete card').setIcon('trash').onClick(() => void this.confirmDelete()));
@@ -316,18 +463,28 @@ export class ReviewView extends ItemView {
 	}
 
 	private tick(): void {
-		if (this.bar && this.mode === 'review') this.bar.style.width = `${Math.min(100, ((Date.now() - this.startedAt) / (this.endsAt - this.startedAt)) * 100)}%`;
+		if (this.bar && this.mode === 'review' && !this.pausedAt) this.bar.style.width = `${Math.min(100, ((Date.now() - this.startedAt) / (this.endsAt - this.startedAt)) * 100)}%`;
 	}
 
 	private flip(): void {
-		if (this.mode === 'decks') return this.enter();
-		if (this.mode !== 'review' || this.busy) return;
+		// an opened folder turns its cards; on the folders, Space opens All decks
+		if (this.mode === 'decks') return this.openDeck ? this.toggleAnswers() : this.enter();
+		if (this.mode !== 'review' || this.busy || this.pausedAt) return;
 		this.flipped = !this.flipped;
 		this.contentEl.toggleClass('is-flipped', this.flipped);
 	}
 
 	private digit(n: number): void {
 		if (this.mode === 'start' && n <= 3) this.pickTime(TIMES[n - 1] as number);
+		else if (this.mode === 'start' && n === 4) {
+			// the button, or the field it already turned into
+			const el = this.contentEl.querySelector<HTMLElement>('.revisit-custom-btn, .revisit-custom input');
+			el?.focus();
+			el?.click();
+		} else if (this.mode === 'start') {
+			const clear = this.clearMinutes();
+			if (clear !== null) this.pickTime(clear);
+		}
 		else if (this.mode === 'decks' && !this.openDeck && n === 1) this.openFolder(ALL);
 		else if (this.mode === 'done' && n <= 3) this.keepGoing(TIMES[n - 1] as number);
 		else if (this.mode === 'review' && this.flipped && n <= 4) void this.grade(n as Grade);
@@ -335,7 +492,7 @@ export class ReviewView extends ItemView {
 
 	private async grade(grade: Grade): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || !this.preview || this.busy) return;
+		if (this.mode !== 'review' || !item || !this.preview || this.busy || this.pausedAt) return;
 		this.busy = true;
 		this.flipped = false;
 		this.contentEl.removeClass('is-flipped');
@@ -346,7 +503,7 @@ export class ReviewView extends ItemView {
 		const entry = { id: item.key, t: now.toISOString(), grade, seconds: Math.round((Date.now() - this.shownAt) / 1000), type: item.card.type, new: isNew(item.fsrs), extra: false, state: item.fsrs?.state ?? 0 };
 		const before = store.state[item.key];
 		store.setEntry(item.key, { ...before, st: before?.st ?? 'active', fsrs: toStored(next) });
-		const undo: Undo = { item, index: this.index, before, fsrs: item.fsrs };
+		const undo: Undo = { item, index: this.index, gen: this.gen, before, fsrs: item.fsrs };
 		item.fsrs = next;
 		// a card still due today waits for its time (Again 1m, Hard 6m), never earlier
 		const end = new Date();
@@ -368,14 +525,14 @@ export class ReviewView extends ItemView {
 	}
 
 	private async undoLast(): Promise<void> {
-		if (this.busy || (this.mode !== 'review' && this.mode !== 'done')) return;
+		if (this.busy || this.pausedAt || (this.mode !== 'review' && this.mode !== 'done')) return;
 		const u = this.undo.pop();
 		if (!u) return;
 		this.busy = true;
 		const { store } = this.plugin;
 		this.waiting = this.waiting.filter((it) => it.key !== u.item.key);
 		// the same queue: the card goes back to its place; a queue rebuilt by Keep going: it comes next
-		const same = this.queue[u.index] === u.item;
+		const same = u.gen === this.gen && this.queue[u.index] === u.item;
 		const at = same ? u.index : Math.min(this.index, this.queue.length);
 		this.queue = this.queue.filter((it, i) => i <= at - (same ? 0 : 1) || it.key !== u.item.key);
 		if (!same) this.queue.splice(at, 0, u.item);
@@ -393,31 +550,45 @@ export class ReviewView extends ItemView {
 			this.busy = false;
 		}
 		this.index = at;
+		this.holdWaiting = true;
 		this.show('review');
 	}
 
 	private editCard(): void {
 		const item = this.queue[this.index];
-		if (this.mode === 'review' && item) this.plugin.openCreate({ card: item.card, onSaved: () => this.refreshCards() });
+		if (this.mode === 'review' && item && !this.pausedAt) this.plugin.openCreate({ card: item.card, onSaved: () => this.refreshCards() });
 	}
 
 	/** Cards edited from the session: the queue keeps its order, with the fresh text. */
 	private refreshCards(): void {
+		this.syncQueue();
+		this.show('review');
+	}
+
+	private syncQueue(): void {
 		const byId = new Map(this.plugin.store.cards.map((c) => [c.id, c]));
 		[...this.queue, ...this.waiting].forEach((it) => (it.card = byId.get(it.card.id) ?? it.card));
-		this.show('review');
+	}
+
+	/** Files renamed or deleted: the queue learns the new paths, and a deck that is gone gives way to its closest ancestor. */
+	cardsMoved(): void {
+		this.syncQueue();
+		if (this.deck !== null) this.deck = nearestDeck(this.deckPaths(), this.deck) || null;
+		if (this.mode !== 'decks' || this.starting) return;
+		this.quiet = true;
+		this.show('decks');
 	}
 
 	private openSource(): void {
 		const item = this.queue[this.index];
 		const target = /\[\[([^\]|]+)/.exec(item?.card.source ?? '')?.[1];
-		if (this.mode === 'review' && target) void this.app.workspace.openLinkText(target, item?.card.file ?? '', 'split');
+		if (this.mode === 'review' && target && !this.pausedAt) void this.app.workspace.openLinkText(target, item?.card.file ?? '', 'split');
 	}
 
 	/** D on a new card: asks once more, then deletes it. */
 	private async discard(): Promise<void> {
 		const item = this.queue[this.index];
-		if (this.mode !== 'review' || !item || this.busy) return;
+		if (this.mode !== 'review' || !item || this.busy || this.pausedAt) return;
 		window.clearTimeout(this.disarm);
 		if (!this.discardArmed) {
 			this.discardArmed = true;
@@ -433,11 +604,17 @@ export class ReviewView extends ItemView {
 			await this.plugin.store.deleteCard(item.card);
 		} catch (e) {
 			new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)}).`);
+			// the next D asks again
+			this.discardArmed = false;
+			this.hint?.setText(isNew(item.fsrs) ? NEW_HINT : '');
 			return;
 		} finally {
 			this.busy = false;
 		}
-		this.queue = this.queue.filter((it) => it.card.id !== item.card.id);
+		// copies of it earlier in the queue (graded, then back from waiting) go too: the index moves back by as many
+		const gone = (it: QueueItem) => it.card.id === item.card.id;
+		this.index -= this.queue.slice(0, this.index).filter(gone).length;
+		this.queue = this.queue.filter((it) => !gone(it));
 		this.waiting = this.waiting.filter((it) => it.card.id !== item.card.id);
 		// the queue shifted and the card is gone: earlier grades can no longer be undone safely
 		this.undo = [];
@@ -458,7 +635,7 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		const n = this.graded.size;
 		col.createEl('h2', { text: n ? `Done. ${n} ${n === 1 ? 'card' : 'cards'}.` : 'All caught up.', cls: 'revisit-serif' });
-		const next = left.length ? null : nextCardLabel(items, store.log, now);
+		const next = left.length ? null : nextCardLabel(items, now);
 		if (next) col.createDiv({ text: next, cls: 'revisit-muted' });
 		const more = extraQueue(items, { now, log: store.log, retrievability: (c, t) => scheduler.retrievability(c, t) });
 		this.more = more;
@@ -486,21 +663,35 @@ export class ReviewView extends ItemView {
 		else this.show('decks');
 	}
 
-	private openFolder(file: string, from: HTMLElement | null = null): void {
+	private openFolder(deck: string, from: HTMLElement | null = null): void {
 		this.openFrom = from?.getBoundingClientRect() ?? null;
-		this.openDeck = file;
+		this.openDeck = deck;
 		this.show('decks');
 	}
 
-	/** Enter: All decks on the folders, Start in an opened folder. */
+	/** Enter: resume when paused, All decks on the folders, Start in an opened folder. */
 	private enter(): void {
+		if (this.pausedAt) return this.resume();
 		if (this.mode !== 'decks') return;
 		if (!this.openDeck) this.openFolder(ALL, this.contentEl.querySelector<HTMLElement>('.revisit-folder.is-all'));
 		else this.reviewDeck();
 	}
 
 	private escape(): void {
-		if (this.mode === 'decks' && this.openDeck) this.showDecks();
+		if (this.mode === 'decks' && this.openDeck) this.goUp();
+	}
+
+	/** One level up from the opened folder. */
+	private goUp(): void {
+		this.jumpTo(this.openDeck === ALL ? '' : parentDeck(this.openDeck));
+	}
+
+	/** Back to an upper level, without the opening animation. */
+	private jumpTo(deck: string): void {
+		if (!deck) return this.showDecks();
+		this.quiet = true;
+		this.openDeck = deck;
+		this.show('decks');
 	}
 
 	/** Reviews the opened folder: today's cards, or ahead of schedule when it has none. */
@@ -516,72 +707,160 @@ export class ReviewView extends ItemView {
 
 	private drawDecks(root: HTMLElement): void {
 		if (this.openDeck) return this.drawDeck(root);
-		const { store, scheduler } = this.plugin;
-		const decks = groupDecks(this.items(null), normalizePath(this.plugin.settings.folder), new Set(), new Date(), (c, t) => scheduler.retrievability(c, t));
+		const quiet = this.quiet;
+		this.quiet = false;
 		const col = root.createDiv({ cls: 'revisit-col revisit-decks' });
-		if (!store.cards.length) {
+		if (!this.plugin.store.cards.length) {
 			col.createDiv({ text: 'No cards yet. Select text in a note and run New card.', cls: 'revisit-muted' });
 			return;
 		}
 		const grid = col.createDiv({ cls: 'revisit-decks-grid' });
-		const folders = [{ file: ALL, name: 'All decks' }, ...decks];
+		this.drawFolders(grid, [{ path: ALL, name: 'All decks' }, ...childDecks(this.deckPaths(), '')], quiet ? null : 0);
+	}
+
+	/** Folder buttons, coming in one after the other from `delay` ms on; null draws them still. */
+	private drawFolders(grid: HTMLElement, folders: { path: string; name: string }[], delay: number | null): void {
 		folders.forEach((d, i) => {
-			const f = grid.createEl('button', { text: d.name, cls: 'revisit-folder revisit-serif' + (d.file === ALL ? ' is-all' : '') });
-			f.onclick = () => this.openFolder(d.file, f);
-			if (!still()) f.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: i * 40, easing: 'ease-out', fill: 'backwards' });
+			const f = grid.createEl('button', { text: d.name, cls: 'revisit-folder revisit-serif' + (d.path === ALL ? ' is-all' : '') });
+			f.onclick = () => this.openFolder(d.path, f);
+			if (delay !== null && !still()) f.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: delay + Math.min(i, 20) * 40, easing: 'ease-out', fill: 'backwards' });
 		});
 	}
 
-	/** One folder opened: its cards, and Start. */
+	/** One folder opened: Start for everything in it, its subdecks, and its own cards. */
 	private drawDeck(root: HTMLElement): void {
 		const { scheduler } = this.plugin;
 		const now = new Date();
 		const deck = this.openDeck === ALL ? null : this.openDeck;
+		const paths = this.deckPaths();
+		if (deck !== null) {
+			const alive = nearestDeck(paths, deck);
+			if (alive !== deck) {
+				// the opened deck is gone: its closest ancestor, or the folders
+				this.openDeck = alive;
+				this.openFrom = null;
+				this.quiet = true;
+				return this.drawDecks(root);
+			}
+		}
+		const quiet = this.quiet;
+		this.quiet = false;
+		const from = this.openFrom;
+		this.openFrom = null;
 		const queue = this.todayQueue(deck);
-		const decks = groupDecks(this.items(deck), normalizePath(this.plugin.settings.folder), new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
-		if (deck && !decks.length) return this.showDecks();
 		const panel = root.createDiv({ cls: 'revisit-deck' });
+		const trail = deck === null ? [] : crumbs(deck);
+		const nav = trail.length ? panel.createDiv({ cls: 'revisit-crumbs' }) : null;
+		trail.forEach((c, i) => {
+			if (i) nav?.createSpan({ text: '›' });
+			const b = nav?.createEl('button', { text: c.label });
+			if (b) b.onclick = () => this.jumpTo(c.path);
+		});
 		const head = panel.createDiv({ cls: 'revisit-deck-head' });
-		const back = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Back to decks' } });
+		const back = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Back' } });
 		setIcon(back, 'arrow-left');
-		back.onclick = () => this.showDecks();
-		head.createEl('h3', { text: deck ? (decks[0]?.name ?? '') : 'All decks', cls: 'revisit-serif' });
+		back.onclick = () => this.goUp();
+		head.createEl('h3', { text: deck === null ? 'All decks' : deckName(deck), cls: 'revisit-serif' });
+		if (deck !== null) {
+			const add = head.createEl('button', { cls: 'revisit-add clickable-icon', attr: { 'aria-label': 'Add' } });
+			setIcon(add, 'plus');
+			add.onclick = (ev) => this.addMenu(ev, deck);
+		}
+		const own = deck === null ? this.items(null) : this.items(deck).filter((it) => deckOf(it.card.file ?? '', this.base) === deck);
+		const decks = groupDecks(own, this.base, new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		const byKey = new Map(own.map((it) => [it.key, it]));
+		const cards = browseOrder(decks.flatMap((d) => d.rows)).map((row): GridCard => ({ row, item: byKey.get(row.key) as QueueItem }));
+		if (cards.length) {
+			this.answersBtn = head.createEl('button', { text: 'Show answers', cls: 'revisit-answers' });
+			this.answersBtn.onclick = () => this.toggleAnswers();
+		}
 		// Start sits by the title, so a deck of a thousand cards never hides it
 		const ahead = queue.length ? [] : this.aheadQueue(deck);
 		if (queue.length || ahead.length) {
 			const go = head.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
 			go.onclick = () => this.reviewDeck();
-		} else head.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
-		const list = panel.createDiv({ cls: 'revisit-deck-rows' });
-		const NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
-		// today first, then the soonest back; new cards last
-		const rank = (r: { today: boolean; due: Date | null }) => (r.today ? -Infinity : (r.due?.getTime() ?? Infinity));
-		const rows = decks.flatMap((d) => d.rows).sort((a, b) => rank(a) - rank(b));
-		for (const r of rows.slice(0, MAX_ROWS)) {
-			const row = list.createDiv({ cls: 'revisit-deck-row' });
-			row.createDiv({ text: r.front, cls: 'revisit-deck-q revisit-serif' });
-			const info = row.createDiv({ cls: 'revisit-deck-info' });
-			const [name, cls] = NAME[r.state] ?? ['New', 'is-new'];
-			info.createSpan({ text: name, cls: `revisit-dot ${cls}` });
-			info.createSpan({ text: r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—', cls: r.today ? 'is-due' : '' });
-			info.createSpan({ text: r.memory === null ? '—' : `${Math.round(r.memory * 100)}%` });
-		}
-		if (rows.length > MAX_ROWS) list.createDiv({ text: `and ${rows.length - MAX_ROWS} more`, cls: 'revisit-muted revisit-deck-more' });
+			// nothing now: say when the next card comes (a learning step in minutes, or tomorrow)
+		} else head.createDiv({ text: nextCardLabel(this.items(deck), now) ?? 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
 
-		const from = this.openFrom;
-		this.openFrom = null;
-		if (still()) return;
+		const body = panel.createDiv({ cls: 'revisit-deck-body' });
+		const subdecks = deck === null ? [] : childDecks(paths, deck);
+		if (subdecks.length) this.drawFolders(body.createDiv({ cls: 'revisit-decks-grid' }), subdecks, quiet ? null : from ? 200 : 0);
+		if (cards.length) this.grid = this.addChild(new CardGrid(this.app, body, cards, still));
+		else if (!subdecks.length) body.createDiv({ text: 'No cards here.', cls: 'revisit-muted' });
+
+		if (quiet || still()) return;
 		if (from) {
 			const to = panel.getBoundingClientRect();
 			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
 		}
-		[head, ...Array.from(list.children).slice(0, 20)].forEach((c, i) => {
+		[...(nav ? [nav] : []), head, ...Array.from(this.grid?.el.children ?? []).slice(0, 20)].forEach((c, i) => {
 			c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
 		});
 	}
 
+	/** Show or hide the answers of every card in the opened folder. */
+	private toggleAnswers(): void {
+		if (!this.grid) return;
+		this.grid.toggleAll();
+		this.answersBtn?.setText(this.grid.showingAll ? 'Hide answers' : 'Show answers');
+	}
+
+	private dropGrid(): void {
+		if (this.grid) this.removeChild(this.grid);
+		this.grid = null;
+		this.answersBtn = null;
+	}
+
+	// ---- Adding to a deck ----
+
+	private addMenu(ev: MouseEvent, deck: string): void {
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle('New card').setIcon('plus').onClick(() => this.newCardIn(deck, deck)));
+		menu.addItem((i) => i.setTitle('New subdeck').setIcon('folder-plus').onClick(() => this.askSubdeck(deck)));
+		menu.showAtMouseEvent(ev);
+	}
+
+	/** A card for `target`; saved, the screen is drawn again where it was asked from. */
+	private newCardIn(target: string, origin: string): void {
+		this.plugin.openCreate({
+			deck: target,
+			onSaved: () => {
+				if (this.mode !== 'decks' || this.openDeck !== origin) return;
+				this.quiet = true;
+				this.show('decks');
+			},
+		});
+	}
+
+	/** Only the name is asked: the file is born with the first card saved, so cancelling leaves nothing behind. */
+	private askSubdeck(parent: string): void {
+		const m = new Modal(this.app);
+		m.titleEl.setText(`New subdeck in ${deckName(parent)}`);
+		const input = m.contentEl.createEl('input', { type: 'text', cls: 'revisit-name', attr: { 'aria-label': 'Subdeck name' } });
+		const confirm = () => {
+			const name = subdeckName(input.value);
+			if (!name) return input.focus();
+			m.close();
+			// a name already taken, whatever its case, means that subdeck
+			const known = childDecks(this.plugin.store.cards.map((c) => deckOf(c.file ?? '', this.base)), parent);
+			const same = known.find((d) => d.name.toLowerCase() === name.toLowerCase());
+			this.newCardIn(same?.path ?? `${parent}/${name}`, parent);
+		};
+		input.onkeydown = (e) => {
+			if (e.key !== 'Enter' || e.isComposing) return;
+			e.preventDefault();
+			confirm();
+		};
+		m.contentEl.createDiv({ cls: 'modal-button-container' }).createEl('button', { text: 'Continue', cls: 'mod-cta' }).onclick = confirm;
+		m.open();
+		input.focus();
+	}
+
 	async onClose(): Promise<void> {
 		window.clearTimeout(this.disarm);
+		this.pausedAt = 0;
+		this.contentEl.removeClass('is-paused');
+		this.dropGrid();
 		this.contentEl.empty();
 	}
 }

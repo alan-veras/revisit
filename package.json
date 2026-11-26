@@ -1,6 +1,6 @@
 {
 	"name": "revisit",
-	"version": "1.1.1",
+	"version": "1.2.0",
 	"description": "Spaced repetition flashcards with FSRS. Pick your time and review.",
 	"main": "main.js",
 	"type": "module",

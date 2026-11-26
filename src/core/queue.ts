@@ -1,4 +1,5 @@
 import type { Card as FsrsCard } from 'ts-fsrs';
+import { deckOf, inDeck } from './decks';
 import { clozes, hideCloze } from './format';
 import { formatInterval, fromStored, isNew, State } from './scheduler';
 import { Card, CardState, NEW_PER_DAY, RevlogEntry } from './types';
@@ -29,9 +30,9 @@ export function buildItems(cards: Card[], state: Record<string, CardState>): Que
 	return out;
 }
 
-/** The items of one card file; null keeps every deck. The daily cap of new cards stays shared, since it counts the log. */
-export function itemsFor(items: QueueItem[], file: string | null): QueueItem[] {
-	return file === null ? items : items.filter((it) => it.card.file === file);
+/** The items of a deck and its subdecks (`base` is the Revisit folder); null keeps every deck. The daily cap of new cards stays shared, since it counts the log. */
+export function itemsFor(items: QueueItem[], deck: string | null, base: string): QueueItem[] {
+	return deck === null ? items : items.filter((it) => inDeck(deckOf(it.card.file ?? '', base), deck));
 }
 
 /** What is asked and what answers it. */
@@ -124,15 +125,15 @@ export function buildQueue(items: QueueItem[], o: { now: Date; log: RevlogEntry[
 }
 
 /** When the next card comes back, for the Done screen: `Next card tomorrow`, `Next card in 3 days`; null when nothing is waiting. */
-export function nextCardLabel(items: QueueItem[], log: RevlogEntry[], now: Date): string | null {
-	const { introduced } = today(log, now);
+export function nextCardLabel(items: QueueItem[], now: Date): string | null {
 	const live = items.filter((it) => !it.suspended);
 	const dues = live.filter((it) => !isNew(it.fsrs)).map((it) => (it.fsrs as FsrsCard).due.getTime());
-	const newLeft = introduced >= NEW_PER_DAY && live.some((it) => isNew(it.fsrs));
+	// a new card left over waits for tomorrow at the latest: past the daily cap, or held back as a sibling of a card graded today
+	const newLeft = live.some((it) => isNew(it.fsrs));
 	const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 	const end = endOfDay(now).getTime();
-	// a learning step later today (Hard 6m): say when, so it is not mistaken for tomorrow
-	const soon = live.filter((it) => !isNew(it.fsrs) && learning(it.fsrs as FsrsCard)).map((it) => (it.fsrs as FsrsCard).due.getTime()).filter((t) => t > now.getTime() && t <= end);
+	// a learning step (Hard 6m): say when, so it is not mistaken for tomorrow, even past midnight (23:55 + 6m)
+	const soon = live.filter((it) => !isNew(it.fsrs) && learning(it.fsrs as FsrsCard)).map((it) => (it.fsrs as FsrsCard).due.getTime()).filter((t) => t > now.getTime() && t - now.getTime() < 86400000);
 	if (soon.length) return `Next card in ${formatInterval(Math.min(...soon) - now.getTime())}`;
 	const days = new Set(dues.filter((t) => t > end).map((t) => Math.round((startOf(new Date(t)) - startOf(now)) / 86400000)));
 	// due today but held back (a sibling of a card graded today): it comes tomorrow

@@ -143,11 +143,12 @@ export class Store {
 		}
 	}
 
-	async addCard(card: NewCard): Promise<string> {
+	/** `deck` is the path of an existing or new deck, used as it is; without it the first topic names the file. */
+	async addCard(card: NewCard, deck?: string): Promise<string> {
 		const taken = new Set(this.cards.map((c) => c.id).filter((x): x is string => !!x));
 		const id = card.id ?? newId(taken);
 		const block = serializeCard({ ...card, id });
-		const path = deckPath(card.topics, this.base);
+		const path = deck ? this.path(`${deck}.md`) : deckPath(card.topics, this.base);
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) {
 			await this.app.vault.process(file, (t) => appendCard(t, block));

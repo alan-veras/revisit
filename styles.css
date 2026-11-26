@@ -9,6 +9,17 @@
 .revisit-bar { position: absolute; inset: 0 0 auto; height: 2px; }
 .revisit-bar i { display: block; width: 0; height: 100%; background: var(--interactive-accent); transition: width 1s linear; }
 
+/* pause: a faint button under the time line; paused, the card is out of sight */
+.revisit-pause-zone { position: absolute; top: 2px; left: 0; right: 64px; height: 44px; }
+.revisit-pause-btn { position: absolute; top: var(--size-4-2); left: var(--size-4-3); opacity: 0; color: var(--text-muted); transition: opacity 150ms ease; }
+.revisit-pause-zone:hover .revisit-pause-btn, .revisit-pause-btn:focus-visible { opacity: 0.6; }
+.revisit-pause-zone .revisit-pause-btn:hover { opacity: 1; }
+.revisit.is-paused > .revisit-col, .revisit.is-paused > .revisit-grades, .revisit.is-paused > .revisit-hint { opacity: 0; }
+.revisit.is-paused > .revisit-help-btn, .revisit.is-paused > .revisit-help, .revisit.is-paused > .revisit-pause-zone { display: none; }
+.revisit-paused { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--size-4-3); padding: var(--size-4-4); text-align: center; cursor: pointer; }
+.revisit-paused-title { font-size: clamp(28px, 4.2cqi, 68px); }
+@media (prefers-reduced-motion: reduce) { .revisit-pause-btn { transition: none; } }
+
 /* the card: the answer fades in and never moves the question */
 .revisit-q { font-size: clamp(26px, 3.6cqi, 60px); line-height: 1.4; cursor: pointer; }
 .revisit-a { font-size: clamp(20px, 2.6cqi, 42px); line-height: 1.5; }
@@ -20,7 +31,8 @@
 .revisit-src p { margin: 0; }
 
 /* grades and hint */
-.revisit-grades { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--size-4-3); padding: var(--size-4-4); visibility: hidden; }
+/* the grades start at the same left edge as the question: same width and side padding as the column */
+.revisit-grades { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: var(--size-4-3); width: 100%; max-width: min(960px, 72cqi); padding: var(--size-4-4); visibility: hidden; }
 .revisit.is-flipped .revisit-grades { visibility: visible; }
 .revisit-grades button { --g: var(--color-base-50-rgb, 128,128,128); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 7.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); font-weight: var(--font-semibold); color: rgb(var(--g)); background: rgba(var(--g), 0.12); border: 1px solid rgba(var(--g), 0.35); box-shadow: none; }
 .revisit-grades button:hover { background: rgba(var(--g), 0.22); }
@@ -31,6 +43,13 @@
 /* start and done */
 .revisit-times { display: flex; gap: var(--size-4-3); }
 .revisit-center > button, .revisit-times button { min-width: 6.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); }
+.revisit-times-extra { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--size-4-3); margin-top: calc(var(--size-4-3) * -1); }
+.revisit-times-extra button { height: auto; padding: 0.5em 1em; font-size: calc(var(--rv-ui) * 0.8); }
+.revisit-times-extra button:not(.mod-cta) { color: var(--text-muted); }
+.revisit-custom { display: flex; align-items: center; gap: var(--size-4-2); }
+.revisit-custom input { width: 5em; height: auto; padding: 0.5em; text-align: center; font-size: calc(var(--rv-ui) * 0.8); }
+.revisit.is-touch .revisit-custom input { min-height: 44px; }
+.revisit.is-touch .revisit-custom button { min-width: 44px; }
 .revisit-key { margin-left: var(--size-4-2); font-size: var(--font-ui-smaller); opacity: 0.6; }
 .revisit-muted, .revisit-link { font-size: calc(var(--rv-ui) * 0.85); color: var(--text-muted); }
 .revisit-link { margin-top: var(--size-4-4); cursor: pointer; }
@@ -71,13 +90,33 @@
 .revisit-deck::before { width: 30%; }
 .revisit-deck-head { display: flex; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .revisit-deck-head { flex-wrap: wrap; }
-.revisit-deck-head h3 { margin: 0 auto 0 0; font-size: 1.6em; }
-.revisit-deck-rows { flex: 1; min-height: 0; overflow-y: auto; }
-.revisit-deck-more { padding: 12px 0; }
-.revisit-deck-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--background-modifier-border); }
-.revisit-deck-q { min-width: 0; font-size: 1.08em; }
-.revisit-deck-info { display: flex; gap: 14px; align-items: center; white-space: nowrap; font-size: var(--font-ui-small); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.revisit-deck-info .is-due { color: rgb(var(--color-green-rgb)); }
+.revisit-deck-head h3 { margin: 0 auto 0 0; min-width: 0; overflow-wrap: anywhere; font-size: 1.6em; }
+.revisit-deck-body { flex: 1; min-height: 0; overflow-y: auto; }
+/* subdecks inside an opened folder: room for the tabs, and a lighter paper than the panel */
+.revisit-deck .revisit-decks-grid { padding: 16px 2px var(--size-4-4); }
+.revisit-deck .revisit-decks-grid .revisit-folder, .revisit-deck .revisit-decks-grid .revisit-folder:hover { background: var(--background-primary); }
+.revisit-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-1); margin-bottom: var(--size-4-2); font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-crumbs button { height: auto; max-width: 14em; overflow: hidden; text-overflow: ellipsis; padding: 2px var(--size-4-1); font-size: inherit; color: inherit; background: none; border: 0; box-shadow: none; cursor: pointer; }
+.revisit-crumbs button:hover { color: var(--text-normal); }
+.revisit.is-touch .revisit-crumbs button, .revisit.is-touch .revisit-deck-head .clickable-icon { min-width: 44px; }
+.revisit-add { color: var(--text-muted); }
+.revisit-name { width: 100%; }
+/* flip cards of the opened folder: paper on the folder; a turned one grows, then scrolls inside */
+.revisit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: var(--size-4-3); padding: 2px; }
+.revisit-card { display: flex; flex-direction: column; gap: var(--size-4-2); min-width: 0; min-height: 10.5em; max-height: 22em; overflow-y: auto; padding: var(--size-4-3); overflow-wrap: anywhere; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); cursor: pointer; }
+.revisit-card > * { flex-shrink: 0; }
+.revisit-card-q { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; line-height: 1.4; }
+.revisit-card-info { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--size-4-3); margin-top: auto; font-size: var(--font-ui-smaller); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.revisit-card-info .is-due { color: rgb(var(--color-green-rgb)); }
+.revisit-card.is-flipped { user-select: text; }
+.revisit-card-ask { padding-bottom: var(--size-4-2); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-card-a { line-height: 1.5; }
+.revisit-card-a > :first-child { margin-top: 0; }
+.revisit-card-a > :last-child { margin-bottom: 0; }
+.revisit-card .revisit-src { font-size: var(--font-ui-smaller); }
+.revisit-cards-more { height: 1px; }
+.revisit-deck button.revisit-answers { color: var(--text-muted); font-size: var(--font-ui-small); background: none; border: 0; box-shadow: none; cursor: pointer; }
+.revisit-deck button.revisit-answers:hover { color: var(--text-normal); }
 .revisit-dot { display: inline-flex; align-items: center; gap: 6px; }
 .revisit-dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--d)); }
 .revisit .is-new { --d: var(--color-base-50-rgb, 128,128,128); }
@@ -85,5 +124,7 @@
 .revisit .is-review { --d: var(--color-green-rgb); }
 .revisit-deck-go { flex-shrink: 0; }
 .revisit-deck button.revisit-deck-go { height: auto; padding: 0.7em 2.4em; font-size: var(--rv-ui); }
-@container (max-width: 520px) { .revisit-deck-row { grid-template-columns: minmax(0, 1fr); } }
+@container (min-width: 1000px) { .revisit-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 640px) { .revisit-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 359px) { .revisit-cards { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .revisit-decks-grid .revisit-folder { transition: none; } }

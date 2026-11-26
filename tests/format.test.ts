@@ -125,4 +125,20 @@ describe('fields that look like file syntax', () => {
 		expect(hideCloze('`a == b == c` and ==x==', 0)).toBe('`a == b == c` and ___');
 		expect(resolveOnSave({ front: 'What does `a == b == c` do?', back: 'compares', context: '' })).toMatchObject({ type: 'Question' });
 	});
+
+	it('a code block left open is closed on save, so Type and Topic survive', () => {
+		const card = { id: 'lfc001', type: 'Question', front: 'Q', back: '```\nx', topics: ['A'], source: '' };
+		const [read] = parseCardFile(serializeCard(card));
+		expect(read?.topics).toEqual(['A']);
+		expect(read?.back).toBe('```\nx\n```');
+		expect(read?.id).toBe('lfc001');
+	});
+
+	it('~~~ inside a ``` block is code: its --- and labels are kept as written', () => {
+		const back = '```js\n~~~\n---\nSource: x\n```';
+		const card = { id: 'lfc002', type: 'Question', front: 'Q', back, topics: ['A'], source: '' };
+		const [read] = parseCardFile(serializeCard(card));
+		expect(read?.back).toBe(back);
+		expect(read?.topics).toEqual(['A']);
+	});
 });

@@ -54,14 +54,20 @@ describe('queue', () => {
 
 describe('next card label', () => {
 	it('says tomorrow or in N days, or nothing', () => {
-		const label = (d: number) => nextCardLabel(buildItems([card('ln00001')], { ln00001: reviewed(at(d)) }), [], now);
+		const label = (d: number) => nextCardLabel(buildItems([card('ln00001')], { ln00001: reviewed(at(d)) }), now);
 		expect(label(1)).toBe('Next card tomorrow');
 		expect(label(3)).toBe('Next card in 3 days');
-		expect(nextCardLabel([], [], now)).toBeNull();
+		expect(nextCardLabel([], now)).toBeNull();
 	});
-	it('new cards held back by the daily cap come back tomorrow', () => {
-		const log = Array.from({ length: 10 }, (_, i) => entry(`lx${i}`, true));
-		expect(nextCardLabel(buildItems([card('ln00002')], {}), log, now)).toBe('Next card tomorrow');
+	it('new cards held back (daily cap or a sibling graded today) come back tomorrow, before a review days away', () => {
+		expect(nextCardLabel(buildItems([card('ln00002')], {}), now)).toBe('Next card tomorrow');
+		const cloze = card('lclz003', { type: 'Cloze', front: '==a== ==b==', back: '' });
+		expect(nextCardLabel(buildItems([cloze, card('ln00003')], { lclz003: reviewed(at(7)), ln00003: reviewed(at(7)) }), now)).toBe('Next card tomorrow');
+	});
+	it('a learning step just past midnight is told in minutes, not as tomorrow', () => {
+		const late = new Date(2026, 10, 24, 23, 55);
+		const step = { st: 'active' as const, fsrs: toStored({ ...freshCard(late), state: 3, due: new Date(late.getTime() + 6 * 60000), last_review: late, stability: 1, difficulty: 5, reps: 3, lapses: 1 }) };
+		expect(nextCardLabel(buildItems([card('lstp003')], { lstp003: step }), late)).toBe('Next card in 6m');
 	});
 });
 
@@ -104,14 +110,14 @@ describe('next card label', () => {
 	it('says tomorrow when a sibling due today was held back', () => {
 		const cloze = card('lclz002', { type: 'Cloze', front: '==a== ==b==', back: '' });
 		const items = buildItems([cloze], { lclz002: reviewed(at(5)), 'lclz002-c2': reviewed(at(-1)) });
-		expect(nextCardLabel(items, [entry('lclz002', false)], now)).toBe('Next card tomorrow');
+		expect(nextCardLabel(items, now)).toBe('Next card tomorrow');
 	});
 
 	it('a learning step (Hard 6m) waits for its minutes; a review due tonight is shown now', () => {
 		const step = (min: number): CardState => ({ st: 'active', fsrs: toStored({ ...freshCard(now), state: 1, due: new Date(now.getTime() + min * 60000), last_review: now, stability: 1, difficulty: 5, reps: 1 }) });
 		const q = queue([card('lstp001'), card('lstp002'), card('lrev001')], { lstp001: step(6), lstp002: step(-1), lrev001: { st: 'active', fsrs: toStored({ ...freshCard(now), state: 2, due: new Date(2026, 10, 24, 20, 0), last_review: at(-5), stability: 5, difficulty: 5, reps: 2 }) } });
 		expect(q.map((i) => i.key).sort()).toEqual(['lrev001', 'lstp002']);
-		expect(nextCardLabel(buildItems([card('lstp001')], { lstp001: step(6) }), [entry('lstp001', true)], now)).toBe('Next card in 6m');
+		expect(nextCardLabel(buildItems([card('lstp001')], { lstp001: step(6) }), now)).toBe('Next card in 6m');
 	});
 
 	it('grading Hard on a new card schedules it minutes ahead, not right away', () => {
@@ -122,15 +128,15 @@ describe('next card label', () => {
 		expect(buildQueue(items, { now: p[2].card.due, log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(1);
 	});
 
-	it('a deck reviews only its own file, and the daily cap of new cards stays shared', () => {
+	it('a deck reviews only its own cards, and the daily cap of new cards stays shared', () => {
 		const cards = [...Array.from({ length: 6 }, (_, i) => card(`la${i}`, { file: 'R/A.md' })), ...Array.from({ length: 6 }, (_, i) => card(`lb${i}`, { file: 'R/B.md' }))];
 		const items = buildItems(cards, {});
 		const opts = { now, log: Array.from({ length: 7 }, (_, i) => entry(`old${i}`, true)), retrievability: (c: Parameters<typeof sched.retrievability>[0], n: Date) => sched.retrievability(c, n) };
-		const a = buildQueue(itemsFor(items, 'R/A.md'), opts);
+		const a = buildQueue(itemsFor(items, 'A', 'R'), opts);
 		expect(a).toHaveLength(3);
 		expect(a.every((it) => it.card.file === 'R/A.md')).toBe(true);
-		expect(itemsFor(items, null)).toHaveLength(12);
-		expect(extraQueue(itemsFor(items, 'R/B.md'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
+		expect(itemsFor(items, null, 'R')).toHaveLength(12);
+		expect(extraQueue(itemsFor(items, 'B', 'R'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
 	});
 
 	it('a cloze highlight graded today never comes back as ahead of schedule, nor its sibling', () => {
