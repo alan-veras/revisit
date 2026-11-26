@@ -31,7 +31,8 @@
 .revisit-src p { margin: 0; }
 
 /* grades and hint */
-.revisit-grades { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--size-4-3); padding: var(--size-4-4); visibility: hidden; }
+/* the grades start at the same left edge as the question: same width and side padding as the column */
+.revisit-grades { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: var(--size-4-3); width: 100%; max-width: min(960px, 72cqi); padding: var(--size-4-4); visibility: hidden; }
 .revisit.is-flipped .revisit-grades { visibility: visible; }
 .revisit-grades button { --g: var(--color-base-50-rgb, 128,128,128); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 7.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); font-weight: var(--font-semibold); color: rgb(var(--g)); background: rgba(var(--g), 0.12); border: 1px solid rgba(var(--g), 0.35); box-shadow: none; }
 .revisit-grades button:hover { background: rgba(var(--g), 0.22); }
