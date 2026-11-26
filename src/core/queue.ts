@@ -1,4 +1,5 @@
 import type { Card as FsrsCard } from 'ts-fsrs';
+import { deckOf, inDeck } from './decks';
 import { clozes, hideCloze } from './format';
 import { formatInterval, fromStored, isNew, State } from './scheduler';
 import { Card, CardState, NEW_PER_DAY, RevlogEntry } from './types';
@@ -29,9 +30,9 @@ export function buildItems(cards: Card[], state: Record<string, CardState>): Que
 	return out;
 }
 
-/** The items of one card file; null keeps every deck. The daily cap of new cards stays shared, since it counts the log. */
-export function itemsFor(items: QueueItem[], file: string | null): QueueItem[] {
-	return file === null ? items : items.filter((it) => it.card.file === file);
+/** The items of a deck and its subdecks (`base` is the Revisit folder); null keeps every deck. The daily cap of new cards stays shared, since it counts the log. */
+export function itemsFor(items: QueueItem[], deck: string | null, base: string): QueueItem[] {
+	return deck === null ? items : items.filter((it) => inDeck(deckOf(it.card.file ?? '', base), deck));
 }
 
 /** What is asked and what answers it. */

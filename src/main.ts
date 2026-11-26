@@ -1,4 +1,4 @@
-import { MarkdownView, normalizePath, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { debounce, MarkdownView, normalizePath, Notice, Plugin, TAbstractFile, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { buildItems, buildQueue } from './core/queue';
 import { Scheduler } from './core/scheduler';
 import type { Card } from './core/types';
@@ -46,15 +46,39 @@ export default class RevisitPlugin extends Plugin {
 			// a card file edited by hand is read again
 			const changed = (f: unknown) => {
 				if (!(f instanceof TFile) || !f.path.startsWith(normalizePath(this.settings.folder) + '/') || isConflictPath(f.path)) return;
-				if (this.store.isDevicePath(f.path)) {
-					// another device's state or log: read again, but never in the middle of a session
-					const reviewing = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW).some((l) => l.view instanceof ReviewView && l.view.reviewing);
-					if (!this.store.isOwnPath(f.path) && !reviewing) void this.store.loadShared().then(() => this.updateStatus());
-				} else if (f.extension === 'md') void this.store.loadCards().then(() => this.updateStatus());
+				if (this.store.isDevicePath(f.path)) this.reloadShared(f.path);
+				else if (f.extension === 'md') void this.store.loadCards().then(() => this.updateStatus());
 			};
 			this.registerEvent(this.app.vault.on('modify', changed));
 			this.registerEvent(this.app.vault.on('create', changed));
+
+			// a card file or folder moved or removed: the decks follow. Once for a whole folder.
+			const reload = debounce(() => void this.store.loadCards().then(() => this.cardsMoved()), 100, true);
+			const moved = (f: TAbstractFile, oldPath = f.path) => {
+				const base = normalizePath(this.settings.folder);
+				const paths = [f.path, oldPath].filter((p) => p === base || p.startsWith(base + '/'));
+				if (!paths.length || !(f instanceof TFolder || paths.some((p) => p.endsWith('.md') || this.store.isDevicePath(p)))) return;
+				const device = paths.find((p) => this.store.isDevicePath(p));
+				if (device) this.reloadShared(device);
+				if (paths.some((p) => !this.store.isDevicePath(p))) reload();
+			};
+			this.registerEvent(this.app.vault.on('rename', moved));
+			this.registerEvent(this.app.vault.on('delete', (f) => moved(f)));
 		});
+	}
+
+	private views(): ReviewView[] {
+		return this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW).flatMap((l) => (l.view instanceof ReviewView ? [l.view] : []));
+	}
+
+	/** Another device's state or log: read again, but never in the middle of a session. */
+	private reloadShared(path: string): void {
+		if (!this.store.isOwnPath(path) && !this.views().some((v) => v.reviewing)) void this.store.loadShared().then(() => this.updateStatus());
+	}
+
+	private cardsMoved(): void {
+		this.updateStatus();
+		this.views().forEach((v) => v.cardsMoved());
 	}
 
 	async saveSettings(): Promise<void> {
@@ -91,17 +115,17 @@ export default class RevisitPlugin extends Plugin {
 		if (view instanceof ReviewView) view.showDecks();
 	}
 
-	/** The create window: a new card, or the edit of `card`. */
-	openCreate(o: { card?: Card; draft?: Partial<Draft>; onSaved?: () => void }): void {
-		const { card } = o;
-		const draft: Draft = { front: card?.front ?? '', back: card?.back ?? '', topics: card?.topics ?? [], source: card?.source ?? '', context: '', ...(card ? { card } : {}), ...o.draft };
+	/** The create window: a new card (in `deck`, a deck path, when given), or the edit of `card`. */
+	openCreate(o: { card?: Card; deck?: string; draft?: Partial<Draft>; onSaved?: () => void }): void {
+		const { card, deck } = o;
+		const draft: Draft = { front: card?.front ?? '', back: card?.back ?? '', topics: card?.topics ?? [], source: card?.source ?? '', context: '', ...(card ? { card } : {}), ...(deck ? { topics: [deck.split('/').join(' > ')], title: `New card · ${deck.split('/').join(' › ')}` } : {}), ...o.draft };
 		new CreateModal(this.app, draft, async (r) => {
 			// editing keeps the type of kinds the UI no longer offers (Reference, Problem)
 			const type = card && card.type !== 'Question' && card.type !== 'Cloze' ? card.type : r.type;
 			const fields = { type, front: r.front, back: r.back, topics: draft.topics, source: draft.source };
 			if (card) await this.store.updateCard(card, { ...card, ...fields, id: card.id });
 			else {
-				const id = await this.store.addCard({ id: null, ...fields });
+				const id = await this.store.addCard({ id: null, ...fields }, deck);
 				new Notice(`Revisit: card created (^${id})`);
 			}
 			this.updateStatus();

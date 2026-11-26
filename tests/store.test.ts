@@ -4,6 +4,7 @@ vi.mock('obsidian', () => ({
 	normalizePath: (p: string) => p,
 	Notice: class {},
 	TFile: class {},
+	Vault: { recurseChildren: () => undefined },
 }));
 
 const { Store } = await import('../src/store/store');
@@ -88,5 +89,19 @@ describe('own state layer', () => {
 		const s = new Store(fakeApp(files, 'new222'), () => 'R');
 		await s.loadShared();
 		expect(s.state.x?.fsrs?.due).toBe('2026-12-01T00:00:00Z');
+	});
+});
+
+describe('addCard', () => {
+	it('writes to the real path of the deck, `_` and all', async () => {
+		const files = new Map<string, string>([['R/3_Outputs.md', '']]);
+		const app = fakeApp(files, 'aaaaaa') as unknown as { vault: Record<string, unknown> };
+		app.vault.getAbstractFileByPath = () => null;
+		app.vault.getFolderByPath = () => null;
+		app.vault.create = (p: string, t: string) => Promise.resolve(void files.set(p, t));
+		const s = new Store(app as never, () => 'R');
+		await s.addCard({ id: null, type: 'Question', front: 'q', back: 'a', topics: ['3_Outputs > Lambda'], source: '' }, '3_Outputs/Lambda');
+		expect(files.get('R/3_Outputs/Lambda.md')).toContain('Front: q');
+		expect([...files.keys()].some((k) => k.includes('3-Outputs'))).toBe(false);
 	});
 });

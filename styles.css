@@ -89,8 +89,17 @@
 .revisit-deck::before { width: 30%; }
 .revisit-deck-head { display: flex; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .revisit-deck-head { flex-wrap: wrap; }
-.revisit-deck-head h3 { margin: 0 auto 0 0; font-size: 1.6em; }
+.revisit-deck-head h3 { margin: 0 auto 0 0; min-width: 0; overflow-wrap: anywhere; font-size: 1.6em; }
 .revisit-deck-rows { flex: 1; min-height: 0; overflow-y: auto; }
+/* subdecks inside an opened folder: room for the tabs, and a lighter paper than the panel */
+.revisit-deck .revisit-decks-grid { padding: 16px 2px var(--size-4-4); }
+.revisit-deck .revisit-decks-grid .revisit-folder, .revisit-deck .revisit-decks-grid .revisit-folder:hover { background: var(--background-primary); }
+.revisit-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-1); margin-bottom: var(--size-4-2); font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-crumbs button { height: auto; max-width: 14em; overflow: hidden; text-overflow: ellipsis; padding: 2px var(--size-4-1); font-size: inherit; color: inherit; background: none; border: 0; box-shadow: none; cursor: pointer; }
+.revisit-crumbs button:hover { color: var(--text-normal); }
+.revisit.is-touch .revisit-crumbs button, .revisit.is-touch .revisit-deck-head .clickable-icon { min-width: 44px; }
+.revisit-add { color: var(--text-muted); }
+.revisit-name { width: 100%; }
 .revisit-deck-more { padding: 12px 0; }
 .revisit-deck-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--background-modifier-border); }
 .revisit-deck-q { min-width: 0; font-size: 1.08em; }

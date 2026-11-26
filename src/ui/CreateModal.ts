@@ -10,6 +10,8 @@ export interface Draft {
 	source: string;
 	/** paragraph around the selection, for a cloze */
 	context: string;
+	/** window title, when the card goes to a chosen deck */
+	title?: string;
 	/** the card being edited, when there is one */
 	card?: Card;
 }
@@ -27,7 +29,7 @@ export class CreateModal extends Modal {
 	onOpen(): void {
 		const { contentEl, draft } = this;
 		this.modalEl.addClass('revisit-create');
-		this.setTitle(draft.card ? 'Edit card' : 'New card');
+		this.setTitle(draft.title ?? (draft.card ? 'Edit card' : 'New card'));
 		const front = this.box('Front', draft.front, (v) => (draft.front = v));
 		const back = this.box('Back', draft.back, (v) => (draft.back = v));
 		let saving = false;

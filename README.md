@@ -12,7 +12,7 @@ Revisit is a spaced repetition plugin for Obsidian built around one small daily 
 
 **2. No debt.** There is no overdue counter on the screens you review from. *~N min to clear* shows today's cards as time, not as a pile to count. After a missed day you see the cards that are due, for the time you chose, and the rest simply waits. When the time is up, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
 
-**3. Cards take seconds to make.** Select text, run `New card`, type the question, press `Ctrl+Enter`. A short selection with an empty front becomes a cloze on its own. There is no deck to choose: cards are grouped by the top-level folder of the note.
+**3. Cards take seconds to make.** Select text, run `New card`, type the question, press `Ctrl+Enter`. A short selection with an empty front becomes a cloze on its own. There is no deck to choose: cards are grouped by the top-level folder of the note. Folders inside the cards folder make subdecks.
 
 **4. Your notes stay clean.** Revisit writes nothing to the note a card came from. Cards are plain markdown in their own folder (`Revisit/` by default), readable without the plugin. Scheduling lives in `state.json` and the review log in `review-log.jsonl`.
 
@@ -47,7 +47,7 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 ## How it works
 
 1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3). Below them, *Custom* (key 4) takes 1 to 180 minutes and remembers the last value on each device, and *~N min to clear* (key 5) estimates, from your own review log, the time to go through today's cards of every deck. It is hidden when there are none.
-2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its cards, how each is going and when it comes back, with a Start button for that deck alone. Esc goes back.
+2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its subdecks as folders and, below them, its own cards, how each is going and when it comes back. Start (or *Review ahead*) takes that deck and everything under it. ← and Esc go up one level, and from the second level on a small `Decks › AWS` trail jumps to any level above. The `+` in an opened deck adds a *New card* there or a *New subdeck*.
 3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up. To pause, press P (on a computer, a faint ⏸ also shows when the pointer is near the time line; on a phone, *Pause* is in the `⋯` menu): the card is hidden and the time stops until you press P or Enter, or tap.
 4. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. `New card` and `Decks` links sit here too.
 
@@ -58,6 +58,8 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 `New card` (command, the editor context menu or the Done screen) opens two fields, Front and Back. A selection in the editor goes to Back. With the front left empty and a short selection (up to 8 words), the card is saved as a cloze of the sentence around it. `Ctrl+Enter` saves, `Esc` cancels.
 
 There is no deck to pick. Cards are grouped by the top-level folder of the note you were in (a note at the vault root groups by its own name; with no note open, cards go to `Inbox`). Each group is a deck: review it alone, or pick *All decks* to mix them.
+
+**Subdecks** come from the folders inside the cards folder, nothing else. `Revisit/AWS.md` and the folder `Revisit/AWS/` are one deck, AWS; `Revisit/AWS/EC2.md` is its subdeck EC2, at any depth. A folder with no file of its own is a deck too, as long as there are cards under it. To add one, open a deck, press `+` and *New subdeck*: the file is created when its first card is saved. To rename or move a deck, use Obsidian's file explorer (rename both `AWS.md` and `AWS/`); progress is kept.
 
 ## Keyboard shortcuts
 
@@ -75,11 +77,12 @@ There is no deck to pick. Cards are grouped by the top-level folder of the note 
 | Ctrl/Cmd+Z | Undo the last grade |
 | ? | List every key |
 | Ctrl/Cmd+Enter | Save a new card |
-| Esc | Cancel a new card |
+| Esc | Cancel a new card; on Decks, go up one level |
+| Enter | On Decks: open All decks, or Start the opened deck |
 
 ## Card format
 
-Cards are plain markdown in the cards folder, one file per deck, blocks separated by `---`:
+Cards are plain markdown in the cards folder, one file per deck (folders are parent decks), blocks separated by `---`:
 
 ```
 Front: What does `kubectl rollout undo` do?

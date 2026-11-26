@@ -128,15 +128,15 @@ describe('next card label', () => {
 		expect(buildQueue(items, { now: p[2].card.due, log: [], retrievability: (c, n) => sched.retrievability(c, n) })).toHaveLength(1);
 	});
 
-	it('a deck reviews only its own file, and the daily cap of new cards stays shared', () => {
+	it('a deck reviews only its own cards, and the daily cap of new cards stays shared', () => {
 		const cards = [...Array.from({ length: 6 }, (_, i) => card(`la${i}`, { file: 'R/A.md' })), ...Array.from({ length: 6 }, (_, i) => card(`lb${i}`, { file: 'R/B.md' }))];
 		const items = buildItems(cards, {});
 		const opts = { now, log: Array.from({ length: 7 }, (_, i) => entry(`old${i}`, true)), retrievability: (c: Parameters<typeof sched.retrievability>[0], n: Date) => sched.retrievability(c, n) };
-		const a = buildQueue(itemsFor(items, 'R/A.md'), opts);
+		const a = buildQueue(itemsFor(items, 'A', 'R'), opts);
 		expect(a).toHaveLength(3);
 		expect(a.every((it) => it.card.file === 'R/A.md')).toBe(true);
-		expect(itemsFor(items, null)).toHaveLength(12);
-		expect(extraQueue(itemsFor(items, 'R/B.md'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
+		expect(itemsFor(items, null, 'R')).toHaveLength(12);
+		expect(extraQueue(itemsFor(items, 'B', 'R'), opts).every((it) => it.card.file === 'R/B.md')).toBe(true);
 	});
 
 	it('a cloze highlight graded today never comes back as ahead of schedule, nor its sibling', () => {

@@ -1,5 +1,5 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
-import { groupDecks } from '../core/decks';
+import { childDecks, crumbs, deckName, deckOf, DeckRow, groupDecks, nearestDeck, parentDeck, subdeckName } from '../core/decks';
 import { estimateMinutes, parseMinutes } from '../core/estimate';
 import { minutesLeft, shiftClock } from '../core/pause';
 import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
@@ -51,12 +51,14 @@ interface Undo {
 /** One view, three moments: Start (pick the time), Review, Done. */
 export class ReviewView extends ItemView {
 	private mode: Mode = 'start';
-	/** the folder opened on the Decks screen: a card file, ALL, or '' for the folders */
+	/** the folder opened on the Decks screen: a deck path (`AWS/EC2`), ALL, or '' for the folders */
 	private openDeck = '';
-	/** the deck being reviewed (card file); null reviews every deck */
+	/** the deck being reviewed (deck path, with its subdecks); null reviews every deck */
 	private deck: string | null = null;
 	/** the next Decks drawing animates the opened folder out of this box */
 	private openFrom: DOMRect | null = null;
+	/** the next Decks drawing has no entrance: going up a level, or cards moved underneath */
+	private quiet = false;
 	/** begin() is reading the cards; Decks asked meanwhile waits for it */
 	private starting = false;
 	private decksNext = false;
@@ -160,10 +162,21 @@ export class ReviewView extends ItemView {
 		else this.show('done');
 	}
 
-	/** The cards of `deck` (a card file), or of every deck. */
+	private get base(): string {
+		return normalizePath(this.plugin.settings.folder);
+	}
+
+	/** The cards of `deck` and its subdecks, or of every deck. */
 	private items(deck: string | null = this.deck): QueueItem[] {
 		const { store } = this.plugin;
-		return itemsFor(buildItems(store.cards, store.state), deck);
+		return itemsFor(buildItems(store.cards, store.state), deck, this.base);
+	}
+
+	/** Deck paths that have something to show: a deck of suspended cards only is not listed. */
+	private deckPaths(): string[] {
+		return this.items(null)
+			.filter((it) => !it.suspended)
+			.map((it) => deckOf(it.card.file ?? '', this.base));
 	}
 
 	private todayQueue(deck: string | null = this.deck): QueueItem[] {
@@ -543,9 +556,22 @@ export class ReviewView extends ItemView {
 
 	/** Cards edited from the session: the queue keeps its order, with the fresh text. */
 	private refreshCards(): void {
+		this.syncQueue();
+		this.show('review');
+	}
+
+	private syncQueue(): void {
 		const byId = new Map(this.plugin.store.cards.map((c) => [c.id, c]));
 		[...this.queue, ...this.waiting].forEach((it) => (it.card = byId.get(it.card.id) ?? it.card));
-		this.show('review');
+	}
+
+	/** Files renamed or deleted: the queue learns the new paths, and a deck that is gone gives way to its closest ancestor. */
+	cardsMoved(): void {
+		this.syncQueue();
+		if (this.deck !== null) this.deck = nearestDeck(this.deckPaths(), this.deck) || null;
+		if (this.mode !== 'decks' || this.starting) return;
+		this.quiet = true;
+		this.show('decks');
 	}
 
 	private openSource(): void {
@@ -632,9 +658,9 @@ export class ReviewView extends ItemView {
 		else this.show('decks');
 	}
 
-	private openFolder(file: string, from: HTMLElement | null = null): void {
+	private openFolder(deck: string, from: HTMLElement | null = null): void {
 		this.openFrom = from?.getBoundingClientRect() ?? null;
-		this.openDeck = file;
+		this.openDeck = deck;
 		this.show('decks');
 	}
 
@@ -647,7 +673,20 @@ export class ReviewView extends ItemView {
 	}
 
 	private escape(): void {
-		if (this.mode === 'decks' && this.openDeck) this.showDecks();
+		if (this.mode === 'decks' && this.openDeck) this.goUp();
+	}
+
+	/** One level up from the opened folder. */
+	private goUp(): void {
+		this.jumpTo(this.openDeck === ALL ? '' : parentDeck(this.openDeck));
+	}
+
+	/** Back to an upper level, without the opening animation. */
+	private jumpTo(deck: string): void {
+		if (!deck) return this.showDecks();
+		this.quiet = true;
+		this.openDeck = deck;
+		this.show('decks');
 	}
 
 	/** Reviews the opened folder: today's cards, or ahead of schedule when it has none. */
@@ -663,47 +702,96 @@ export class ReviewView extends ItemView {
 
 	private drawDecks(root: HTMLElement): void {
 		if (this.openDeck) return this.drawDeck(root);
-		const { store, scheduler } = this.plugin;
-		const decks = groupDecks(this.items(null), normalizePath(this.plugin.settings.folder), new Set(), new Date(), (c, t) => scheduler.retrievability(c, t));
+		const quiet = this.quiet;
+		this.quiet = false;
 		const col = root.createDiv({ cls: 'revisit-col revisit-decks' });
-		if (!store.cards.length) {
+		if (!this.plugin.store.cards.length) {
 			col.createDiv({ text: 'No cards yet. Select text in a note and run New card.', cls: 'revisit-muted' });
 			return;
 		}
 		const grid = col.createDiv({ cls: 'revisit-decks-grid' });
-		const folders = [{ file: ALL, name: 'All decks' }, ...decks];
+		this.drawFolders(grid, [{ path: ALL, name: 'All decks' }, ...childDecks(this.deckPaths(), '')], quiet ? null : 0);
+	}
+
+	/** Folder buttons, coming in one after the other from `delay` ms on; null draws them still. */
+	private drawFolders(grid: HTMLElement, folders: { path: string; name: string }[], delay: number | null): void {
 		folders.forEach((d, i) => {
-			const f = grid.createEl('button', { text: d.name, cls: 'revisit-folder revisit-serif' + (d.file === ALL ? ' is-all' : '') });
-			f.onclick = () => this.openFolder(d.file, f);
-			if (!still()) f.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: i * 40, easing: 'ease-out', fill: 'backwards' });
+			const f = grid.createEl('button', { text: d.name, cls: 'revisit-folder revisit-serif' + (d.path === ALL ? ' is-all' : '') });
+			f.onclick = () => this.openFolder(d.path, f);
+			if (delay !== null && !still()) f.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: delay + Math.min(i, 20) * 40, easing: 'ease-out', fill: 'backwards' });
 		});
 	}
 
-	/** One folder opened: its cards, and Start. */
+	/** One folder opened: Start for everything in it, its subdecks, and its own cards. */
 	private drawDeck(root: HTMLElement): void {
 		const { scheduler } = this.plugin;
 		const now = new Date();
 		const deck = this.openDeck === ALL ? null : this.openDeck;
+		const paths = this.deckPaths();
+		if (deck !== null) {
+			const alive = nearestDeck(paths, deck);
+			if (alive !== deck) {
+				// the opened deck is gone: its closest ancestor, or the folders
+				this.openDeck = alive;
+				this.openFrom = null;
+				this.quiet = true;
+				return this.drawDecks(root);
+			}
+		}
+		const quiet = this.quiet;
+		this.quiet = false;
+		const from = this.openFrom;
+		this.openFrom = null;
 		const queue = this.todayQueue(deck);
-		const decks = groupDecks(this.items(deck), normalizePath(this.plugin.settings.folder), new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
-		if (deck && !decks.length) return this.showDecks();
 		const panel = root.createDiv({ cls: 'revisit-deck' });
+		const trail = deck === null ? [] : crumbs(deck);
+		const nav = trail.length ? panel.createDiv({ cls: 'revisit-crumbs' }) : null;
+		trail.forEach((c, i) => {
+			if (i) nav?.createSpan({ text: '›' });
+			const b = nav?.createEl('button', { text: c.label });
+			if (b) b.onclick = () => this.jumpTo(c.path);
+		});
 		const head = panel.createDiv({ cls: 'revisit-deck-head' });
-		const back = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Back to decks' } });
+		const back = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Back' } });
 		setIcon(back, 'arrow-left');
-		back.onclick = () => this.showDecks();
-		head.createEl('h3', { text: deck ? (decks[0]?.name ?? '') : 'All decks', cls: 'revisit-serif' });
+		back.onclick = () => this.goUp();
+		head.createEl('h3', { text: deck === null ? 'All decks' : deckName(deck), cls: 'revisit-serif' });
+		if (deck !== null) {
+			const add = head.createEl('button', { cls: 'revisit-add clickable-icon', attr: { 'aria-label': 'Add' } });
+			setIcon(add, 'plus');
+			add.onclick = (ev) => this.addMenu(ev, deck);
+		}
 		// Start sits by the title, so a deck of a thousand cards never hides it
 		const ahead = queue.length ? [] : this.aheadQueue(deck);
 		if (queue.length || ahead.length) {
 			const go = head.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
 			go.onclick = () => this.reviewDeck();
 		} else head.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
-		const list = panel.createDiv({ cls: 'revisit-deck-rows' });
+
+		const body = panel.createDiv({ cls: 'revisit-deck-rows' });
+		const subdecks = deck === null ? [] : childDecks(paths, deck);
+		if (subdecks.length) this.drawFolders(body.createDiv({ cls: 'revisit-decks-grid' }), subdecks, quiet ? null : from ? 200 : 0);
+		const own = deck === null ? this.items(null) : this.items(deck).filter((it) => deckOf(it.card.file ?? '', this.base) === deck);
+		const decks = groupDecks(own, this.base, new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		const list = body.createDiv();
+		this.drawCards(list, decks.flatMap((d) => d.rows), now);
+
+		if (quiet || still()) return;
+		if (from) {
+			const to = panel.getBoundingClientRect();
+			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
+		}
+		[...(nav ? [nav] : []), head, ...Array.from(list.children).slice(0, 20)].forEach((c, i) => {
+			c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
+		});
+	}
+
+	/** The cards of the opened folder, one row each. */
+	private drawCards(list: HTMLElement, cards: DeckRow[], now: Date): void {
 		const NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
 		// today first, then the soonest back; new cards last
-		const rank = (r: { today: boolean; due: Date | null }) => (r.today ? -Infinity : (r.due?.getTime() ?? Infinity));
-		const rows = decks.flatMap((d) => d.rows).sort((a, b) => rank(a) - rank(b));
+		const rank = (r: DeckRow) => (r.today ? -Infinity : (r.due?.getTime() ?? Infinity));
+		const rows = [...cards].sort((a, b) => rank(a) - rank(b));
 		for (const r of rows.slice(0, MAX_ROWS)) {
 			const row = list.createDiv({ cls: 'revisit-deck-row' });
 			row.createDiv({ text: r.front, cls: 'revisit-deck-q revisit-serif' });
@@ -714,17 +802,51 @@ export class ReviewView extends ItemView {
 			info.createSpan({ text: r.memory === null ? '—' : `${Math.round(r.memory * 100)}%` });
 		}
 		if (rows.length > MAX_ROWS) list.createDiv({ text: `and ${rows.length - MAX_ROWS} more`, cls: 'revisit-muted revisit-deck-more' });
+	}
 
-		const from = this.openFrom;
-		this.openFrom = null;
-		if (still()) return;
-		if (from) {
-			const to = panel.getBoundingClientRect();
-			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
-		}
-		[head, ...Array.from(list.children).slice(0, 20)].forEach((c, i) => {
-			c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
+	// ---- Adding to a deck ----
+
+	private addMenu(ev: MouseEvent, deck: string): void {
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle('New card').setIcon('plus').onClick(() => this.newCardIn(deck, deck)));
+		menu.addItem((i) => i.setTitle('New subdeck').setIcon('folder-plus').onClick(() => this.askSubdeck(deck)));
+		menu.showAtMouseEvent(ev);
+	}
+
+	/** A card for `target`; saved, the screen is drawn again where it was asked from. */
+	private newCardIn(target: string, origin: string): void {
+		this.plugin.openCreate({
+			deck: target,
+			onSaved: () => {
+				if (this.mode !== 'decks' || this.openDeck !== origin) return;
+				this.quiet = true;
+				this.show('decks');
+			},
 		});
+	}
+
+	/** Only the name is asked: the file is born with the first card saved, so cancelling leaves nothing behind. */
+	private askSubdeck(parent: string): void {
+		const m = new Modal(this.app);
+		m.titleEl.setText(`New subdeck in ${deckName(parent)}`);
+		const input = m.contentEl.createEl('input', { type: 'text', cls: 'revisit-name', attr: { 'aria-label': 'Subdeck name' } });
+		const confirm = () => {
+			const name = subdeckName(input.value);
+			if (!name) return input.focus();
+			m.close();
+			// a name already taken, whatever its case, means that subdeck
+			const known = childDecks(this.plugin.store.cards.map((c) => deckOf(c.file ?? '', this.base)), parent);
+			const same = known.find((d) => d.name.toLowerCase() === name.toLowerCase());
+			this.newCardIn(same?.path ?? `${parent}/${name}`, parent);
+		};
+		input.onkeydown = (e) => {
+			if (e.key !== 'Enter' || e.isComposing) return;
+			e.preventDefault();
+			confirm();
+		};
+		m.contentEl.createDiv({ cls: 'modal-button-container' }).createEl('button', { text: 'Continue', cls: 'mod-cta' }).onclick = confirm;
+		m.open();
+		input.focus();
 	}
 
 	async onClose(): Promise<void> {
