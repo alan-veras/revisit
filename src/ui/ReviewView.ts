@@ -1,5 +1,6 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
 import { groupDecks } from '../core/decks';
+import { estimateMinutes, parseMinutes } from '../core/estimate';
 import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
@@ -18,10 +19,14 @@ type Mode = 'start' | 'review' | 'done' | 'decks';
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
 const TIMES = [2, 5, 10];
+/** the last custom length, kept per device */
+const CUSTOM_KEY = 'revisit-minutes';
+const CUSTOM_DEFAULT = 15;
 const FLIP_TEXT = Platform.isMobile ? 'Tap to flip' : ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
 const KEYS: [string, string][] = [
+	['4 5', 'Custom time, time to clear (start)'],
 	['Space', 'Flip the card'],
 	['1 2 3 4', 'Again, Hard, Good, Easy'],
 	['E', 'Edit the card'],
@@ -84,8 +89,15 @@ export class ReviewView extends ItemView {
 	) {
 		super(leaf);
 		const scope = (this.scope = new Scope(this.app.scope));
-		const on = (key: string, fn: () => void, mods: Modifier[] = []) => scope.register(mods, key, () => (fn(), false));
-		['1', '2', '3', '4'].forEach((k) => on(k, () => this.digit(Number(k))));
+		// a key typed into a field stays with the field
+		const typing = (el: Node | null) => !!el && (el.instanceOf(HTMLInputElement) || el.instanceOf(HTMLTextAreaElement));
+		const on = (key: string, fn: () => void, mods: Modifier[] = []) =>
+			scope.register(mods, key, (evt) => {
+				if (typing(evt.target as Node | null)) return true;
+				fn();
+				return false;
+			});
+		['1', '2', '3', '4', '5'].forEach((k) => on(k, () => this.digit(Number(k))));
 		on(' ', () => this.flip());
 		on('e', () => this.editCard());
 		on('o', () => this.openSource());
@@ -182,6 +194,56 @@ export class ReviewView extends ItemView {
 		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
 		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
 		this.drawTimes(col, (m) => this.pickTime(m));
+		this.drawExtraTimes(col);
+	}
+
+	/** Under the three lengths, quieter: a length of your own, and the time today's cards ask for. */
+	private drawExtraTimes(col: HTMLElement): void {
+		const row = col.createDiv({ cls: 'revisit-times-extra' });
+		const last = this.lastCustom();
+		const custom = row.createEl('button', { text: last === null ? 'Custom' : `Custom · ${last} min`, cls: 'revisit-custom-btn' + (TIMES.includes(this.minutes) ? '' : ' mod-cta') });
+		if (!Platform.isMobile) custom.createSpan({ text: '4', cls: 'revisit-key' });
+		custom.onclick = () => this.editCustom(custom);
+		const clear = this.clearMinutes();
+		if (clear === null) return;
+		const b = row.createEl('button', { text: `~${clear} min to clear` });
+		if (!Platform.isMobile) b.createSpan({ text: '5', cls: 'revisit-key' });
+		b.onclick = () => this.pickTime(clear);
+	}
+
+	private lastCustom(): number | null {
+		const saved: unknown = this.app.loadLocalStorage(CUSTOM_KEY);
+		return typeof saved === 'number' || typeof saved === 'string' ? parseMinutes(String(saved)) : null;
+	}
+
+	/** Minutes to go through today's cards of every deck; null when there are none. */
+	private clearMinutes(): number | null {
+		return estimateMinutes(this.todayQueue(null).length, this.plugin.store.log);
+	}
+
+	/** The Custom button turns into a minutes field: Enter or OK picks, Esc gives the button back. */
+	private editCustom(button: HTMLElement): void {
+		const box = createDiv({ cls: 'revisit-custom' });
+		const input = box.createEl('input', { type: 'number', attr: { inputmode: 'numeric', min: '1', max: '180', 'aria-label': 'Minutes' } });
+		input.value = String(this.lastCustom() ?? CUSTOM_DEFAULT);
+		box.createSpan({ text: 'min', cls: 'revisit-muted' });
+		const ok = box.createEl('button', { text: 'OK' });
+		const confirm = () => {
+			const minutes = parseMinutes(input.value);
+			if (minutes === null) return input.focus();
+			this.app.saveLocalStorage(CUSTOM_KEY, minutes);
+			this.pickTime(minutes);
+		};
+		ok.onclick = confirm;
+		input.onkeydown = (e) => {
+			if (e.key !== 'Enter' && e.key !== 'Escape') return;
+			e.preventDefault();
+			if (e.key === 'Enter') confirm();
+			else this.show('start');
+		};
+		button.replaceWith(box);
+		input.focus();
+		input.select();
 	}
 
 	/** The time is picked: the decks come next. */
@@ -344,6 +406,15 @@ export class ReviewView extends ItemView {
 
 	private digit(n: number): void {
 		if (this.mode === 'start' && n <= 3) this.pickTime(TIMES[n - 1] as number);
+		else if (this.mode === 'start' && n === 4) {
+			// the button, or the field it already turned into
+			const el = this.contentEl.querySelector<HTMLElement>('.revisit-custom-btn, .revisit-custom input');
+			el?.focus();
+			el?.click();
+		} else if (this.mode === 'start') {
+			const clear = this.clearMinutes();
+			if (clear !== null) this.pickTime(clear);
+		}
 		else if (this.mode === 'decks' && !this.openDeck && n === 1) this.openFolder(ALL);
 		else if (this.mode === 'done' && n <= 3) this.keepGoing(TIMES[n - 1] as number);
 		else if (this.mode === 'review' && this.flipped && n <= 4) void this.grade(n as Grade);

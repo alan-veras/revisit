@@ -2,15 +2,15 @@
 
 Flashcards that become a habit: pick your time, review, done.
 
-Revisit is a spaced repetition plugin for Obsidian built around one small daily session. It is for people who want to remember what they read and write in their vault, and who have tried flashcards before and watched the pile of due cards grow until they stopped. There is no deck to set up, no backlog to fear and no syntax to learn.
+Revisit is a spaced repetition plugin for Obsidian built around one small daily session. It is for people who want to remember what they read and write in their vault, and who have tried flashcards before and watched the pile of due cards grow until they stopped. There is no deck to set up, no pile of due cards to stare at and no syntax to learn.
 
 ![A card being reviewed in Revisit: question, answer and the four colored grade buttons with their next intervals](docs/screenshots/3-answer.png)
 
 ## Why Revisit
 
-**1. One question, then you are in.** Every session starts with *How much time today?* (2, 5 or 10 minutes, keys 1 to 3). The session ends by itself when the time is up. Small, fixed sessions are easy to repeat every day, and repeating is what matters: in a study of 96 people doing a daily behaviour, habit strength rose with repetition, and missing a single day did not significantly hurt it ([Lally et al., 2010](https://doi.org/10.1002/ejsp.674)). The same study found the time to form a habit varied a lot, from 18 to 254 days, so the point is to make the daily step cheap, not to promise a number.
+**1. One question, then you are in.** Every session starts with *How much time today?* (2, 5 or 10 minutes, keys 1 to 3; or a length of your own, or the time today's cards ask for). The session ends by itself when the time is up. Small, fixed sessions are easy to repeat every day, and repeating is what matters: in a study of 96 people doing a daily behaviour, habit strength rose with repetition, and missing a single day did not significantly hurt it ([Lally et al., 2010](https://doi.org/10.1002/ejsp.674)). The same study found the time to form a habit varied a lot, from 18 to 254 days, so the point is to make the daily step cheap, not to promise a number.
 
-**2. No debt.** There is no overdue counter and no queue that grows while you are away. After a missed day you see the cards that are due, for the time you chose, and the rest simply waits. When the time is up, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
+**2. No debt.** There is no overdue counter on the screens you review from. *~N min to clear* shows today's cards as time, not as a pile to count. After a missed day you see the cards that are due, for the time you chose, and the rest simply waits. When the time is up, *Keep going?* offers 2, 5 or 10 more minutes. It is your choice, never a demand.
 
 **3. Cards take seconds to make.** Select text, run `New card`, type the question, press `Ctrl+Enter`. A short selection with an empty front becomes a cloze on its own. There is no deck to choose: cards are grouped by the top-level folder of the note.
 
@@ -27,7 +27,7 @@ Checked in November 2026 against each project's README. These are good plugins; 
 | Create a card | Select text, `New card`, type the question | Write inline syntax in a note (`Question::Answer`, multi-line `?`) under a `#flashcards` tag | Write notes in markdown, then send them to Anki | Write `Question::Answer` in a note, then run an update command |
 | Marks your note | No | Yes: scheduling is kept as an HTML comment next to the card | Yes: writes an ID, in an HTML comment by default | Yes: adds a `^q-xxxx` anchor and a `flashcards` property |
 | Algorithm | FSRS | FSRS or SM-2 | Anki's | Anki's |
-| Session by time | Yes: 2, 5 or 10 min | Not in README | Not in README | Not in README |
+| Session by time | Yes: 2, 5, 10 min or your own | Not in README | Not in README | Not in README |
 | Needs Anki | No | No | Yes, with AnkiConnect | Yes, with AnkiConnect |
 
 Where the others are stronger:
@@ -41,17 +41,15 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 ## Quick start
 
 1. Select a sentence in any note and run `New card` (command palette, right-click, or the Done screen). Type the question. Press `Ctrl+Enter`.
-2. Open Revisit from the ribbon icon, the status bar or the `Review` command. Choose 2, 5 or 10 minutes.
+2. Open Revisit from the ribbon icon, the status bar or the `Review` command. Choose how many minutes.
 3. Flip with Space, grade with 1 to 4. When the time is up, you are done.
 
 ## How it works
 
-1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3).
+1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3). Below them, *Custom* (key 4) takes 1 to 180 minutes and remembers the last value on each device, and *~N min to clear* (key 5) estimates, from your own review log, the time to go through today's cards of every deck. It is hidden when there are none.
 2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its cards, how each is going and when it comes back, with a Start button for that deck alone. Esc goes back.
 3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up.
 4. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. `New card` and `Decks` links sit here too.
-
-There is no overdue counter.
 
 ## Creating cards
 
@@ -66,6 +64,8 @@ There is no deck to pick. Cards are grouped by the top-level folder of the note 
 | Key | Action |
 |---|---|
 | 1, 2, 3 | Choose 2, 5 or 10 minutes (Start and Keep going) |
+| 4 | Custom time (Start); Enter confirms, Esc cancels |
+| 5 | Time to clear today's cards (Start) |
 | Space | Flip the card, and flip it back |
 | 1, 2, 3, 4 | Again, Hard, Good, Easy |
 | E | Edit the card |

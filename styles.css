@@ -31,6 +31,13 @@
 /* start and done */
 .revisit-times { display: flex; gap: var(--size-4-3); }
 .revisit-center > button, .revisit-times button { min-width: 6.5em; height: auto; padding: 0.7em 1.3em; font-size: var(--rv-ui); }
+.revisit-times-extra { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--size-4-3); margin-top: calc(var(--size-4-3) * -1); }
+.revisit-times-extra button { height: auto; padding: 0.5em 1em; font-size: calc(var(--rv-ui) * 0.8); }
+.revisit-times-extra button:not(.mod-cta) { color: var(--text-muted); }
+.revisit-custom { display: flex; align-items: center; gap: var(--size-4-2); }
+.revisit-custom input { width: 5em; height: auto; padding: 0.5em; text-align: center; font-size: calc(var(--rv-ui) * 0.8); }
+.revisit.is-touch .revisit-custom input { min-height: 44px; }
+.revisit.is-touch .revisit-custom button { min-width: 44px; }
 .revisit-key { margin-left: var(--size-4-2); font-size: var(--font-ui-smaller); opacity: 0.6; }
 .revisit-muted, .revisit-link { font-size: calc(var(--rv-ui) * 0.85); color: var(--text-muted); }
 .revisit-link { margin-top: var(--size-4-4); cursor: pointer; }
