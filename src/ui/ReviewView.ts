@@ -779,7 +779,8 @@ export class ReviewView extends ItemView {
 		if (queue.length || ahead.length) {
 			const go = head.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
 			go.onclick = () => this.reviewDeck();
-		} else head.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
+			// nothing now: say when the next card comes (a learning step in minutes, or tomorrow)
+		} else head.createDiv({ text: nextCardLabel(this.items(deck), now) ?? 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
 
 		const body = panel.createDiv({ cls: 'revisit-deck-body' });
 		const subdecks = deck === null ? [] : childDecks(paths, deck);

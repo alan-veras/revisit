@@ -139,7 +139,11 @@ export class CardGrid extends Component {
 			const info = el.createDiv({ cls: 'revisit-card-info' });
 			const [name, cls] = NAME[row.state] ?? ['New', 'is-new'];
 			info.createSpan({ text: name, cls: `revisit-dot ${cls}` });
-			if (row.state === State.New) return;
+			// a new card left out of today's queue (daily cap, or its sibling was asked today) waits for tomorrow
+			if (row.state === State.New) {
+				if (!row.today) info.createSpan({ text: 'tomorrow' });
+				return;
+			}
 			info.createSpan({ text: row.today ? 'today' : row.due ? `in ${formatInterval(row.due.getTime() - now.getTime())}` : '—', cls: row.today ? 'is-due' : '' });
 			info.createSpan({ text: row.memory === null ? '—' : `${Math.round(row.memory * 100)}%` });
 			return;
