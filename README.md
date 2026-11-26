@@ -47,7 +47,7 @@ Revisit is not for you if you need Anki sync, inline card syntax, or review on y
 ## How it works
 
 1. **Start.** Answer one question: *How much time today?* (2, 5 or 10 min, keys 1 to 3). Below them, *Custom* (key 4) takes 1 to 180 minutes and remembers the last value on each device, and *~N min to clear* (key 5) estimates, from your own review log, the time to go through today's cards of every deck. It is hidden when there are none.
-2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its subdecks as folders and, below them, its own cards, how each is going and when it comes back. Start (or *Review ahead*) takes that deck and everything under it. ← and Esc go up one level, and from the second level on a small `Decks › AWS` trail jumps to any level above. The `+` in an opened deck adds a *New card* there or a *New subdeck*.
+2. **Decks.** Your decks appear as folders. *All decks* (Enter) reviews everything mixed; any other folder opens to show its subdecks as folders and, below them, its own cards in a grid, each with its question, how it is going and when it comes back (today's first, new ones last). Click or tap a card to flip it and read the answer and its source; click again to flip it back. *Show answers* (or Space) flips them all. Looking is not reviewing: nothing is graded or saved. Start (or *Review ahead*) takes that deck and everything under it. ← and Esc go up one level, and from the second level on a small `Decks › AWS` trail jumps to any level above. The `+` in an opened deck adds a *New card* there or a *New subdeck*.
 3. **Review.** One card at a time. Space or a click flips it, and flips it back. Grade with Again, Hard, Good or Easy (keys 1 to 4); each button shows its colour and the next interval. The session ends by itself when the time is up. To pause, press P (on a computer, a faint ⏸ also shows when the pointer is near the time line; on a phone, *Pause* is in the `⋯` menu): the card is hidden and the time stops until you press P or Enter, or tap.
 4. **Done.** A calm screen: *Done. N cards.* or *All caught up.*, and when the next card comes back. If cards from today were left, *Keep going?* offers 2, 5 or 10 more minutes. If not, *Ahead of schedule?* offers new cards past the daily limit, then cards before their day. `New card` and `Decks` links sit here too.
 
@@ -68,7 +68,7 @@ There is no deck to pick. Cards are grouped by the top-level folder of the note 
 | 1, 2, 3 | Choose 2, 5 or 10 minutes (Start and Keep going) |
 | 4 | Custom time (Start); Enter confirms, Esc cancels |
 | 5 | Time to clear today's cards (Start) |
-| Space | Flip the card, and flip it back |
+| Space | Flip the card, and flip it back; in an opened deck, show or hide all answers |
 | 1, 2, 3, 4 | Again, Hard, Good, Easy |
 | P | Pause the review; P or Enter resumes |
 | E | Edit the card |

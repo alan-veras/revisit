@@ -90,7 +90,7 @@
 .revisit-deck-head { display: flex; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .revisit-deck-head { flex-wrap: wrap; }
 .revisit-deck-head h3 { margin: 0 auto 0 0; min-width: 0; overflow-wrap: anywhere; font-size: 1.6em; }
-.revisit-deck-rows { flex: 1; min-height: 0; overflow-y: auto; }
+.revisit-deck-body { flex: 1; min-height: 0; overflow-y: auto; }
 /* subdecks inside an opened folder: room for the tabs, and a lighter paper than the panel */
 .revisit-deck .revisit-decks-grid { padding: 16px 2px var(--size-4-4); }
 .revisit-deck .revisit-decks-grid .revisit-folder, .revisit-deck .revisit-decks-grid .revisit-folder:hover { background: var(--background-primary); }
@@ -100,11 +100,22 @@
 .revisit.is-touch .revisit-crumbs button, .revisit.is-touch .revisit-deck-head .clickable-icon { min-width: 44px; }
 .revisit-add { color: var(--text-muted); }
 .revisit-name { width: 100%; }
-.revisit-deck-more { padding: 12px 0; }
-.revisit-deck-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--background-modifier-border); }
-.revisit-deck-q { min-width: 0; font-size: 1.08em; }
-.revisit-deck-info { display: flex; gap: 14px; align-items: center; white-space: nowrap; font-size: var(--font-ui-small); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.revisit-deck-info .is-due { color: rgb(var(--color-green-rgb)); }
+/* flip cards of the opened folder: paper on the folder; a turned one grows, then scrolls inside */
+.revisit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: var(--size-4-3); padding: 2px; }
+.revisit-card { display: flex; flex-direction: column; gap: var(--size-4-2); min-width: 0; min-height: 10.5em; max-height: 22em; overflow-y: auto; padding: var(--size-4-3); overflow-wrap: anywhere; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); cursor: pointer; }
+.revisit-card > * { flex-shrink: 0; }
+.revisit-card-q { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; line-height: 1.4; }
+.revisit-card-info { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--size-4-3); margin-top: auto; font-size: var(--font-ui-smaller); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.revisit-card-info .is-due { color: rgb(var(--color-green-rgb)); }
+.revisit-card.is-flipped { user-select: text; }
+.revisit-card-ask { padding-bottom: var(--size-4-2); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); color: var(--text-muted); }
+.revisit-card-a { line-height: 1.5; }
+.revisit-card-a > :first-child { margin-top: 0; }
+.revisit-card-a > :last-child { margin-bottom: 0; }
+.revisit-card .revisit-src { font-size: var(--font-ui-smaller); }
+.revisit-cards-more { height: 1px; }
+.revisit-deck button.revisit-answers { color: var(--text-muted); font-size: var(--font-ui-small); background: none; border: 0; box-shadow: none; cursor: pointer; }
+.revisit-deck button.revisit-answers:hover { color: var(--text-normal); }
 .revisit-dot { display: inline-flex; align-items: center; gap: 6px; }
 .revisit-dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--d)); }
 .revisit .is-new { --d: var(--color-base-50-rgb, 128,128,128); }
@@ -112,5 +123,7 @@
 .revisit .is-review { --d: var(--color-green-rgb); }
 .revisit-deck-go { flex-shrink: 0; }
 .revisit-deck button.revisit-deck-go { height: auto; padding: 0.7em 2.4em; font-size: var(--rv-ui); }
-@container (max-width: 520px) { .revisit-deck-row { grid-template-columns: minmax(0, 1fr); } }
+@container (min-width: 1000px) { .revisit-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 640px) { .revisit-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 359px) { .revisit-cards { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .revisit-decks-grid .revisit-folder { transition: none; } }

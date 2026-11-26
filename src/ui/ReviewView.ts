@@ -1,17 +1,17 @@
 import { ItemView, MarkdownRenderer, Menu, Modal, Modifier, normalizePath, Notice, Platform, Scope, setIcon, WorkspaceLeaf } from 'obsidian';
-import { childDecks, crumbs, deckName, deckOf, DeckRow, groupDecks, nearestDeck, parentDeck, subdeckName } from '../core/decks';
+import { browseOrder } from '../core/browse';
+import { childDecks, crumbs, deckName, deckOf, groupDecks, nearestDeck, parentDeck, subdeckName } from '../core/decks';
 import { estimateMinutes, parseMinutes } from '../core/estimate';
 import { minutesLeft, shiftClock } from '../core/pause';
-import { formatInterval, freshCard, isNew, State, toStored } from '../core/scheduler';
+import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
 import { GRADES, Grade, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
+import { CardGrid, GridCard } from './CardGrid';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
 
 const ALL = '*';
-/** rows drawn in an opened folder; the rest is only counted */
-const MAX_ROWS = 200;
 const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 type Mode = 'start' | 'review' | 'done' | 'decks';
@@ -89,6 +89,9 @@ export class ReviewView extends ItemView {
 	private minutes = TIMES[0] as number;
 	/** what Keep going would review, worked out when Done is drawn */
 	private more: QueueItem[] = [];
+	/** the flip cards of the opened folder */
+	private grid: CardGrid | null = null;
+	private answersBtn: HTMLElement | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -192,6 +195,7 @@ export class ReviewView extends ItemView {
 	private show(mode: Mode): void {
 		this.mode = mode;
 		const root = this.contentEl;
+		this.dropGrid();
 		root.empty();
 		// a screen drawn anew is never paused
 		this.pausedAt = 0;
@@ -463,7 +467,8 @@ export class ReviewView extends ItemView {
 	}
 
 	private flip(): void {
-		if (this.mode === 'decks') return this.enter();
+		// an opened folder turns its cards; on the folders, Space opens All decks
+		if (this.mode === 'decks') return this.openDeck ? this.toggleAnswers() : this.enter();
 		if (this.mode !== 'review' || this.busy || this.pausedAt) return;
 		this.flipped = !this.flipped;
 		this.contentEl.toggleClass('is-flipped', this.flipped);
@@ -761,6 +766,14 @@ export class ReviewView extends ItemView {
 			setIcon(add, 'plus');
 			add.onclick = (ev) => this.addMenu(ev, deck);
 		}
+		const own = deck === null ? this.items(null) : this.items(deck).filter((it) => deckOf(it.card.file ?? '', this.base) === deck);
+		const decks = groupDecks(own, this.base, new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
+		const byKey = new Map(own.map((it) => [it.key, it]));
+		const cards = browseOrder(decks.flatMap((d) => d.rows)).map((row): GridCard => ({ row, item: byKey.get(row.key) as QueueItem }));
+		if (cards.length) {
+			this.answersBtn = head.createEl('button', { text: 'Show answers', cls: 'revisit-answers' });
+			this.answersBtn.onclick = () => this.toggleAnswers();
+		}
 		// Start sits by the title, so a deck of a thousand cards never hides it
 		const ahead = queue.length ? [] : this.aheadQueue(deck);
 		if (queue.length || ahead.length) {
@@ -768,40 +781,33 @@ export class ReviewView extends ItemView {
 			go.onclick = () => this.reviewDeck();
 		} else head.createDiv({ text: 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
 
-		const body = panel.createDiv({ cls: 'revisit-deck-rows' });
+		const body = panel.createDiv({ cls: 'revisit-deck-body' });
 		const subdecks = deck === null ? [] : childDecks(paths, deck);
 		if (subdecks.length) this.drawFolders(body.createDiv({ cls: 'revisit-decks-grid' }), subdecks, quiet ? null : from ? 200 : 0);
-		const own = deck === null ? this.items(null) : this.items(deck).filter((it) => deckOf(it.card.file ?? '', this.base) === deck);
-		const decks = groupDecks(own, this.base, new Set(queue.map((it) => it.key)), now, (c, t) => scheduler.retrievability(c, t));
-		const list = body.createDiv();
-		this.drawCards(list, decks.flatMap((d) => d.rows), now);
+		if (cards.length) this.grid = this.addChild(new CardGrid(this.app, body, cards, still));
+		else if (!subdecks.length) body.createDiv({ text: 'No cards here.', cls: 'revisit-muted' });
 
 		if (quiet || still()) return;
 		if (from) {
 			const to = panel.getBoundingClientRect();
 			if (to.width && to.height) panel.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
 		}
-		[...(nav ? [nav] : []), head, ...Array.from(list.children).slice(0, 20)].forEach((c, i) => {
+		[...(nav ? [nav] : []), head, ...Array.from(this.grid?.el.children ?? []).slice(0, 20)].forEach((c, i) => {
 			c.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: (from ? 200 : 0) + Math.min(i, 20) * 30, easing: 'ease-out', fill: 'backwards' });
 		});
 	}
 
-	/** The cards of the opened folder, one row each. */
-	private drawCards(list: HTMLElement, cards: DeckRow[], now: Date): void {
-		const NAME: Record<number, [string, string]> = { [State.New]: ['New', 'is-new'], [State.Learning]: ['Learning', 'is-learning'], [State.Review]: ['Review', 'is-review'], [State.Relearning]: ['Relearning', 'is-learning'] };
-		// today first, then the soonest back; new cards last
-		const rank = (r: DeckRow) => (r.today ? -Infinity : (r.due?.getTime() ?? Infinity));
-		const rows = [...cards].sort((a, b) => rank(a) - rank(b));
-		for (const r of rows.slice(0, MAX_ROWS)) {
-			const row = list.createDiv({ cls: 'revisit-deck-row' });
-			row.createDiv({ text: r.front, cls: 'revisit-deck-q revisit-serif' });
-			const info = row.createDiv({ cls: 'revisit-deck-info' });
-			const [name, cls] = NAME[r.state] ?? ['New', 'is-new'];
-			info.createSpan({ text: name, cls: `revisit-dot ${cls}` });
-			info.createSpan({ text: r.today ? 'today' : r.due ? `in ${formatInterval(r.due.getTime() - now.getTime())}` : '—', cls: r.today ? 'is-due' : '' });
-			info.createSpan({ text: r.memory === null ? '—' : `${Math.round(r.memory * 100)}%` });
-		}
-		if (rows.length > MAX_ROWS) list.createDiv({ text: `and ${rows.length - MAX_ROWS} more`, cls: 'revisit-muted revisit-deck-more' });
+	/** Show or hide the answers of every card in the opened folder. */
+	private toggleAnswers(): void {
+		if (!this.grid) return;
+		this.grid.toggleAll();
+		this.answersBtn?.setText(this.grid.showingAll ? 'Hide answers' : 'Show answers');
+	}
+
+	private dropGrid(): void {
+		if (this.grid) this.removeChild(this.grid);
+		this.grid = null;
+		this.answersBtn = null;
 	}
 
 	// ---- Adding to a deck ----
@@ -853,6 +859,7 @@ export class ReviewView extends ItemView {
 		window.clearTimeout(this.disarm);
 		this.pausedAt = 0;
 		this.contentEl.removeClass('is-paused');
+		this.dropGrid();
 		this.contentEl.empty();
 	}
 }
