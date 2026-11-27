@@ -1,4 +1,4 @@
-import { App, Component, MarkdownRenderer } from 'obsidian';
+import { App, Component, MarkdownRenderer, setIcon } from 'obsidian';
 import { DeckRow } from '../core/decks';
 import { faces, QueueItem } from '../core/queue';
 import { formatInterval, State } from '../core/scheduler';
@@ -44,6 +44,7 @@ export class CardGrid extends Component {
 		private scroller: HTMLElement,
 		private cards: GridCard[],
 		private still: () => boolean,
+		private menu: (item: QueueItem, ev: MouseEvent) => void,
 	) {
 		super();
 		this.el = scroller.createDiv({ cls: 'revisit-cards' });
@@ -88,7 +89,7 @@ export class CardGrid extends Component {
 	private addBatch(): void {
 		const now = new Date();
 		for (const card of this.cards.slice(this.tiles.length, this.tiles.length + BATCH)) {
-			const tile: Tile = { ...card, el: this.el.createDiv({ cls: 'revisit-card' }), flipped: this.showAll, content: null, turning: null };
+			const tile: Tile = { ...card, el: this.el.createDiv({ cls: 'revisit-card', attr: { tabindex: '-1' } }), flipped: this.showAll, content: null, turning: null };
 			tile.el.onclick = (ev) => this.click(tile, ev);
 			this.paint(tile, now);
 			this.tiles.push(tile);
@@ -134,6 +135,10 @@ export class CardGrid extends Component {
 		el.empty();
 		el.scrollTop = 0;
 		el.toggleClass('is-flipped', tile.flipped);
+		// a button: its click opens the menu and leaves the card as it is (OWN_CLICK)
+		const more = el.createEl('button', { cls: 'revisit-card-menu clickable-icon', attr: { 'aria-label': 'Card actions' } });
+		setIcon(more, 'more-horizontal');
+		more.onclick = (ev) => this.menu(item, ev);
 		if (!tile.flipped) {
 			el.createDiv({ text: row.front, cls: 'revisit-card-q revisit-serif' });
 			const info = el.createDiv({ cls: 'revisit-card-info' });

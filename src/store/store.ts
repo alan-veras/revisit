@@ -176,6 +176,22 @@ export class Store {
 		await this.withCard(card, (text, fresh) => replaceCard(text, fresh, serializeCard({ ...next, id: card.id })));
 	}
 
+	/** The same block, with its id, goes to the file of `deck`: the schedule is kept by id, so it follows. */
+	async moveCard(card: Card, deck: string): Promise<void> {
+		const to = this.path(`${deck}.md`);
+		if (!card.id || card.file === to) return;
+		const fresh = this.cards.find((c) => c.id === card.id) ?? card;
+		const block = serializeCard({ ...fresh, topics: [deck.split('/').join(' > ')] });
+		const file = this.app.vault.getAbstractFileByPath(to);
+		// written to the new file first: a failure halfway leaves a copy, never a lost card
+		if (file instanceof TFile) await this.app.vault.process(file, (t) => appendCard(t, block));
+		else {
+			await this.ensureFolder(to);
+			await this.app.vault.create(to, appendCard('', block));
+		}
+		await this.withCard(fresh, (text, found) => removeCard(text, found));
+	}
+
 	async deleteCard(card: Card): Promise<void> {
 		await this.withCard(card, (text, fresh) => removeCard(text, fresh));
 		for (const k of Object.keys(this.state)) if (card.id && (k === card.id || k.startsWith(card.id + '-'))) this.setEntry(k, undefined);
