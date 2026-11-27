@@ -17,6 +17,7 @@
 .revisit.is-paused > .revisit-col, .revisit.is-paused > .revisit-grades, .revisit.is-paused > .revisit-hint { opacity: 0; }
 .revisit.is-paused > .revisit-help-btn, .revisit.is-paused > .revisit-help, .revisit.is-paused > .revisit-pause-zone { display: none; }
 .revisit-paused { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--size-4-3); padding: var(--size-4-4); text-align: center; cursor: pointer; }
+.revisit-paused button.revisit-end { margin-top: var(--size-4-4); }
 .revisit-paused-title { font-size: clamp(28px, 4.2cqi, 68px); }
 @media (prefers-reduced-motion: reduce) { .revisit-pause-btn { transition: none; } }
 
@@ -105,6 +106,13 @@
 .revisit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: var(--size-4-3); padding: 2px; }
 .revisit-card { display: flex; flex-direction: column; gap: var(--size-4-2); min-width: 0; min-height: 10.5em; max-height: 22em; overflow-y: auto; padding: var(--size-4-3); overflow-wrap: anywhere; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); cursor: pointer; }
 .revisit-card > * { flex-shrink: 0; }
+.revisit-ask { display: flex; flex-direction: column; align-items: center; gap: var(--size-4-3); padding: var(--size-4-3) 0 var(--size-4-4); }
+.revisit-ask .revisit-times-extra { margin-top: 0; }
+.revisit-ask button:focus, .revisit-card:focus, .revisit-decks-grid .revisit-folder:focus, .revisit-deck button.revisit-deck-go:focus { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.revisit-card { position: relative; }
+.revisit-card button.revisit-card-menu { position: absolute; top: 4px; right: 4px; color: var(--text-faint); }
+.revisit-card button.revisit-card-menu:hover { color: var(--text-normal); }
+.revisit-card-q, .revisit-card-ask { padding-right: 22px; }
 .revisit-card-q { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; line-height: 1.4; }
 .revisit-card-info { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--size-4-3); margin-top: auto; font-size: var(--font-ui-smaller); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .revisit-card-info .is-due { color: rgb(var(--color-green-rgb)); }

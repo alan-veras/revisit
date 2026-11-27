@@ -5,8 +5,9 @@ import { estimateMinutes, parseMinutes } from '../core/estimate';
 import { minutesLeft, shiftClock } from '../core/pause';
 import { freshCard, isNew, toStored } from '../core/scheduler';
 import { buildItems, buildQueue, extraQueue, faces, itemsFor, nextCardLabel, QueueItem } from '../core/queue';
-import { GRADES, Grade, CardState } from '../core/types';
+import { GRADES, Grade, Card, CardState } from '../core/types';
 import type RevisitPlugin from '../main';
+import { DeckPicker } from './DeckPicker';
 import { CardGrid, GridCard } from './CardGrid';
 
 export const VIEW_TYPE_REVIEW = 'revisit-review';
@@ -14,12 +15,14 @@ export const VIEW_TYPE_REVIEW = 'revisit-review';
 const ALL = '*';
 const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-type Mode = 'start' | 'review' | 'done' | 'decks';
+type Mode = 'review' | 'decks' | 'done';
 
 // the wording is the design (lowercase, with the key letter), so it is joined here instead of written as one literal
 const NEW_HINT = ['new', 'D discards'].join(' · ');
 const ARMED_HINT = ['press', 'D again to delete this card'].join(' ');
 const TIMES = [2, 5, 10];
+/** the length picked last, preselected the next time; kept per device */
+const LAST_KEY = 'revisit-last-time';
 /** the last custom length, kept per device */
 const CUSTOM_KEY = 'revisit-minutes';
 const CUSTOM_DEFAULT = 15;
@@ -27,11 +30,15 @@ const RESUME_TEXT = Platform.isMobile ? 'Tap to resume' : ['P', 'or tap to resum
 const FLIP_TEXT = Platform.isMobile ? 'Tap to flip' : ['Space', 'or click to flip'].join(' ');
 
 /** The keys the review answers to, shown by the ? button. */
+/** what the arrows move between on the folders */
+const NAV = '.revisit-folder, .revisit-card, button.revisit-deck-go';
+
 const KEYS: [string, string][] = [
-	['4 5', 'Custom time, time to clear (start)'],
+	['1 2 3 4 5', '2, 5, 10 min, custom, time to clear (after Start)'],
 	['Space', 'Flip the card'],
 	['1 2 3 4', 'Again, Hard, Good, Easy'],
 	['P', 'Pause or resume'],
+	['Esc', 'Back: leave the session, close the times, go up a deck'],
 	['E', 'Edit the card'],
 	['O', 'Open the source note'],
 	['D D', 'Delete the card'],
@@ -48,9 +55,11 @@ interface Undo {
 	fsrs: QueueItem['fsrs'];
 }
 
-/** One view, three moments: Start (pick the time), Review, Done. */
+/** One view, three moments: Decks (home: pick what, then how long), Review, Done. */
 export class ReviewView extends ItemView {
-	private mode: Mode = 'start';
+	private mode: Mode = 'decks';
+	/** the Decks screen the session was started from; leaving it goes back there */
+	private origin = '';
 	/** the folder opened on the Decks screen: a deck path (`AWS/EC2`), ALL, or '' for the folders */
 	private openDeck = '';
 	/** the deck being reviewed (deck path, with its subdecks); null reviews every deck */
@@ -59,9 +68,8 @@ export class ReviewView extends ItemView {
 	private openFrom: DOMRect | null = null;
 	/** the next Decks drawing has no entrance: going up a level, or cards moved underneath */
 	private quiet = false;
-	/** begin() is reading the cards; Decks asked meanwhile waits for it */
+	/** begin() is reading the cards: it draws Decks when done */
 	private starting = false;
-	private decksNext = false;
 	/** bumped by begin() and every session start: a begin() that finishes late sees it changed and stops */
 	private gen = 0;
 	/** undo just put a card back: the waiting cards let it be shown first */
@@ -85,7 +93,7 @@ export class ReviewView extends ItemView {
 	private bar: HTMLElement | null = null;
 	private hint: HTMLElement | null = null;
 	private disarm = 0;
-	/** the length picked at Start; Keep going offers it again */
+	/** the length of the session; Keep going offers it again */
 	private minutes = TIMES[0] as number;
 	/** what Keep going would review, worked out when Done is drawn */
 	private more: QueueItem[] = [];
@@ -117,6 +125,13 @@ export class ReviewView extends ItemView {
 		on('?', () => this.toggleHelp(), ['Shift']);
 		on('Enter', () => this.enter());
 		on('Escape', () => this.escape());
+		// outside the folders the arrows keep their own job (scrolling a long answer)
+		for (const dir of ['Left', 'Right', 'Up', 'Down'] as const)
+			scope.register([], `Arrow${dir}`, (evt) => {
+				if (this.mode !== 'decks' || typing(evt.target as Node | null)) return true;
+				this.move(dir);
+				return false;
+			});
 	}
 
 	get reviewing(): boolean {
@@ -138,7 +153,7 @@ export class ReviewView extends ItemView {
 		await this.begin();
 	}
 
-	/** Back to the start: reads the cards again; nothing to review goes straight to Done. */
+	/** Home: reads the cards again and shows the decks. */
 	async begin(): Promise<void> {
 		const gen = ++this.gen;
 		this.starting = true;
@@ -148,21 +163,14 @@ export class ReviewView extends ItemView {
 			this.starting = false;
 		}
 		// a session started while the cards were read (Keep going on Done): it is not thrown away
-		if (gen !== this.gen) {
-			this.decksNext = false;
-			return;
-		}
+		if (gen !== this.gen) return;
 		this.graded.clear();
 		this.undo = [];
 		this.waiting = [];
 		this.deck = null;
 		this.openDeck = '';
-		this.queue = this.todayQueue();
-		if (this.decksNext) {
-			this.decksNext = false;
-			this.show('decks');
-		} else if (this.queue.length) this.show('start');
-		else this.show('done');
+		this.queue = [];
+		this.show('decks');
 	}
 
 	private get base(): string {
@@ -203,27 +211,42 @@ export class ReviewView extends ItemView {
 		root.addClass('revisit');
 		root.toggleClass('is-touch', Platform.isMobile);
 		this.bar = null;
-		if (mode === 'start') this.drawStart(root);
-		else if (mode === 'review') this.drawCard(root);
+		if (mode === 'review') this.drawCard(root);
 		else if (mode === 'decks') this.drawDecks(root);
 		else this.drawDone(root);
 		// the last card graded: drawCard already moved on to Done, which drew itself
 		if (this.mode !== mode) return;
 		if (mode === 'review' && Platform.isMobile) this.drawMenu(root);
-		else if ((mode === 'start' || mode === 'review') && !Platform.isMobile) this.drawHelp(root);
+		else if (!Platform.isMobile && (mode === 'review' || (mode === 'decks' && !this.openDeck))) this.drawHelp(root);
 		this.plugin.updateStatus();
 	}
 
-	// ---- Start ----
+	// ---- How much time? ----
 
-	private drawStart(root: HTMLElement): void {
-		const col = root.createDiv({ cls: 'revisit-col revisit-center' });
-		col.createEl('h2', { text: 'How much time today?', cls: 'revisit-serif' });
-		this.drawTimes(col, (m) => this.pickTime(m));
-		this.drawExtraTimes(col);
+	private asking(): HTMLElement | null {
+		return this.contentEl.querySelector<HTMLElement>('.revisit-ask');
 	}
 
-	/** Under the three lengths, quieter: a length of your own, and the time today's cards ask for. */
+	/** The times open under the title of the deck, the one picked last already selected: Enter starts. */
+	private askTime(): void {
+		const head = this.contentEl.querySelector<HTMLElement>('.revisit-deck-head');
+		if (!head || this.asking() || !this.deckQueue().length) return;
+		const saved: unknown = this.app.loadLocalStorage(LAST_KEY);
+		this.minutes = parseMinutes(String(saved)) ?? (TIMES[0] as number);
+		const box = createDiv({ cls: 'revisit-ask' });
+		head.after(box);
+		box.createDiv({ text: 'How much time?', cls: 'revisit-muted' });
+		this.drawTimes(box, (m) => this.pickTime(m));
+		this.drawExtraTimes(box);
+		box.querySelector<HTMLElement>('button.mod-cta')?.focus();
+	}
+
+	private closeAsk(): void {
+		this.asking()?.remove();
+		this.contentEl.querySelector<HTMLElement>('button.revisit-deck-go')?.focus();
+	}
+
+	/** Under the three lengths, quieter: a length of your own, and the time the deck's cards of today ask for. */
 	private drawExtraTimes(col: HTMLElement): void {
 		const row = col.createDiv({ cls: 'revisit-times-extra' });
 		const last = this.lastCustom();
@@ -232,7 +255,7 @@ export class ReviewView extends ItemView {
 		custom.onclick = () => this.editCustom(custom);
 		const clear = this.clearMinutes();
 		if (clear === null) return;
-		const b = row.createEl('button', { text: `~${clear} min to clear` });
+		const b = row.createEl('button', { text: `~${clear} min to clear`, cls: 'revisit-clear-btn' });
 		if (!Platform.isMobile) b.createSpan({ text: '5', cls: 'revisit-key' });
 		b.onclick = () => this.pickTime(clear);
 	}
@@ -242,9 +265,9 @@ export class ReviewView extends ItemView {
 		return typeof saved === 'number' || typeof saved === 'string' ? parseMinutes(String(saved)) : null;
 	}
 
-	/** Minutes to go through today's cards of every deck; null when there are none. */
+	/** Minutes to go through today's cards of the opened deck; null when there are none. */
 	private clearMinutes(): number | null {
-		return estimateMinutes(this.todayQueue(null).length, this.plugin.store.log);
+		return estimateMinutes(this.todayQueue(this.openedDeck()).length, this.plugin.store.log);
 	}
 
 	/** The Custom button turns into a minutes field: Enter or OK picks, Esc gives the button back. */
@@ -265,18 +288,37 @@ export class ReviewView extends ItemView {
 			if (e.key !== 'Enter' && e.key !== 'Escape') return;
 			e.preventDefault();
 			if (e.key === 'Enter') confirm();
-			else this.show('start');
+			else {
+				this.closeAsk();
+				this.askTime();
+			}
 		};
 		button.replaceWith(box);
 		input.focus();
 		input.select();
 	}
 
-	/** The time is picked: the decks come next. */
+	private openedDeck(): string | null {
+		return this.openDeck === ALL ? null : this.openDeck;
+	}
+
+	/** What Start asks in the opened deck: today's cards, or ahead of schedule when it has none. */
+	private deckQueue(): QueueItem[] {
+		const deck = this.openedDeck();
+		const queue = this.todayQueue(deck);
+		return queue.length ? queue : this.aheadQueue(deck);
+	}
+
+	/** The time is picked: the session of the opened deck starts. */
 	private pickTime(minutes: number): void {
-		this.minutes = minutes;
-		this.openDeck = '';
-		this.show('decks');
+		const queue = this.deckQueue();
+		if (!queue.length) return;
+		// the time to clear changes every day: only a length that has its own button is remembered
+		if (TIMES.includes(minutes) || minutes === this.lastCustom()) this.app.saveLocalStorage(LAST_KEY, minutes);
+		this.origin = this.openDeck;
+		this.deck = this.openedDeck();
+		this.queue = queue;
+		this.startSession(minutes);
 	}
 
 	/** The three lengths, with their keys; the one picked last is highlighted. */
@@ -397,6 +439,27 @@ export class ReviewView extends ItemView {
 		cover.createDiv({ text: 'Paused', cls: 'revisit-paused-title revisit-serif' });
 		cover.createDiv({ text: `${minutesLeft(this.endsAt, this.pausedAt)} min left · ${RESUME_TEXT}`, cls: 'revisit-muted' });
 		cover.onclick = () => this.resume();
+		cover.createEl('button', { text: 'End session', cls: 'revisit-end' }).onclick = (ev) => {
+			// the cover behind it resumes on click
+			ev.stopPropagation();
+			this.endSession();
+		};
+	}
+
+	/** Leaves a session, started by mistake or not, for the deck it started from. Grades given are saved already. */
+	private endSession(): void {
+		this.graded.clear();
+		this.undo = [];
+		this.waiting = [];
+		this.queue = [];
+		this.backToOrigin();
+	}
+
+	private backToOrigin(): void {
+		this.deck = null;
+		this.openDeck = this.origin;
+		this.quiet = true;
+		this.show('decks');
 	}
 
 	private resume(): void {
@@ -444,7 +507,13 @@ export class ReviewView extends ItemView {
 	private async confirmDelete(): Promise<void> {
 		const item = this.queue[this.index];
 		if (this.mode !== 'review' || !item || this.busy) return;
-		const ok = await new Promise<boolean>((resolve) => {
+		if (!(await this.askDelete())) return;
+		this.discardArmed = true;
+		await this.discard();
+	}
+
+	private askDelete(): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
 			const m = new Modal(this.app);
 			m.titleEl.setText('Delete this card?');
 			const row = m.contentEl.createDiv({ cls: 'modal-button-container' });
@@ -453,9 +522,6 @@ export class ReviewView extends ItemView {
 			m.onClose = () => resolve(false);
 			m.open();
 		});
-		if (!ok) return;
-		this.discardArmed = true;
-		await this.discard();
 	}
 
 	private toggleHelp(): void {
@@ -466,7 +532,42 @@ export class ReviewView extends ItemView {
 		if (this.bar && this.mode === 'review' && !this.pausedAt) this.bar.style.width = `${Math.min(100, ((Date.now() - this.startedAt) / (this.endsAt - this.startedAt)) * 100)}%`;
 	}
 
+	/** The folder, card or Start the arrows are on, if any. */
+	private focused(): HTMLElement | null {
+		const el = this.contentEl.doc.activeElement as HTMLElement | null;
+		return el && this.contentEl.contains(el) && el.matches(this.nav()) ? el : null;
+	}
+
+	/** With the times open, the arrows stay among them. */
+	private nav(): string {
+		return this.asking() ? '.revisit-ask button' : NAV;
+	}
+
+	/** Left and Right go in reading order; Up and Down to the closest one of the next row. */
+	private move(dir: 'Left' | 'Right' | 'Up' | 'Down'): void {
+		const all = Array.from(this.contentEl.querySelectorAll<HTMLElement>(this.nav()));
+		const from = this.focused();
+		let to: HTMLElement | undefined;
+		// the first arrow goes to the first folder or card, not to Start
+		if (!from) to = all.find((el) => !el.matches('.revisit-deck-go')) ?? all[0];
+		else if (dir === 'Left' || dir === 'Right') to = all[all.indexOf(from) + (dir === 'Right' ? 1 : -1)];
+		else {
+			const a = from.getBoundingClientRect();
+			const sign = dir === 'Down' ? 1 : -1;
+			const beyond = all
+				.map((el) => ({ el, r: el.getBoundingClientRect() }))
+				.filter(({ r }) => (dir === 'Down' ? r.top >= a.bottom - 1 : r.bottom <= a.top + 1))
+				.map(({ el, r }) => ({ el, row: sign * (r.top - a.top), off: Math.abs(r.left + r.width / 2 - a.left - a.width / 2) }));
+			const row = Math.min(...beyond.map((b) => b.row));
+			to = beyond.filter((b) => b.row - row < 20).sort((x, y) => x.off - y.off)[0]?.el;
+		}
+		to?.focus();
+		to?.scrollIntoView({ block: 'nearest' });
+	}
+
 	private flip(): void {
+		const on = this.mode === 'decks' ? this.focused() : null;
+		if (on) return on.click();
 		// an opened folder turns its cards; on the folders, Space opens All decks
 		if (this.mode === 'decks') return this.openDeck ? this.toggleAnswers() : this.enter();
 		if (this.mode !== 'review' || this.busy || this.pausedAt) return;
@@ -475,15 +576,12 @@ export class ReviewView extends ItemView {
 	}
 
 	private digit(n: number): void {
-		if (this.mode === 'start' && n <= 3) this.pickTime(TIMES[n - 1] as number);
-		else if (this.mode === 'start' && n === 4) {
-			// the button, or the field it already turned into
-			const el = this.contentEl.querySelector<HTMLElement>('.revisit-custom-btn, .revisit-custom input');
+		if (this.mode === 'decks' && this.asking()) {
+			if (n <= 3) return this.pickTime(TIMES[n - 1] as number);
+			// the button, or the field it already turned into; `5` is the time to clear
+			const el = this.contentEl.querySelector<HTMLElement>(n === 4 ? '.revisit-custom-btn, .revisit-custom input' : '.revisit-clear-btn');
 			el?.focus();
 			el?.click();
-		} else if (this.mode === 'start') {
-			const clear = this.clearMinutes();
-			if (clear !== null) this.pickTime(clear);
 		}
 		else if (this.mode === 'decks' && !this.openDeck && n === 1) this.openFolder(ALL);
 		else if (this.mode === 'done' && n <= 3) this.keepGoing(TIMES[n - 1] as number);
@@ -659,8 +757,7 @@ export class ReviewView extends ItemView {
 	showDecks(): void {
 		if (this.mode === 'review') return;
 		this.openDeck = '';
-		if (this.starting) this.decksNext = true;
-		else this.show('decks');
+		if (!this.starting) this.show('decks');
 	}
 
 	private openFolder(deck: string, from: HTMLElement | null = null): void {
@@ -669,16 +766,22 @@ export class ReviewView extends ItemView {
 		this.show('decks');
 	}
 
-	/** Enter: resume when paused, All decks on the folders, Start in an opened folder. */
+	/** Enter: resume when paused, All decks on the folders, the times in an opened folder. */
 	private enter(): void {
 		if (this.pausedAt) return this.resume();
-		if (this.mode !== 'decks') return;
+		if (this.mode !== 'decks' || this.starting) return;
+		const on = this.focused();
+		if (on) return on.click();
 		if (!this.openDeck) this.openFolder(ALL, this.contentEl.querySelector<HTMLElement>('.revisit-folder.is-all'));
-		else this.reviewDeck();
+		else this.askTime();
 	}
 
 	private escape(): void {
-		if (this.mode === 'decks' && this.openDeck) this.goUp();
+		if (this.mode === 'review') return this.endSession();
+		if (this.mode === 'done') return this.backToOrigin();
+		if (this.asking()) return this.closeAsk();
+		// the folders are home: nothing above them
+		if (this.openDeck) this.goUp();
 	}
 
 	/** One level up from the opened folder. */
@@ -692,17 +795,6 @@ export class ReviewView extends ItemView {
 		this.quiet = true;
 		this.openDeck = deck;
 		this.show('decks');
-	}
-
-	/** Reviews the opened folder: today's cards, or ahead of schedule when it has none. */
-	private reviewDeck(): void {
-		const deck = this.openDeck === ALL ? null : this.openDeck;
-		const queue = this.todayQueue(deck);
-		const next = queue.length ? queue : this.aheadQueue(deck);
-		if (!next.length) return;
-		this.deck = deck;
-		this.queue = next;
-		this.startSession(this.minutes);
 	}
 
 	private drawDecks(root: HTMLElement): void {
@@ -777,15 +869,15 @@ export class ReviewView extends ItemView {
 		// Start sits by the title, so a deck of a thousand cards never hides it
 		const ahead = queue.length ? [] : this.aheadQueue(deck);
 		if (queue.length || ahead.length) {
-			const go = head.createEl('button', { text: queue.length ? `Start · ${this.minutes} min` : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
-			go.onclick = () => this.reviewDeck();
+			const go = head.createEl('button', { text: queue.length ? 'Start' : 'Review ahead', cls: 'revisit-deck-go' + (queue.length ? ' mod-cta' : '') });
+			go.onclick = () => (this.asking() ? this.closeAsk() : this.askTime());
 			// nothing now: say when the next card comes (a learning step in minutes, or tomorrow)
 		} else head.createDiv({ text: nextCardLabel(this.items(deck), now) ?? 'Nothing to review', cls: 'revisit-muted revisit-deck-go' });
 
 		const body = panel.createDiv({ cls: 'revisit-deck-body' });
 		const subdecks = deck === null ? [] : childDecks(paths, deck);
 		if (subdecks.length) this.drawFolders(body.createDiv({ cls: 'revisit-decks-grid' }), subdecks, quiet ? null : from ? 200 : 0);
-		if (cards.length) this.grid = this.addChild(new CardGrid(this.app, body, cards, still));
+		if (cards.length) this.grid = this.addChild(new CardGrid(this.app, body, cards, still, (item, ev) => this.cardMenu(item, ev)));
 		else if (!subdecks.length) body.createDiv({ text: 'No cards here.', cls: 'revisit-muted' });
 
 		if (quiet || still()) return;
@@ -809,6 +901,55 @@ export class ReviewView extends ItemView {
 		if (this.grid) this.removeChild(this.grid);
 		this.grid = null;
 		this.answersBtn = null;
+	}
+
+	// ---- Managing a card of the grid ----
+
+	/** The ⋯ of a card: what acts on the whole card, every highlight of a cloze included. */
+	private cardMenu(item: QueueItem, ev: MouseEvent): void {
+		const { card } = item;
+		const target = /\[\[([^\]|]+)/.exec(card.source)?.[1];
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle('Edit card').setIcon('pencil').onClick(() => this.plugin.openCreate({ card, onSaved: () => this.redrawDeck() })));
+		menu.addItem((i) => i.setTitle('Move to deck…').setIcon('folder-input').onClick(() => this.moveCard(card)));
+		if (target) menu.addItem((i) => i.setTitle('Open source note').setIcon('file-text').onClick(() => void this.app.workspace.openLinkText(target, card.file ?? '', 'split')));
+		menu.addItem((i) => i.setTitle('Delete card').setIcon('trash').onClick(() => void this.deleteFromGrid(card)));
+		menu.showAtMouseEvent(ev);
+	}
+
+	private redrawDeck(): void {
+		this.plugin.updateStatus();
+		if (this.mode !== 'decks') return;
+		this.quiet = true;
+		this.show('decks');
+	}
+
+	private moveCard(card: Card): void {
+		const decks = new Set<string>();
+		for (const path of this.deckPaths()) {
+			const parts = path.split('/');
+			parts.forEach((_, i) => decks.add(parts.slice(0, i + 1).join('/')));
+		}
+		decks.delete(deckOf(card.file ?? '', this.base));
+		new DeckPicker(this.app, [...decks].sort((a, b) => a.localeCompare(b)), (deck) => {
+			void this.plugin.store.moveCard(card, deck).then(
+				() => this.redrawDeck(),
+				(e: unknown) => new Notice(`Revisit: could not move the card (${e instanceof Error ? e.message : String(e)}).`),
+			);
+		}).open();
+	}
+
+	private async deleteFromGrid(card: Card): Promise<void> {
+		if (!(await this.askDelete())) return;
+		try {
+			await this.plugin.store.deleteCard(card);
+		} catch (e) {
+			new Notice(`Revisit: could not delete the card (${e instanceof Error ? e.message : String(e)}).`);
+			return;
+		}
+		// the card is gone: grades of the last session can no longer be undone safely
+		this.undo = [];
+		this.redrawDeck();
 	}
 
 	// ---- Adding to a deck ----
